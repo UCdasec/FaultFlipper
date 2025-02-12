@@ -5,10 +5,8 @@
 
 ## Installation
 
-We use pixi for dependency management where possible. It's essentially conda but newer and shiner.
-
-For compilers, we install via apt repository.
-
+We use pixi (conda replacement) for dependency management where possible. 
+Additionally, the apt repository is used for compilers (i.e RISCV64 compiler)
 
 Install pixi with:
 ```sh
@@ -21,7 +19,9 @@ Then enter the environment with:
 pixi shell
 ```
 
-To install the required compilers:
+Each target will need its _own compiler_. This may very depending on your 
+system. For example, below is the command used to install the riscv64 compiler.
+
 ```bash
 sudo apt install gcc-riscv64-linux-gnu
 sudo apt-get install libc6-riscv64-cross
@@ -49,14 +49,38 @@ Give a ⭐️ if you think this project is interesting!
 - [x] Add ARM32
 - [x] Add ARM64
 - [x] Profile all exit codes returned by programs 
-- [ ] Analyze faults selected by the user 
-    - [ ] Print the address of the fault
-    - [ ] Print the surrounding x lines of instructions 
-    - [ ] Print the old and new instruction 
+- [x] Analyze faults selected by the user 
+    - [x] Print the address of the fault
+    - [x] Print the surrounding x lines of instructions 
+    - [x] Print the old and new instruction 
 - [x] Allow chains of experiments to be run
     - [x] I.E instead of using shell scripts make a config file 
-- [ ] When comparing binaries align instructions based on address
+- [x] When comparing binaries align instructions based on address
 - [x] Add a toml that sets up an experiment and saves it
+- [x] Provide compilation settings in a .toml file
+    - [x] Handle libraries in .toml
+    - [x] Handle compiler in .toml
+
+- [ ] Program to parse the results.csv and auto display a comparison of the 
+        vanilla assmebly and the mutated assembly showing X line above and 
+        below the mutated address
+
+- [ ] Parallelize NOP mutation 
+- [ ] Parallelize BIT mutatation
+
+Currently the tool now has great support for single experiments! It may be 
+beneficial in the future to easily attempt many fault patterns on the same 
+binary (or even a batch of binaries) quickly so in the future... 
+- [ ] With a similar interface to "nop_exp" support running _many_ fault models
+- [ ] With a similar interface to "nop_exp" support running _many_ binaries
+
+Unfortunately for research purposes it makes sense to force the user to provide
+the source code. However, for pratical purposes it makes more sense to only 
+provide the binary... therefore I can (1) Make source code optional (2) Provide 
+seperate command that doesn't ask for source code. For "deterministic" reasons
+I will do (2)
+
+- [ ] Make a "nop_exp" that does not require source code
 
 
 ***
