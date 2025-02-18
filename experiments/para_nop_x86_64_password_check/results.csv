@@ -1,0 +1,342 @@
+,source_file,unmutated_binary,binary_path,return_code,program_input,program_stdout,target,expected_stdout,expected_returncode,custom_returncodes,nopped_addr,mutation,source_code
+0,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1124,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4388,nop,
+1,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1129,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4393,nop,
+2,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1132,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4402,nop,
+3,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1133,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4403,nop,
+4,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1136,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4406,nop,
+5,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x112d,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4397,nop,
+6,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1126,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4390,nop,
+7,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x113f,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4415,nop,
+8,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1120,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4384,nop,
+9,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1138,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4408,nop,
+10,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1131,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4401,nop,
+11,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x112a,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4394,nop,
+12,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1146,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4422,nop,
+13,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1150,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4432,nop,
+14,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x115e,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4446,nop,
+15,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1145,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4421,nop,
+16,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1157,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4439,nop,
+17,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1161,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4449,nop,
+18,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x116a,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4458,nop,
+19,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1163,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4451,nop,
+20,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x116d,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4461,nop,
+21,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1178,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4472,nop,
+22,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1171,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4465,nop,
+23,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x116f,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4463,nop,
+24,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1179,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4473,nop,
+25,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1187,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4487,nop,
+26,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x118e,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4494,nop,
+27,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1180,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4480,nop,
+28,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1191,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4497,nop,
+29,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1194,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4500,nop,
+30,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1198,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4504,nop,
+31,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x119c,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4508,nop,
+32,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x119f,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4511,nop,
+33,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11a2,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4514,nop,
+34,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11a4,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4516,nop,
+35,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11ab,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4523,nop,
+36,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11b0,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4528,nop,
+37,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11b2,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4530,nop,
+38,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11ae,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4526,nop,
+39,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11b8,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4536,nop,
+40,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11b9,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4537,nop,
+41,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11c0,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4544,nop,
+42,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11c4,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4548,nop,
+43,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11cb,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4555,nop,
+44,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11ce,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4558,nop,
+45,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11d9,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4569,nop,
+46,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11d6,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4566,nop,
+47,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11cd,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4557,nop,
+48,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11e2,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4578,nop,
+49,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11db,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4571,nop,
+50,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11e7,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4583,nop,
+51,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11ec,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4588,nop,
+52,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11f4,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4596,nop,
+53,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11f5,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4597,nop,
+54,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11f3,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4595,nop,
+55,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11f8,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4600,nop,
+56,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x11f9,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4601,nop,
+57,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1200,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4608,nop,
+58,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1204,97,"wrong
+","Enter the password (max 10 characters): Wrong
+Enter the password (max 10 characters): no inputWrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4612,nop,
+59,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1209,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4617,nop,
+60,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x120d,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4621,nop,
+61,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x120e,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4622,nop,
+62,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1222,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4642,nop,
+63,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1211,134,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4625,nop,
+64,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1224,97,"wrong
+","Enter the password (max -956246344 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4644,nop,
+65,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1229,97,"wrong
+","Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4649,nop,
+66,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x121e,134,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4638,nop,
+67,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1233,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4659,nop,
+68,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1215,134,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4629,nop,
+69,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1238,97,"wrong
+","Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4664,nop,
+70,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x123d,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4669,nop,
+71,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1230,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4656,nop,
+72,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x124c,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4684,nop,
+73,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1251,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4689,nop,
+74,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1241,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4673,nop,
+75,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1254,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4692,nop,
+76,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1248,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4680,nop,
+77,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1259,97,"wrong
+","Enter the password (max 10 characters): no inputWrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4697,nop,
+78,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x125c,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4700,nop,
+79,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x125e,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4702,nop,
+80,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x126a,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4714,nop,
+81,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1262,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4706,nop,
+82,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1267,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4711,nop,
+83,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x126f,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4719,nop,
+84,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1272,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4722,nop,
+85,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1274,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4724,nop,
+86,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1278,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4728,nop,
+87,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x127a,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4730,nop,
+88,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x127e,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4734,nop,
+89,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1288,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4744,nop,
+90,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1290,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4752,nop,
+91,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1285,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4741,nop,
+92,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x128b,135,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4747,nop,
+93,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12a3,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4771,nop,
+94,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1295,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4757,nop,
+95,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12a6,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4774,nop,
+96,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1299,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4761,nop,
+97,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12ab,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4779,nop,
+98,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12ad,0,"wrong
+","Enter the password (max 10 characters): Correct
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4781,nop,
+99,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12a0,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4768,nop,
+100,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12af,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4783,nop,
+101,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12b3,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4787,nop,
+102,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12b5,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4789,nop,
+103,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12bc,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4796,nop,
+104,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12c9,0,"wrong
+","Enter the password (max 10 characters): Correct
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4809,nop,
+105,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12bf,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4799,nop,
+106,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12c4,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4804,nop,
+107,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12cf,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4815,nop,
+108,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12d6,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4822,nop,
+109,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12cd,0,"wrong
+","Enter the password (max 10 characters): Correct
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4813,nop,
+110,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12d9,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4825,nop,
+111,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12e3,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4835,nop,
+112,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12de,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4830,nop,
+113,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12ec,97,"wrong
+","Enter the password (max 10 characters): wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4844,nop,
+114,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12f4,6,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4852,nop,
+115,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12ef,97,"wrong
+",Enter the password (max 10 characters): ,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4847,nop,
+116,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12e5,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4837,nop,
+117,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1308,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4872,nop,
+118,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12f9,134,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4857,nop,
+119,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x130e,97,"wrong
+","Enter the password (max 10 characters): Wrong
+",X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4878,nop,
+120,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x12fd,134,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4861,nop,
+121,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x1306,134,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4870,nop,
+122,/home/dblshot/ghPackages/FaultSim/test_files/password_check.c,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/password_check.o,/home/dblshot/ghPackages/FaultSim/experiments/para_nop_x86_64_password_check/mutated_bins/password_check.o_0x130d,139,"wrong
+",,X86_64,Correct,0,"[('password_accepted', 0), ('password_denied', 97), ('failed_to_run', 1)]",4877,nop,
