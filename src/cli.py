@@ -649,8 +649,8 @@ def bit(common: CommandParameters, source_code: Optional[Path] = None)->pd.DataF
     #original_file = common.program_file
 
     other_returncodes = [
-        ("password_accepted", 0),
-        ("password_denied", 97),
+        ("critical_code_ran", 0),
+        ("critical_code_did_not_run", 97),
         ("failed_to_run", -900),
     ]
 
@@ -678,15 +678,6 @@ def bit(common: CommandParameters, source_code: Optional[Path] = None)->pd.DataF
 
             if number_of_different_bits != 1:
                 raise Exception("Great than 1 difference in bits")
-
-            #if mutated_text != vanilla_text:
-            #    print(mutated_text)
-            #    print('expected')
-            #    return
-            #else:
-            #    raise Exception("Vanilla and Mutated Are the SAME")
-
-            # Test the binary
             try:
                 status, stdout, _ = run_binary_w_input(
                     out_file,
@@ -697,8 +688,6 @@ def bit(common: CommandParameters, source_code: Optional[Path] = None)->pd.DataF
                 status = shift_python_code(status)
 
             except Exception:
-                # print(f"Failed to run and parse exit for {out_file}")
-                # Set the exit code to 'generic error'
                 status = -900
                 stdout = ""
 
@@ -991,8 +980,8 @@ def nop(
     target = detect_target(common.program_file)
 
     other_returncodes = [
-        ("password_accepted", 0),
-        ("password_denied", 97),
+        ("critical_code_ran", 0),
+        ("critical_code_did_not_run", 97),
         ("failed_to_run", -900),
     ]
 
@@ -1585,8 +1574,8 @@ def para_bit(common: CommandParameters,  target: Target, num_cpus: int ):
     disasm = disassemble_text_section(common.program_file)
 
     other_returncodes = [
-        ("password_accepted", 0),
-        ("password_denied", 97),
+        ("critical_code_ran", 0),
+        ("critical_code_did_not_run", 97),
         ("failed_to_run", -900),
     ]
 
@@ -1638,6 +1627,8 @@ def para_bit(common: CommandParameters,  target: Target, num_cpus: int ):
 
     num_instructions = len(disasm)
 
+    num_bits = len(lief.parse(common.program_file).get_section('.text').content)
+
     df = dataclass_to_dataframe(results)
 
     save_df(df, common.save_results)
@@ -1654,7 +1645,7 @@ def para_bit(common: CommandParameters,  target: Target, num_cpus: int ):
         json.dump(params, f, indent=4)
 
     report_path = common.save_results.parent.joinpath("report.md")
-    save_report(report_path, common, df, runtime, results, num_instructions, compile_cmd, source_code, is_bit=True)
+    save_report(report_path, common, df, runtime, results, num_instructions, num_bits, compile_cmd, source_code, is_bit=True)
 
     return
 
@@ -1702,8 +1693,8 @@ def para_nop(common: CommandParameters,  target: Target, num_cpus: int ):
     target = detect_target(common.program_file)
 
     other_returncodes = [
-        ("password_accepted", 0),
-        ("password_denied", 97),
+        ("critical_code_ran", 0),
+        ("critical_code_did_not_run", 97),
         ("failed_to_run", 1),
     ]
 
@@ -1768,7 +1759,7 @@ def para_nop(common: CommandParameters,  target: Target, num_cpus: int ):
     return
 
 
-def save_report(report_path:Path, common: CommandParameters, df: pd.DataFrame, runtime, results, num_instructions, compile_cmd, source_code:Path, is_bit=False)->None:
+def save_report(report_path:Path, common: CommandParameters, df: pd.DataFrame, runtime, results, num_instructions,num_bits, compile_cmd, source_code:Path, is_bit=False)->None:
     """
     Generate a report including:
     1. Experiment Settings
@@ -1810,26 +1801,32 @@ def save_report(report_path:Path, common: CommandParameters, df: pd.DataFrame, r
 
     binary_info = "#### Binary information + Running the binary information\n"
     binary_info += f"- Contains **{num_instructions}** instructions\n"
-    binary_info += f"- Therefore, FaultSim attempted to make **{num_instructions}** mutations\n"
-    binary_info += f"- Of the **{num_instructions}** attempted mutations, **{len(df)}** valid mutated binaries were generated\n"
+    binary_info += f"- Contains **{num_bits}** bits in the .text section\n"
+    if is_bit:
+        binary_info += f"- Therefore, FaultSim attempted to make **{num_bits}** mutations\n"
+        binary_info += f"- Of the **{num_bits}** attempted mutations, **{len(df)}** valid mutated binaries were generated\n"
+    else:
+        binary_info += f"- Therefore, FaultSim attempted to make **{num_instructions}** mutations\n"
+        binary_info += f"- Of the **{num_instructions}** attempted mutations, **{len(df)}** valid mutated binaries were generated\n"
     binary_info += f"- The target arch was {results[0].target}\n" 
     binary_info += f"- The compile command was: `{" ".join(compile_cmd)}`\n" 
     run_cmd = generate_run_cmd(common.program_file, results[0].target)
     run_cmd = ["timeout", f"{common.timeout}s"] + run_cmd
     run_cmd = " ".join(run_cmd)
     binary_info += f"- An example run command: `{run_cmd}`\n"
-    binary_info += f"- The NOP for this binary is: `{nop}`\n"
-    binary_info += f"- The runtime to generate and run binaries was: {runtime}\n"
+    binary_info += f"- The NOP for this target is: `{nop}` with values: {nop.value}\n"
+    binary_info += f"- The runtime to generate and run all binaries was: {runtime}\n"
 
 
     
 
     # 2. Exit code frequecies
     other_returncodes = [
-        ("password_accepted", 0),
-        ("password_denied", 97),
+        ("critcal_code_ran", 0),
+        ("critical_code_did_not_run", 97),
         ("failed_to_run", -900),
     ]
+
     freqs = calc_freqs(df, common, other_returncodes)
     table = "## Return Code Frequencies \n"
     table_str = list_tuple_table(["Exit code", "Frequency"], freqs)
@@ -1966,6 +1963,33 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
 
     return
 
+
+@app.command
+def gather_reports(inp:Path, out:Path, force:bool = False):
+    """
+    Gather the reports in the directory 
+    """
+
+    if out.exists():
+        if not force:
+            print(f"The destination already exists, if this is okay pass the force command")
+            return 
+
+        if out.is_file():
+            print(f"The destination already exists is is a file. Please provide a new output")
+            return 
+        out.mkdir(parents=True, exist_ok=True)
+    else:
+        out.mkdir(parents=True)
+
+    if not (inp.is_dir() and inp.exists()):
+        print(f"The inp {inp} does not exist")
+        return 
+
+    for p in inp.rglob('*'):
+        if p.name == "report.pdf":
+            shutil.copy(p, out.joinpath(p.parent.name + ".pdf"))
+    return 
 
 if __name__ == "__main__":
     app()
