@@ -25,8 +25,7 @@ int main(void) {
         curr = next;
     }
 
-    // n+1 because the loop runs while i <= n, so the final loop
-    // will add an extra value
+    // MITIGATION: Check that completed all iterations of the for loop
     if ( i != n+1) {
         printf("%d", i);
         printf("Early Exit Detected! Exiting Program");

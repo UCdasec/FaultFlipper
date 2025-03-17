@@ -1,0 +1,4 @@
+[fib]
+context = "A that calculates the fibonnaci sequence using a for loop and checks the loop counter"
+vulnerablities =[]
+mitigations= ["4.7) Loopcheck"]

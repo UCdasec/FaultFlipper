@@ -21,7 +21,7 @@ int main() {
     char input[MAX_LENGTH + 1];  
     printf("Enter the password (max %d characters): ", MAX_LENGTH);
 
-    bool password_correct = false;
+    int password_correct = false;
 
     // fgets takes arguments: (buffer, buffer_size, input) 
     // this assures that the input is no longer than the size of the buffer
@@ -38,7 +38,7 @@ int main() {
             // NOTICE: fgets and strchr make sure the passowrd
             //      is the correct length so strcmp is safe :)
             if (strcmp(input, PASSWORD) == 0) {
-                password_correct = true;
+                password_correct = 0xC35A;
             }
         }
     }
@@ -48,8 +48,9 @@ int main() {
 
 
     // Compare the input with the predefined password
-    if (password_correct == 1)  {
+    if (password_correct == 0xC35A)  {
         printf("Correct\n");
+        // Exit with 0 when exit is correct!
         return EXIT_SUCCESS;
     } else {
         printf("Wrong\n");

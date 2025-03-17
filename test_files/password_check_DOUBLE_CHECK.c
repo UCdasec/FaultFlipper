@@ -4,6 +4,7 @@
 #include <string.h>
 // Below provides "EXIT_SUCCESS"
 #include <stdbool.h>
+#include <stdint.h>
 
 // Correct password:
 #define PASSWORD "pass" 
@@ -21,7 +22,7 @@ int main() {
     char input[MAX_LENGTH + 1];  
     printf("Enter the password (max %d characters): ", MAX_LENGTH);
 
-    bool password_correct = false;
+    uint8_t password_correct = 0;
 
     // fgets takes arguments: (buffer, buffer_size, input) 
     // this assures that the input is no longer than the size of the buffer
@@ -29,7 +30,7 @@ int main() {
         // If the entered password exceeds the 
         // buffer it's incorrect
         if (strchr(input, '\n') == NULL) {
-            password_correct = false;
+            password_correct = 0;
         }
         else {
             // Remove the newling character
@@ -38,7 +39,7 @@ int main() {
             // NOTICE: fgets and strchr make sure the passowrd
             //      is the correct length so strcmp is safe :)
             if (strcmp(input, PASSWORD) == 0) {
-                password_correct = true;
+                password_correct = 1;
             }
         }
     }
@@ -48,9 +49,16 @@ int main() {
 
 
     // Compare the input with the predefined password
-    if (password_correct == 1)  {
-        printf("Correct\n");
+    if (password_correct == 1){
+
+        // DOUBLE CHECK
+        if ( ((~password_correct) & 0x01) != 0){
+            printf("Fault detected \n");
+            return 97;
+        };
+
         // Exit with 0 when exit is correct!
+        printf("Correct\n");
         return EXIT_SUCCESS;
     } else {
         printf("Wrong\n");

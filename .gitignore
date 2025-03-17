@@ -1,0 +1,8 @@
+# pixi environments
+.pixi
+*.egg-info
+
+# results 
+results
+experiments
+DEP
