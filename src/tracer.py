@@ -37,13 +37,23 @@ Requirements:
 
 import argparse
 import os
-import re
 import sys
+from cli import Target, get_capstone_arch_mode
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional
 
 import angr
 import claripy
+
+from cyclopts import App, Parameter
+from typing import Annotated, Optional
+from rich.table import Table
+from rich.console import Console
+from typing_extensions import Annotated
+from enum import Enum
+from pathlib import Path
+from enums import LinuxExitCodes
+
 
 # For reading DWARF debug info
 from elftools.elf.elffile import ELFFile
@@ -59,6 +69,9 @@ from capstone import (
 # For pretty output
 from rich.table import Table
 from rich.console import Console
+
+console = Console()
+app = App()
 
 
 @dataclass
@@ -118,7 +131,8 @@ def parse_line_numbers(line_specs: List[str]) -> List[int]:
 
 
 #def find_addresses_with_pyelftools(binary_path: str, source_path: str, critical_lines: List[int]) -> List[int]:
-def find_addresses_with_pyelftools(binary_path: str, source_path: str, critical_lines: List[int], base_addr:int) -> tuple[List[int], Dict]:
+
+def find_addresses_with_pyelftools(binary: Path, source_path: Path, critical_lines: List[int], base_addr:int, arch: Target) -> tuple[List[int], Dict]:
     """
     Use pyelftools to parse DWARF line info in the ELF and gather addresses
     corresponding to the given line numbers in source_path.
@@ -133,13 +147,14 @@ def find_addresses_with_pyelftools(binary_path: str, source_path: str, critical_
     addresses = set()
 
     # Open ELF
-    with open(binary_path, "rb") as bf:
+    with open(binary, "rb") as bf:
         elffile = ELFFile(bf)
         if not elffile.has_dwarf_info():
             raise RuntimeError("No DWARF debug info found in the binary. Recompile with -g.")
 
         dwarfinfo = elffile.get_dwarf_info()
         text_section = elffile.get_section_by_name('.text')
+
         if text_section is None:
             raise RuntimeError("No .text section found in the ELF.")
         
@@ -153,15 +168,18 @@ def find_addresses_with_pyelftools(binary_path: str, source_path: str, critical_
             "arm64":  (CS_ARCH_ARM64, CS_MODE_ARM),
             "riscv":  (CS_ARCH_RISCV, CS_MODE_RISCV64),
         }
-        if arch_mode_map.get(args.arch) is None:
-            raise ValueError(f"Unsupported architecture: {args.arch}")
 
-        cs_arch, cs_mode = arch_mode_map[args.arch]
+        cs_arch, cs_mode = get_capstone_arch_mode(binary)
+
+        #if arch_mode_map.get(arch.name.lower()) is None:
+        #    raise ValueError(f"Unsupported architecture: {arch}")
+
+        #cs_arch, cs_mode = arch_mode_map[arch]
         md = Cs(cs_arch, cs_mode)
 
         # We'll gather all (address -> line) mappings from the DWARF line tables
         addr_to_line = {}  # maps instruction address -> line number
-        print(f" The length of cus is {len(list(dwarfinfo.iter_CUs()))}")
+        #print(f" The length of cus is {len(list(dwarfinfo.iter_CUs()))}")
         for cu in dwarfinfo.iter_CUs():
             line_program = dwarfinfo.line_program_for_CU(cu)
 
@@ -290,47 +308,50 @@ def save_results_csv(results: List[CriticalHitResult], csv_path: str):
         for r in results:
             writer.writerow(r.to_dict())
 
+@app.command()
+def trace(
+    binary,
+    stdin,
+    critical_asm:Optional[list[str]] = None,
+    source:Optional[Path] = None,
+    critical_source_lines: Optional[list[str]] = None,
+    csv_out: Optional[Path] = None,
+    arch: Target = Target.X86_64,
+):
+    """
+    Trace the program. 
 
-def main():
-    global args  # so we can reference in find_addresses_with_pyelftools
-    args = parse_args()
+    Two options:
+    (1) Provide source code + critical lines 
+    (2) Provide asm critcal lines
+    """
 
-
-    hit_map, base_addr = run_angr_concrete(args.binary,  stdin_data=args.stdin)
+    # 
+    hit_map, base_addr = run_angr_concrete(binary,  stdin_data=stdin)
 
     # Determine the set of "critical" addresses to monitor
-    if args.critical_asm is not None:
+    if critical_asm is not None:
         # We have direct addresses
-        critical_addresses = [int(x, 16) for x in args.critical_asm]
+        critical_addresses = [int(x, 16) for x in critical_asm]
     else:
         # We must have a source file + lines
-        if not args.source or not args.critical_source_lines:
+        if not source or not critical_source_lines:
             print("Error: If --critical-asm is not provided, you must specify --source and --critical-source-lines.")
             sys.exit(1)
 
+        #critcial_source_lines = critical_source_lines.split('-')
+        print( critical_source_lines)
+
         # Parse the line(s) or range(s)
-        critical_lines = parse_line_numbers(args.critical_source_lines)
+        critical_lines = parse_line_numbers(critical_source_lines)
 
         # Use pyelftools & capstone to find the instruction addresses for those lines
-        critical_addresses, addr_to_line = find_addresses_with_pyelftools(args.binary, args.source, critical_lines, base_addr)
-
-        print(f"Map of critical lines to critical instruction addres:")
-        for i, (k, v) in enumerate(addr_to_line.items()):
-            if v not in critical_lines:
-                continue
-            next_key = list(addr_to_line.keys())[i+1]
-            print(f"[SOURCE] {v} maps to [ASM] 0x{k:x} exclusively to 0x{next_key:x}")
-
-    print(f"Map:")
-    for k, v in hit_map.items():
-        print(f"0x{k-base_addr:x}")
-
-
+        critical_addresses, addr_to_line = find_addresses_with_pyelftools(binary, source, critical_lines, base_addr, arch)
 
     if not critical_addresses:
         print("No critical addresses resolved. Exiting.")
         return
-    #new_map = {k: 0 for k in critical_addresses}
+
     new_map = {}
     for val in critical_addresses:
         if (x:=val+base_addr) in hit_map.keys():
@@ -338,30 +359,19 @@ def main():
         else:
             new_map[val] = 0
 
-    hit_map = new_map
-
-    # Run angr in a concrete-ish path
-    #hit_map = run_angr_concrete(args.binary, critical_addresses, stdin_data=args.stdin)
-
     # Build result objects
     results = []
-    for addr in sorted(hit_map.keys()):
-        results.append(CriticalHitResult(address=addr, hit_count=hit_map[addr]))
+    for addr in sorted(new_map.keys()):
+        results.append(CriticalHitResult(address=addr, hit_count=new_map[addr]))
 
     # Print with Rich
     print_results_rich(results)
 
     # Optionally save to CSV
-    if args.csv_out:
-        save_results_csv(results, args.csv_out)
-        print(f"[+] Results saved to {args.csv_out}")
-
-    # Example: how you'd get a Pandas DataFrame
-    # import pandas as pd
-    # df = pd.DataFrame([r.to_dict() for r in results])
-    # print(df)
-
+    if csv_out:
+        save_results_csv(results, csv_out)
+        print(f"[+] Results saved to {csv_out}")
 
 if __name__ == "__main__":
-    main()
+    app()
 

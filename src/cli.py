@@ -32,7 +32,6 @@ from typing_extensions import Annotated
 from enum import Enum
 import subprocess
 import pandas as pd
-from capstone import CsInsn
 from enums import LinuxExitCodes
 
 # All faults are a patch of some kind.
@@ -49,27 +48,7 @@ DEFAULT_LOGS = Path("faultsim_log")
 if not DEFAULT_LOGS.exists():
     DEFAULT_LOGS.mkdir()
 
-
-def shift_python_code(x: int) -> int:
-    if x < 0:
-        return 128 + (-1 * x)
-    return x
-
-
-class Target(Enum):
-    X86_64 = 0
-    RISCV = 2
-    ARM_64 = 3
-    ARM_32 = 4
-
-
-class Nop(Enum):
-    X86_64 = [0x90]
-    RISCV = [0x13, 0x00, 0x00, 0x00]
-    RISCV_COMPACT = [0x01, 0x00]
-    ARM_64 = [0xD5, 0x03, 0x20, 0x1F]
-    ARM_32 = [0xE1, 0xA0, 0x00, 0x00]
-
+from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin
 
 @Parameter(name="*")
 @dataclass
@@ -99,174 +78,6 @@ class CommandParameters:
             "save_results": str(self.save_results.absolute()),
             "yes": self.yes,
         }
-
-
-def get_capstone_arch_mode(filename):
-    """
-    Given a binary file, return (capstone_arch, capstone_mode) as a tuple
-    that can be used to initialize a Capstone disassembler.
-
-    For example:
-        - (CS_ARCH_X86, CS_MODE_32) or (CS_ARCH_X86, CS_MODE_64)
-        - (CS_ARCH_ARM, CS_MODE_ARM)
-        - (CS_ARCH_ARM64, CS_MODE_ARM)
-        - (CS_ARCH_MIPS, CS_MODE_32 + CS_MODE_LITTLE_ENDIAN), etc.
-    """
-    binary = lief.parse(filename)
-
-    # Default return values (in case not recognized)
-    cs_arch = None
-    cs_mode = None
-
-    # Detect format: ELF, PE, Mach-O, etc.
-    binary_format = binary.format
-
-    if binary_format == lief.Binary.FORMATS.ELF:
-        # ELF-specific logic
-        elf_header = binary.header
-        machine_type = (
-            elf_header.machine_type
-        )  # e.g. lief.ELF.ARCH.x86, lief.ELF.ARCH.ARM, etc.
-
-        # is_64 = (elf_header.identity_class == lief.ELF.ARCH.X86_64)
-        # is_le = (elf_header.identity_data == lief.ELF.ELF_DATA.LSB)
-
-        # Map the ELF machine_type to Capstone arch/mode
-        if machine_type == lief.ELF.ARCH.X86_64:
-            cs_arch = capstone.CS_ARCH_X86
-            cs_mode = capstone.CS_MODE_64
-
-            # if is_64 else capstone.CS_MODE_32
-
-        elif machine_type == lief.ELF.ARCH.ARM:
-            # NOTE: Differentiating ARM vs. Thumb is not trivial solely from ELF headers
-            # Typically defaulting to ARM mode:
-            cs_arch = capstone.CS_ARCH_ARM
-            # If 64-bit is possible, it might actually be AArch64, see below.
-            # Usually 32-bit ARM is ARCH.ARM, but check your use case:
-            cs_mode = capstone.CS_MODE_ARM
-
-            if not is_le:
-                cs_mode |= capstone.CS_MODE_BIG_ENDIAN
-
-        elif machine_type == lief.ELF.ARCH.AARCH64:
-            cs_arch = capstone.CS_ARCH_ARM64
-            cs_mode = capstone.CS_MODE_ARM
-            if not is_le:
-                cs_mode |= capstone.CS_MODE_BIG_ENDIAN
-
-        elif machine_type == lief.ELF.ARCH.MIPS:
-            cs_arch = capstone.CS_ARCH_MIPS
-            # MIPS can be 32 or 64
-            cs_mode = (
-                capstone.CS_MODE_MIPS32
-                if not is_64
-                else capstone.CS_MODE_MIPS64
-            )
-            # Add endianness
-            if is_le:
-                cs_mode |= capstone.CS_MODE_LITTLE_ENDIAN
-            else:
-                cs_mode |= capstone.CS_MODE_BIG_ENDIAN
-
-        # ... You can add more ELF.ARCH mappings as needed ...
-
-    elif binary_format == lief.EXE_FORMATS.PE:
-        # PE-specific logic (Windows binaries)
-        # For example, use binary.header.machine (lief.PE.MACHINE)
-        # to map to the correct arch.
-        pe_header = binary.header
-        machine_type = pe_header.machine
-
-        # Example snippet:
-        if machine_type in (lief.PE.MACHINE.I386, lief.PE.MACHINE.INTEL_386):
-            cs_arch = capstone.CS_ARCH_X86
-            cs_mode = capstone.CS_MODE_32
-        elif machine_type == lief.PE.MACHINE.AMD64:
-            cs_arch = capstone.CS_ARCH_X86
-            cs_mode = capstone.CS_MODE_64
-        elif machine_type == lief.PE.MACHINE.ARM:
-            cs_arch = capstone.CS_ARCH_ARM
-            cs_mode = capstone.CS_MODE_ARM
-        elif machine_type == lief.PE.MACHINE.ARM64:
-            cs_arch = capstone.CS_ARCH_ARM64
-            cs_mode = capstone.CS_MODE_ARM
-        # ... etc. ...
-
-    elif binary_format == lief.EXE_FORMATS.MACHO:
-        # Mach-O-specific logic (macOS binaries)
-        # For example: check binary.header.cputype or .cpusubtype
-        macho_header = binary.header
-        cputype = macho_header.cpu_type
-        is_64 = macho_header.is_64
-
-        # Example snippet:
-        if cputype == lief.MachO.CPU_TYPES.X86:
-            cs_arch = capstone.CS_ARCH_X86
-            cs_mode = capstone.CS_MODE_64 if is_64 else capstone.CS_MODE_32
-        elif cputype == lief.MachO.CPU_TYPES.ARM:
-            # Could be 32-bit ARM or 64-bit ARM (ARM64)
-            if is_64:
-                cs_arch = capstone.CS_ARCH_ARM64
-                cs_mode = capstone.CS_MODE_ARM
-            else:
-                cs_arch = capstone.CS_ARCH_ARM
-                cs_mode = capstone.CS_MODE_ARM
-        # ... etc. ...
-
-    return cs_arch, cs_mode
-
-
-def get_lief_arch(filename):
-    """
-    Given a binary file, return a high-level LIEF architecture enum or identifier.
-    For ELF files, this is typically `lief.ELF.ARCH.*`.
-    For PE files, it's `lief.PE.MACHINE.*`.
-    For Mach-O, it's `lief.MachO.CPU_TYPE.*`.
-    """
-    binary = lief.parse(filename)
-    binary_format = binary.format
-
-    if binary_format == lief.Binary.FORMATS.ELF:
-        return (
-            binary.header.machine_type
-        )  # e.g. lief.ELF.ARCH.x86, lief.ELF.ARCH.ARM, etc.
-    elif binary_format == lief.Binary.FORMATS.PE:
-        return (
-            binary.header.machine
-        )  # e.g. lief.PE.MACHINE.I386, lief.PE.MACHINE.AMD64, etc.
-    elif binary_format == lief.Binary.FORMATS.MACHO:
-        return (
-            binary.header.cpu_type
-        )  # e.g. lief.MachO.CPU_TYPES.X86, lief.MachO.CPU_TYPES.ARM, etc.
-    else:
-        # If needed, handle other formats or return None
-        return None
-
-
-def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
-    """
-    Rewrite the instruction with nop
-    """
-
-    match target:
-        case Target.X86_64:
-            nop = Nop.X86_64
-        case Target.RISCV:
-            nop = Nop.RISCV_COMPACT
-        case Target.ARM_64:
-            nop = Nop.ARM_64
-        case Target.ARM_32:
-            nop = Nop.ARM_32
-        case _:
-            raise Exception("No support for nops")
-
-    if len(inst.bytes) % len(nop.value) != 0:
-        msg = f"No way to generate nop patch for inst len {len(inst.bytes)} and nop size {len(nop.value)}"
-        raise Exception(msg)
-
-    nop_patch = nop.value * int((len(inst.bytes) / len(nop.value)))
-    return nop_patch
 
 
 def generate_run_cmd(inp: Path, target: Target) -> list[str]:
@@ -341,7 +152,7 @@ def bit_para_run_helper(common, inst, target: Target):
             returncode, stdout, stderr = run_binary_w_input(
                 out_file, input, target, common.timeout
             )
-            returncode = shift_python_code(returncode)
+            returncode = shift_exit_code(returncode)
             results.append(
                 (out_file, returncode, inst, common, target, stdout, stderr, i)
             )
@@ -363,6 +174,7 @@ def nop_para_run_helper(common, inst, target: Target):
     # Generate hte mutated binary
     try:
         out_file = generate_nop_mutated_bin(common, target, inst)
+
     except Exception as e:
         print(f"Issue making binary: {e}")
         return Path(""), -100, inst, common, target, "", ""
@@ -371,7 +183,7 @@ def nop_para_run_helper(common, inst, target: Target):
         returncode, stdout, stderr = run_binary_w_input(
             out_file, common.program_input, target, common.timeout
         )
-        returncode = shift_python_code(returncode)
+        returncode = shift_exit_code(returncode)
         return out_file, returncode, inst, common, target, stdout, stderr
     except Exception as e:
         print(f"Failed to run bin with {e}")
@@ -452,49 +264,6 @@ def run_binary_w_input(
     )
 
     return process.returncode, stdout.decode(), stderr.decode()
-
-
-def get_addrs(binary_path: Path):
-    """
-    get all the instuctions addrs in binary
-    """
-
-    binary = lief.parse(binary_path)
-
-    if not binary:
-        raise ValueError("Failed to parse the binary.")
-
-    # Identify the code section (usually .text for ELF/Mach-O, or a code section in PE)
-    # For simplicity, let's assume ELF/Mach-O and look for ".text"
-    text_section = binary.get_section(".text")
-
-    if not text_section:
-        # For PE binaries, you might look for a section with execute permissions
-        # E.g., something like:
-        # text_section = next((s for s in binary.sections if s.characteristics & lief.PE.SECTION_CHARACTERISTICS.MEM_EXECUTE), None)
-        raise ValueError(
-            "No .text section found. Adjust the code to find the code section in this binary."
-        )
-
-    # Extract the raw bytes and the virtual address of the .text section
-    code_bytes = list(text_section.content)
-    code_va = text_section.virtual_address
-
-    # Convert the list of bytes into a bytes object for disassembly
-    code_data = bytes(code_bytes)
-
-    # Initialize Capstone for x86-64
-    md = Cs(CS_ARCH_X86, CS_MODE_64)
-    md.detail = False  # We only need instruction addresses, not details
-
-    instruction_addresses = []
-
-    # Disassemble the entire code section
-    for insn in md.disasm(code_data, code_va):
-        instruction_addresses.append(insn)
-
-    return instruction_addresses
-
 
 def is_valid_instruction(opcode_bytes, target):
     """
@@ -647,9 +416,6 @@ def generate_bit_mutated_file(
     if not good_inst:
         return None
 
-    # inst_bits = list(
-    #    "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
-    # )
 
     # Re-adjust the patch so that it is a list of ints
     patch = [
@@ -751,7 +517,7 @@ def bit(
                     target=target,
                     timeout=common.timeout,
                 )
-                status = shift_python_code(status)
+                status = shift_exit_code(status)
 
             except Exception:
                 status = -900
@@ -792,6 +558,12 @@ def disasm(
     verbose: bool,
     pad: int = 2,
 ) -> str:
+    """
+    An over-engineered function to re-create objdump... but this allows 
+    me to easily inject its results into a PDF report! :D (and also make 
+    the output colorful) 
+    """
+
     pretty_insns = []
     for bin in binary:
         disassembly = disassemble_text_section(bin)
@@ -817,11 +589,7 @@ def disasm(
 
         bin_pretty_insns = []
         # Iterate over the instructions in the range of the addrs
-        for thing in filter_disasm:  # kjj^[
-            #    x
-            #    for x in disassembly
-            #    if x.address >= start_addr and x.address <= end_addr
-            # ]:
+        for thing in filter_disasm: 
 
             # Crate the bytes array
             byte_ar = thing.bytes
@@ -996,48 +764,6 @@ def nop_exp(
     return df
 
 
-def generate_nop_mutated_bin(common, target, inst) -> Path:
-    """
-    Geneate a single mutated binary
-    """
-
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst.address)}"
-    )
-
-    shutil.copy(common.program_file, out_file)
-
-    orig = lief.parse(common.program_file)
-    binary = lief.parse(out_file)
-
-    #debug_sections = {}
-    #for section in binary.sections:
-    #    if section.name.startswith(".debug"):
-    #        debug_sections[section.name] = section.content
-
-    nop_patch = gen_nop_patch(inst, target=target)
-
-    # Patch to bits
-    # bits_patch = f"".join(str(bin(x)) for x in nop_patch).encode()
-
-    # bits = b"11010101000000110010000000011111"
-
-    # TODO: REMOVE: This should be reduentant
-    # valid, _ = is_valid_instruction( bits, target)
-
-    # if not valid:
-    #    raise Exception
-
-    # Patch the bytes at the given virtual address
-    binary.patch_address(inst.address, nop_patch)
-
-    preserve_debug_sections(orig, binary)
-    binary.write(str(out_file.resolve()))
-
-    out_file.chmod(0o755)
-
-    return out_file
-
 
 # TODO: Removing this as a command in favor of nop_exp
 # @app.command
@@ -1047,7 +773,6 @@ def nop(
     """
     Patch all the addrs in the binar , and save bins that
     have a succesffuly exist code what running WITH NO FLAGS
-
     """
 
     common.out_dir.mkdir(exist_ok=True)
@@ -1088,7 +813,7 @@ def nop(
                 target=target,
                 timeout=common.timeout,
             )
-            status = shift_python_code(status)
+            status = shift_exit_code(status)
         except Exception as e:
             status = -900
             stdout = ""
@@ -1185,9 +910,6 @@ def show_results(
 
         print(f"The binaries with the expected output were:\n{names}")
         print(info[["return_code", "program_stdout", "binary_path"]])
-
-    # freqs = df["return_code"].value_counts().to_dict()
-    # correct_stdouts = df[df["program_stdout"].str.contains(common.expected_stdout, na=False)]
 
     new_freqs = calc_freqs(df, common, other_returncodes)
     print_histogram(new_freqs)
@@ -1563,7 +1285,7 @@ def compile_many(inp: Path, out_dir: Path, targets: list[Target]):
     for target in targets:
         match target:
             case Target.X86_64:
-                compiler = "gcc"
+                compiler = "gcc -g"
             case Target.RISCV:
                 compiler = "riscv64-linux-gnu-gcc"
             case Target.ARM_64:
@@ -1596,7 +1318,7 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
 
     match target:
         case Target.X86_64:
-            compiler = "gcc"
+            compiler = "gcc -g"
         case Target.RISCV:
             compiler = "riscv64-linux-gnu-gcc"
         case Target.ARM_64:
@@ -1621,7 +1343,7 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
 
     match target:
         case Target.X86_64:
-            compiler = "gcc"
+            compiler = "gcc -g"
         case Target.RISCV:
             compiler = "riscv64-linux-gnu-gcc"
         case Target.ARM_64:
