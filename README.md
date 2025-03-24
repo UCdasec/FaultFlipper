@@ -1,4 +1,4 @@
-# Welcome to FaultSim 👋
+# Welcome to FaultFlipper 👋
 ![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?cacheSeconds=2592000)
 
 > Hardware Fault Simulator at the Software Level
