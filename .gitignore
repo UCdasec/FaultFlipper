@@ -6,3 +6,5 @@
 results
 experiments
 DEP
+
+__pycache__
