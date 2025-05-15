@@ -1,10 +1,12 @@
 # pixi environments
 .pixi
+pixi.lock
 *.egg-info
 
 # results 
+faultsim_log/
 results
 experiments
 DEP
 
-__pycache__
+__pycache__/

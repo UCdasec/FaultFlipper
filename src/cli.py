@@ -267,10 +267,17 @@ def timed_run_binary_w_input(
         stderr=subprocess.PIPE,
     )
 
-    # Gather the outputs
-    stdout, stderr = process.communicate(
-        input=program_input.encode(), timeout=timeout
-    )
+    try:
+        # Gather the outputs
+        stdout, stderr = process.communicate(
+            input=program_input.encode(), timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = b"", b"timeout expired"
+    if process.returncode is None:
+        process.returncode = LinuxExitCodes.EX_SIGSEGV
+
     runtime = datetime.now() - start
 
     return (
@@ -307,10 +314,16 @@ def run_binary_w_input(
         stderr=subprocess.PIPE,
     )
 
-    # Gather the outputs
-    stdout, stderr = process.communicate(
-        input=program_input.encode(), timeout=timeout
-    )
+    try:
+        # Gather the outputs
+        stdout, stderr = process.communicate(
+            input=program_input.encode(), timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = b"", b"timeout expired"
+    if process.returncode is None:
+        process.returncode = LinuxExitCodes.EX_SIGSEGV
 
     return process.returncode, stdout.decode(), stderr.decode()
 
