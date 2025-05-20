@@ -31,6 +31,8 @@ alive-progress = ">=3.2.0, <4"
 angr = ">=9.2.65, <10"
 claripy = ">=9.2.65, <10"
 deal = ">=4.24.5, <5"
+matplotlib = ">=3.10.0"
+scikit-learn = ">=1.6.0"
 
 [tool.pixi.scripts]
 nop = "python src/cli.py brute-patches"

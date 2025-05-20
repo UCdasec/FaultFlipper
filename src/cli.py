@@ -69,7 +69,7 @@ other_returncodes = [
 
 
 
-from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin
+from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, generate_nop_mutated_bin
 
 
 DEBUG = True
