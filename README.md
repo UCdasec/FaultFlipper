@@ -3,6 +3,9 @@
 
 > Hardware Fault Simulator at the Software Level
 
+## NOTICE: 
+I am splitting this tool into two seperate clis.... bare with me. 
+
 ## Installation
 
 We use pixi (conda replacement) for dependency management where possible. 
@@ -37,10 +40,10 @@ sudo apt install texlive-xetex
 ```
 
 ## Usage
-The CLI script is the file `src/main.py`. This file has a handful of commands
+The CLI script is the file `src/cli.py`. This file has a handful of commands
 that can be run to analyze a binary. To see a list of commands run:
 ```sh
-python src/main.py --help
+python src/cli.py --help
 ```
 
 ## Example Experiments
@@ -134,6 +137,12 @@ I will do (2)
 - [ ] Make a "nop_exp" that does not require source code
 
 - [ ] Investigate differences between parallel implementaitons and the sequential implementations
+
+- [ ] Add support for more complex compile commands 
+    - [ ] Provide a shell script for compilation 
+    - [ ] Provide a make file 
+
+- [ ] When using more complex compile commands still track flags
 
 
 ***

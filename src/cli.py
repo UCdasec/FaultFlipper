@@ -1,7 +1,6 @@
 import lief
 from typing import List, Tuple, Annotated, Optional
 import matplotlib.pyplot as plt
-from datetime import timedelta
 from report_utils import list_tuple_table, generate_pdf_report
 from sklearn.model_selection import train_test_split
 import sklearn
@@ -12,13 +11,9 @@ import logging
 import dynaconf
 from alive_progress import alive_bar
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import os
-from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 import json
 import numpy as np
-import warnings
 from dataclasses import dataclass, fields
-from bitstring import BitArray
 from pathlib import Path
 from capstone import (
     Cs,
@@ -53,6 +48,7 @@ from logger_utils import setup_logger
 #logger = logging.getLogger(__name__)
 #logger.addHandler(logging.NullHandler())
 
+from cli_utils import CommandParameters, show_results, calc_freqs
 
 
 
@@ -75,36 +71,6 @@ other_returncodes = [
 
 from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin
 
-
-
-@Parameter(name="*")
-@dataclass
-class CommandParameters:
-    program_file: Path
-    out_dir: Path
-    program_input: str
-    expected_stdout:  str | Path #| list[str]
-    expected_returncode: int
-    list_expected: bool = False
-    timeout: int = 5
-    save_results: Union[Path, None] = None
-    yes: bool = False
-
-    def to_dict(self):
-        if self.save_results is None:
-            self.save_results = Path("")
-
-        return {
-            "program_file": str(self.program_file.absolute()),
-            "out_dir": str(self.out_dir.absolute()),
-            "program_input": self.program_input,
-            "expected_stdout": ",".join(self.expected_stdout),
-            "expected_returncode": self.expected_returncode,
-            "list_expected": self.list_expected,
-            "timeout": self.timeout,
-            "save_results": str(self.save_results.absolute()),
-            "yes": self.yes,
-        }
 
 
 def generate_run_cmd(inp: Path, target: Target) -> list[str]:
@@ -949,7 +915,7 @@ def nop_no_comp_inout(
     ]
 
     results: list[NopExperimentResult] = []
-    file_accs = {}
+    file_results = {}
     
 
     # Iterate over single instructions
@@ -958,13 +924,18 @@ def nop_no_comp_inout(
         tmp+=1
         out_file = generate_nop_mutated_bin(common, target, inst)
 
-        file_accs[out_file.name] = [0,0]
+        #file_accs[out_file.name] = [0,0]
+
+        file_results[out_file.name] = {
+            'correct' : [],
+            'incorrect' : [],
+            'failed' : []
+        }
 
         # Run all the possible inputs and outputs
         for cur_in, cur_out in zip(ins,outs):
 
             # Test the binary
-            #try:
             status, stdout, _ = run_binary_w_calltime_input(
                 out_file,
                 cur_in,
@@ -975,12 +946,11 @@ def nop_no_comp_inout(
                 status = shift_exit_code(status)
 
                 if cur_out in stdout:
-                    file_accs[out_file.name][0]+=1
-                    #logger.debug(f"File {out_file.name} was correct")
+                    file_results[out_file.name]['correct'].append(cur_in)
                 else:
-                    file_accs[out_file.name][1]+=1
+                    file_results[out_file.name]['incorrect'].append(cur_in)
             else:
-                file_accs[out_file.name] = (None, None)
+                file_results[out_file.name]['failed'].append(cur_in)
 
             result = NopExperimentResult(
                 source_file=source_code,
@@ -999,42 +969,67 @@ def nop_no_comp_inout(
             results.append(result)
 
 
+
     # Find which files had a drop in excepted correct
     # Frequency plot for number of correct 
     freqs = {'failed_to_run_or_no_output':0}
-    for name, (cor, _) in file_accs.items():
 
-        if cor is None:
-            freqs[' failed_to_run_or_no_output'] += 1
+    for name, res in file_results.items():
+        file_correct = len(res['correct'])
+        file_incorrect = len(res['incorrect'])
+        file_failed = len(res['failed'])
 
-        # Drop 
-        if cor not in freqs.keys():
-            freqs[cor] = 0
+        if file_incorrect not in freqs.keys():
+            freqs[str(file_correct)] = 0
 
-        freqs[cor]+=1
+        freqs['failed_to_run_or_no_output'] += file_failed
+
+
+
+    #for name, (cor, _) in file_accs.items():
+
+    #    if cor is None:
+    #        freqs[' failed_to_run_or_no_output'] += 1
+
+    #    # Drop 
+    #    if cor not in freqs.keys():
+    #        freqs[cor] = 0
+
+    #    freqs[cor]+=1
     print(f"The frequencies: {freqs}")
 
     # Find a few that had >0 but less than xpected to print 
     total_dropped = 0
-    total_of_atleast_one_drop = 0
-    programs_that_ran = 0
-    programs_that_had_one_or_more_drop = 0
-    for name, (cor, incor) in file_accs.items():
-        if cor is None:
-            continue 
+    num_that_had_drop= 0
+    non_zero_total_dropped = 0
+    non_zero_num_that_had_drop= 0
+    for name, result in file_results.items():
 
-        total_dropped+=incor
-        programs_that_ran +=1
-        if cor > 0 and cor < expected_correct:
-            print(f"Name {name} had {cor} correct | {incor} drops")
-            total_of_atleast_one_drop += incor
-            programs_that_had_one_or_more_drop +=1
+        # Skip cases that got the same number of correct predictions
+        if len(result['correct']) == expected_correct:
+            continue
 
-    avg_drop_all_runable =  0 if programs_that_ran == 0 else total_dropped/programs_that_ran
-    avg_drop_when_drop_happend =  0 if programs_that_had_one_or_more_drop == 0 else total_of_atleast_one_drop/programs_that_had_one_or_more_drop
+        # Get the total_dropped in cases where we did not get the expected 
+        # number correct 
+        total_dropped+=(expected_correct-len(results['correct']))
+        num_that_had_drop+=1
 
-    print(f"The total average dropped amount of all programs that ran: {avg_drop_all_runable }")
-    print(f"Of the mutations that dropped atleast 1, the average drops was: {avg_drop_when_drop_happend}")
+        if len(result['correct']) != expected_correct:
+            non_zero_total_dropped+=(expected_correct-len(results['correct']))
+            non_zero_num_that_had_drop+=1
+
+    avg_drop =  None if num_that_had_drop == 0 else total_dropped/num_that_had_drop
+    non_zero_avg_drop =  None if non_zero_num_that_had_drop == 0 else non_zero_total_dropped/non_zero_num_that_had_drop
+
+    if avg_drop is None:
+        print(f"ZERO PROGRAMS DROPPED!!")
+    else:
+        print(f"Of the mutations that dropped atleast 1, the average drops was: {avg_drop}")
+
+    if non_zero_avg_drop is None:
+        print(f"ZERO PROGRAMS DROPPED 1 but not all!!")
+    else:
+        print(f"Of the mutations that dropped atleast 1, and had atleast 1 accurate prediction the average drops was: {non_zero_avg_drop}")
 
     df = dataclass_to_dataframe(results)
     save_df(df, common.save_results)
@@ -1088,11 +1083,7 @@ def nop_no_comp(
     results: list[NopExperimentResult] = []
 
     # Iterate over single instructions
-    tmp = 0 
     for inst in alive_it(disasm):
-        tmp+=1
-        #if tmp >= 20:
-        #    break
         # Generate the mutated binary
         out_file = generate_nop_mutated_bin(common, target, inst)
 
@@ -1131,149 +1122,6 @@ def nop_no_comp(
     show_results(common, df, other_returncodes)
 
     return df
-
-
-def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
-    """
-    Get the frequencies of returncdoes
-    """
-
-    freqs = df["return_code"].value_counts().to_dict()
-    if isinstance(common.expected_stdout, list):
-        correct_stdouts = []
-    else:
-        correct_stdouts = df[
-        df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    ]
-
-    new_freqs = {}
-    weird_codes = {}
-
-    # For return value and the number of returns that had that value
-    for k, v in freqs.items():
-        try:
-            return_code_name = str(LinuxExitCodes(k).name) + f" ({k})"
-        except:
-            return_code_name = str(k)
-            weird_codes[return_code_name] = list(
-                df[df["return_code"] == k]["binary_path"]
-            )
-
-        # Replace with a fun name if otherwise specified
-        for name, value in other_returncodes:
-            if k == value:
-                return_code_name = name + f" ({value})"
-
-        # Split the return code of 1 into two groups:
-        # 1. Returncode 1 + Good stdout
-        # 2. Returncode 1 + bad stdout
-        if k == 0:
-            new_freqs[return_code_name] = len(correct_stdouts)
-            if v - len(correct_stdouts) > 0:
-                new_freqs["Exit 0 : Bad STDOUT"] = v - len(correct_stdouts)
-        else:
-            new_freqs[return_code_name] = v
-
-    # Make the output a list of tuples
-    out = [(k, v) for k, v in new_freqs.items()]
-
-    return out
-
-
-def show_results(
-    common: CommandParameters,
-    df: pd.DataFrame,
-    other_returncodes: list[tuple[str, int]],
-    print_df: bool = False,
-):
-    if print_df:
-        console.print(
-            df[
-                [
-                    x
-                    for x in df.columns
-                    if x not in ["binary_path", "other_returncodes"]
-                ]
-            ]
-        )
-
-
-    if common.list_expected:
-        good_names = set([])
-
-        print(f"HEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRRRR")
-        print(f"THe expected stdout is: {common.expected_stdout}")
-        if isinstance(common.expected_stdout, str):
-            info = df[
-                df["program_stdout"].str.contains(common.expected_stdout, na=False)
-            ]
-            good_names =  set([Path(x).name for x in list(info["binary_path"])])
-        else:
-            print(f"Using the list of stdout")
-            for line in common.expected_stdout:
-                info = df[
-                    df["program_stdout"].str.contains(line, na=False)
-                ]
-                out_names =  set([Path(x).name for x in list(info["binary_path"])])
-                print(f"Have {len(out_names)}")
-
-                if len(good_names) == 0:
-                    good_names = out_names
-                else:
-                    good_names = good_names.intersection(out_names)
-
-            #good_names.append(names)
-
-
-        print(f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}")
-        print(info[["return_code", "program_stdout", "binary_path"]])
-
-    new_freqs = calc_freqs(df, common, other_returncodes)
-    print_histogram(new_freqs)
-
-    # Make a histogam of program stdouts
-    stdout_freqs = df["program_stdout"].value_counts().to_dict()
-
-    # Get the outputs that contain the epected output
-    correct_freq = {
-        0: v for k, v in stdout_freqs.items() if common.expected_stdout in k
-    }
-
-    if correct_freq != {}:
-        print(
-            f"{correct_freq[0]} programs out of {len(df)} total had the expected stdout"
-        )
-    else:
-        print(f"0 programs out of {len(df)} had the expected stdout")
-    return
-
-
-def print_histogram(results):
-    """
-    results: dict[str, int]
-       A dictionary mapping 'Run Result' -> count
-    """
-    console = Console()
-    table = Table(title="Results Histogram")
-
-    table.add_column("Run Result", justify="left")
-    table.add_column("Frequency", justify="right")
-    table.add_column("Bar", justify="left")
-
-    vals = [x[1] for x in results]
-    max_count = max(vals) if results else 0
-    bar_width = 30  # Adjust to taste
-
-    for result_type, count in results:
-        # Scale the bar to max_count
-        bar_length = int((count / max_count) * bar_width) if max_count else 0
-        bar = "█" * bar_length
-
-        table.add_row(result_type, str(count), bar)
-
-    console.print(table)
-
-    return
 
 
 @app.command()
