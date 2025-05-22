@@ -10,6 +10,15 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
+def tree_structure_stats(dt):
+    n_nodes   = dt.tree_.node_count
+    n_leaves  = dt.tree_.n_leaves
+    max_depth = dt.tree_.max_depth
+    return n_nodes, n_leaves, max_depth
+
+def mlp_param_count(mlp):
+    return sum(w.size + b.size for w, b in zip(mlp.coefs_, mlp.intercepts_))
+
 def convert_model(model, out_file:Path, model_name):
     cmodel = emlearn.convert(model, dtype='float')
     code = cmodel.save(file=str(out_file.absolute()), name=model_name)
@@ -109,6 +118,11 @@ if __name__ == "__main__":
     Xd_train, Xd_test, yd_train, yd_test = train_test_split(
         Xd, yd, test_size=0.2, random_state=0)
 
+    print(f"Digits type: {Xd.dtype}")
+    print(f"Digits min: {Xd.min()}")
+    print(f"Digits max: {Xd.max()}")
+    print(Xd[0])
+
     
     # Save splits -face - save the 0 to 255 version
     save_images(Xf_test_u8, yf_test, image_dir.joinpath('test/faces'), (64,64))
@@ -128,6 +142,8 @@ if __name__ == "__main__":
     print(f"[FACE - MLP]: F1 {f1}")
 
 
+    params = mlp_param_count(mlp_face)
+    print(f"The mlp face has {params} parameters")
 
     # Digit - mlp
     clf = digit_model_mlp(Xd_train, yd_train)
@@ -138,6 +154,8 @@ if __name__ == "__main__":
     print(f"[DIGIT - MLP]: Accuracy: {acc}")
     print(f"[DIGIT - MLP]: F1 {f1}")
 
+    params = mlp_param_count(clf)
+    print(f"The mlp digits has {params} parameters")
 
     # Digit - dt
     dt_dig= digit_model_dt(Xd_train, yd_train)
@@ -146,7 +164,12 @@ if __name__ == "__main__":
     f1   = f1_score(yd_test, y_pred, average='weighted')   # multi-class friendly
     print(f"[DIGIT - DT]: Accuracy: {acc}")
     print(f"[DIGIT - DT]: F1 {f1}")
+    print(f"DIGIT - DT]: Corerct: {(y_pred==yd_test).sum()}")
 
+    nodes, leaves, md = tree_structure_stats(dt_dig)
+    print(f"n_nodes  : {nodes}") 
+    print(f"n_leaves : {leaves}")  
+    print(f"max_depth: {md}")  
 
 
     # At this point we have trained and saved 3 models, and tested
