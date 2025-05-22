@@ -1,4 +1,5 @@
 import lief
+from typing import List, Tuple, Annotated, Optional
 import matplotlib.pyplot as plt
 from datetime import timedelta
 from report_utils import list_tuple_table, generate_pdf_report
@@ -7,6 +8,7 @@ import sklearn
 from datetime import datetime
 import shutil
 import copy
+import logging
 import dynaconf
 from alive_progress import alive_bar
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -30,10 +32,8 @@ from capstone import (
 
 import capstone
 from cyclopts import App, Parameter
-from typing import Annotated, Optional
 from rich.table import Table
 from rich.console import Console
-from typing_extensions import Annotated
 from enum import Enum
 import subprocess
 import pandas as pd
@@ -47,10 +47,14 @@ from typing import Union, Any
 from alive_progress import alive_it
 
 
-import logging 
 import sys
-logger = logging.getLogger(__name__)
-logger.addHandler(logging.NullHandler())
+from logger_utils import setup_logger
+
+#logger = logging.getLogger(__name__)
+#logger.addHandler(logging.NullHandler())
+
+
+
 
 console = Console()
 app = App()
@@ -71,25 +75,6 @@ other_returncodes = [
 
 from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin
 
-
-DEBUG = True
-
-def enable_debug_logging():
-
-    # Create a StreamHandler that logs to sys.stdout
-    handler = logging.StreamHandler(sys.stdout)
-    # Set handler's level to DEBUG so it outputs all debug messages.
-    handler.setLevel(logging.DEBUG)
-    # Define a simple logging format
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-    # Add the handler to your logger
-    logger.addHandler(handler)
-    # Set the logger's overall level to DEBUG
-    logger.setLevel(logging.DEBUG)
-    return
 
 
 @Parameter(name="*")
@@ -138,8 +123,8 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
         case Target.ARM_32:
             return [
                 "qemu-arm-static",
-                "-L",
-                "/usr/arm-linux-gnueabi",
+                #"-L",
+                #"/usr/arm-linux-gnueabi",
                 f"{inp.expanduser().absolute()}",
             ]
         case Target.ARM_64:
@@ -288,9 +273,55 @@ def timed_run_binary_w_input(
     )
 
 
+def run_binary_w_calltime_input(
+    path: Path, program_input: str, target: Target, timeout: int = 60
+)->Tuple[int|None, str, str] | None:
+    """
+    Run a binary and capture its output
+    """
+
+    #if program_input[-1:] != "\n":
+    #    program_input += "\n"
+
+    cmd = generate_run_cmd(path, target)
+    cmd = ["timeout", f"{timeout}s"] + cmd
+    cmd.append(program_input)
+
+    # Verify that the path exists and is a file
+    if not path.is_file():
+        print(f"Error: The path '{path}' does not exist or is not a file.")
+        return None
+
+    # Run the compiled C program
+    process = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    try:
+        # Gather the outputs
+        stdout, stderr = process.communicate(
+            timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout, stderr = b"TIMEOUT", b"timeout expired"
+        return None, stdout.decode(), stderr.decode()
+
+    #TODO: Allow for returncode of None
+    #if process.returncode is None:
+    #    process.returncode = LinuxExitCodes.EX_SIGSEGV - 255
+
+    return process.returncode, stdout.decode(), stderr.decode()
+
+
+
+
 def run_binary_w_input(
     path: Path, program_input: str, target: Target, timeout: int = 60
-):
+)->Tuple[int|None, str, str] | None:
     """
     Run a binary and capture its output
     """
@@ -301,10 +332,12 @@ def run_binary_w_input(
     cmd = generate_run_cmd(path, target)
     cmd = ["timeout", f"{timeout}s"] + cmd
 
+    #print(f"Command is: {cmd}")
+
     # Verify that the path exists and is a file
     if not path.is_file():
         print(f"Error: The path '{path}' does not exist or is not a file.")
-        return
+        return None
 
     # Run the compiled C program
     process = subprocess.Popen(
@@ -321,9 +354,12 @@ def run_binary_w_input(
         )
     except subprocess.TimeoutExpired:
         process.kill()
-        stdout, stderr = b"", b"timeout expired"
-    if process.returncode is None:
-        process.returncode = LinuxExitCodes.EX_SIGSEGV
+        stdout, stderr = b"TIMEOUT", b"timeout expired"
+        return None, stdout.decode(), stderr.decode()
+
+    #TODO: Allow for returncode of None
+    #if process.returncode is None:
+    #    process.returncode = LinuxExitCodes.EX_SIGSEGV - 255
 
     return process.returncode, stdout.decode(), stderr.decode()
 
@@ -875,6 +911,138 @@ def nop_exp(
 
     return df
 
+# TODO: Removing this as a command in favor of nop_exp
+@app.command
+def nop_no_comp_inout(
+    common: CommandParameters, 
+    source_code: Optional[Path] = None, 
+    ins: List[str] | None = None, 
+    outs: List[str] | None = None,
+    expected_correct: int | None = None,
+) -> pd.DataFrame:
+    """
+    Patch all the addrs in the binar , and save bins that
+    have a succesffuly exist code what running WITH NO FLAGS
+    """
+
+    print(f"The expected correct is: {expected_correct}")
+
+    common.out_dir.mkdir(exist_ok=True)
+
+    disasm = disassemble_text_section(common.program_file)
+    if not common.yes:
+        cont = str(input(f"Good for {len(disasm)} instructions? (Yy/Nn)"))
+
+        if cont.lower() != "y":
+            return
+
+    # Load the target type
+    target = detect_target(common.program_file)
+    logger.debug(f"Detected Target: {target}")
+
+    other_returncodes = [
+        #("critical_code_ran", 0),
+        #("critical_code_did_not_run", 97),
+        ("failed_to_run", None),
+        ("correct_prediction", 0),
+        ("maybe_file_load_error", 1),
+    ]
+
+    results: list[NopExperimentResult] = []
+    file_accs = {}
+    
+
+    # Iterate over single instructions
+    tmp = 0
+    for inst in alive_it(disasm):
+        tmp+=1
+        out_file = generate_nop_mutated_bin(common, target, inst)
+
+        file_accs[out_file.name] = [0,0]
+
+        # Run all the possible inputs and outputs
+        for cur_in, cur_out in zip(ins,outs):
+
+            # Test the binary
+            #try:
+            status, stdout, _ = run_binary_w_calltime_input(
+                out_file,
+                cur_in,
+                target=target,
+                timeout=common.timeout,
+            )
+            if status is not None:
+                status = shift_exit_code(status)
+
+                if cur_out in stdout:
+                    file_accs[out_file.name][0]+=1
+                    #logger.debug(f"File {out_file.name} was correct")
+                else:
+                    file_accs[out_file.name][1]+=1
+            else:
+                file_accs[out_file.name] = (None, None)
+
+            result = NopExperimentResult(
+                source_file=source_code,
+                unmutated_binary=common.program_file,
+                binary_path=out_file,
+                nopped_addr=inst.address,
+                program_input=cur_in,
+                return_code=status,
+                program_stdout=stdout,
+                target=target,
+                expected_returncode=common.expected_returncode,
+                expected_stdout=cur_out,
+                custom_returncodes=other_returncodes,
+                source_code=source_code,
+            )
+            results.append(result)
+
+
+    # Find which files had a drop in excepted correct
+    # Frequency plot for number of correct 
+    freqs = {'failed_to_run_or_no_output':0}
+    for name, (cor, _) in file_accs.items():
+
+        if cor is None:
+            freqs[' failed_to_run_or_no_output'] += 1
+
+        # Drop 
+        if cor not in freqs.keys():
+            freqs[cor] = 0
+
+        freqs[cor]+=1
+    print(f"The frequencies: {freqs}")
+
+    # Find a few that had >0 but less than xpected to print 
+    total_dropped = 0
+    total_of_atleast_one_drop = 0
+    programs_that_ran = 0
+    programs_that_had_one_or_more_drop = 0
+    for name, (cor, incor) in file_accs.items():
+        if cor is None:
+            continue 
+
+        total_dropped+=incor
+        programs_that_ran +=1
+        if cor > 0 and cor < expected_correct:
+            print(f"Name {name} had {cor} correct | {incor} drops")
+            total_of_atleast_one_drop += incor
+            programs_that_had_one_or_more_drop +=1
+
+    avg_drop_all_runable =  0 if programs_that_ran == 0 else total_dropped/programs_that_ran
+    avg_drop_when_drop_happend =  0 if programs_that_had_one_or_more_drop == 0 else total_of_atleast_one_drop/programs_that_had_one_or_more_drop
+
+    print(f"The total average dropped amount of all programs that ran: {avg_drop_all_runable }")
+    print(f"Of the mutations that dropped atleast 1, the average drops was: {avg_drop_when_drop_happend}")
+
+    df = dataclass_to_dataframe(results)
+    save_df(df, common.save_results)
+    show_results(common, df, other_returncodes)
+
+    return df
+
+
 
 
 # TODO: Removing this as a command in favor of nop_exp
@@ -914,6 +1082,7 @@ def nop_no_comp(
         ("critical_code_ran", 0),
         ("critical_code_did_not_run", 97),
         ("failed_to_run", -900),
+        ("timeout", None)
     ]
 
     results: list[NopExperimentResult] = []
@@ -935,7 +1104,7 @@ def nop_no_comp(
                 target=target,
                 timeout=common.timeout,
             )
-            print(stdout)
+            #print(stdout)
             status = shift_exit_code(status)
         except Exception as e:
             status = -900
@@ -2282,6 +2451,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         "many_bit": many_bit,
         "para_nop": para_nop,
         "para_bit": para_bit,
+        "nop_no_comp_inout": nop_no_comp_inout,
     }
 
     for exp_name, exp in experiments.items():
@@ -2320,6 +2490,16 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
 
             # Get the other required params
             cmd_func(params, target=target, num_cpus=num_cpus)
+        elif command_name == "nop_no_comp_inout":
+
+            ins = formated.pop('ins')
+            outs = formated.pop('outs')
+            target = formated.pop('target')
+            nocomp = formated.pop('no_compile')
+            expected_correct = int(formated.pop('expected_correct'))
+            params = CommandParameters(**formated)
+            cmd_func(params, ins=ins, outs=outs, expected_correct=expected_correct) #, target=target, num_cpus=num_cpus)
+
 
     return
 
@@ -2430,24 +2610,6 @@ def get_overhead(
 
     return
 
-
-@app.command
-def cumulative_report(inp: Path, out: Path):
-    """
-    For any experiemnt results in the sub directory generate a cumulative
-    report
-    """
-
-    # Each report path has the raw results saved in the .csv
-    # This contains expected returncode
-    # expected stdout
-    # actual stdout
-    # actual returncode
-    # Mutation type
-
-    # So first load a giant dataframe of all the results
-
-    return
 
 def dataset_split_random(data, val_size=0.25, test_size=0.25, random_state=3, column='split'):
     """
@@ -2667,8 +2829,7 @@ def new_nn_test(inp:Path, out:Path, test_size:int):
 
         for i in baseline_correct_predictions:
             try:
-                stdout = class_helper(bin, i, 2, arm)
-
+                stdout = class_helper(bin, i, 1, arm)
                 if "CORRECT" in stdout.decode():
                     bin_results['correct'].append(bin)
                 elif "WRONG" in stdout.decode():
@@ -2780,10 +2941,71 @@ def gen_fault_plot(inp:Path):
     return 
 
 
+@app.command()
+def generate_exp_file( exp_file_out: Path, out_dir:Path, target:Target, timeout:int,  expected_stdouts: str,  program_inputs:str, program_file:Path, expected_correct: int):
+    """
+    Save a toml that defines the experiment for the neural networks
+
+    With this, a binary is ran on many input and expected output pairs
+    """
+
+
+    inputs_str = ",".join([f"'{x}'" for x in program_inputs])
+    output_str = ",".join([f"'{x}'" for x in expected_stdouts])
+
+    file = [f'[experiment.nop_no_comp_inout]',
+        f"command = 'nop_no_comp_inout'",
+        f"expected-stdout = ''",
+        f"program-input= ''",
+        f"program-file = '{str(program_file.absolute())}'",
+        f"ins = [{inputs_str}]",
+        f"expected-returncode = ''",
+        f"outs = [{output_str}]",
+        f"list-expected = false",
+        f"timeout = {timeout}",
+        f"out-dir = '{str(out_dir.absolute())}'",
+        "yes= true ",
+        f"target = '{target.name}' ",
+        f"expected-correct= '{expected_correct}' ",
+        f"no_compile= true "]
+
+    # Make parent out 
+    if not exp_file_out.parent.exists():
+        exp_file_out.parent.mkdir(parents=True)
+
+    with open(exp_file_out, 'w') as f:
+        for line in file:
+            f.write(line + '\n')
+
+    return 
+
+
+@app.command()
+def nn_generate_exp_files( exp_file: Path, binary:Path, timeout:int, out_dir:Path,  input_dir:Path, expected_correct:int):
+    """
+    A temporary function to generate experiemnt files for classifier testing
+    """
+
+    target = detect_target(binary)
+
+    outs = []
+    ins = []
+
+    # Iterate over the images 
+    for file in input_dir.glob('*'):
+        _, _, lbl = file.name.split('_')
+        lbl = lbl.split('.')[0]
+        ins.append(str(file.absolute()))
+        outs.append(lbl)
+
+    generate_exp_file(exp_file, out_dir, target=target, timeout=timeout, expected_stdouts=outs, program_inputs=ins, program_file=binary,expected_correct=expected_correct)
+
+    return 
 
 
 if __name__ == "__main__":
-    if DEBUG:
-        print(f"logger enabled")
-        enable_debug_logging()
+    setup_logger(console_level="DEBUG")
+
+    logger = logging.getLogger(__name__)   # module-level logger
+
     app()
