@@ -24,7 +24,6 @@ from capstone import (
     CS_MODE_RISCVC,
     CS_MODE_LITTLE_ENDIAN
 )
-
 import capstone
 from cyclopts import App, Parameter
 from rich.table import Table
@@ -33,19 +32,15 @@ from enum import Enum
 import subprocess
 import pandas as pd
 from enums import LinuxExitCodes
-
-# All faults are a patch of some kind.
-
-
-from dataclasses import dataclass
 from typing import Union, Any
 from alive_progress import alive_it
 
 
 from logger_utils import setup_logger
 
-from cli_utils import CommandParameters, show_results, calc_freqs
+from cli_utils import CommandParameters, show_results, calc_freqs, generate_run_cmd, BitFlipExperimentResult, NopExperimentResult
 
+from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin
 
 
 console = Console()
@@ -56,56 +51,12 @@ if not DEFAULT_LOGS.exists():
     DEFAULT_LOGS.mkdir()
 
 
-
 other_returncodes = [
         #("critical_code_ran", 0),
         ("critical_code_did_not_run", 97),
         ("failed_to_run", -900),
     ]
 
-
-
-from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin
-
-
-
-def generate_run_cmd(inp: Path, target: Target) -> list[str]:
-    """
-    Create the compile command
-    """
-
-    match target:
-        case Target.X86_64:
-            #TODO: Useing the -g for debug symbols
-            return [f"{inp.expanduser().absolute()}", "-g" ]
-        case Target.RISCV:
-            return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-        case Target.ARM_32:
-            return [
-                "qemu-arm-static",
-                #"-L",
-                #"/usr/arm-linux-gnueabi",
-                f"{inp.expanduser().absolute()}",
-            ]
-        case Target.ARM_64:
-            return [
-                "qemu-aarch64-static",
-                "-L",
-                "/usr/aarch64-linux-gnu",
-                f"{inp.expanduser().absolute()}",
-            ]
-        case Target.RISCV_32:
-            cmd = f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-            logger.debug(f"Command is : {cmd}")
-            return cmd
-
-        case _:
-            raise Exception(f"Unsupported target {target}")
-    return
 
 
 def bit_para_run_helper(common, inst, target: Target):
@@ -371,66 +322,6 @@ def is_valid_instruction(opcode_bytes, target):
     except Exception as e:
         print(e)
         return False, None
-
-
-class Mutation(Enum):
-    NOP = 0
-    BITFLIP = 1
-
-
-@dataclass
-class MutationExperiment:
-    source_file: Path | None
-    unmutated_binary: Path | None
-    binary_path: Path
-    return_code: int
-    program_input: str
-    program_stdout: str
-    target: Target
-    expected_stdout: str
-    expected_returncode: int
-    custom_returncodes: list[tuple[str, int]]
-
-    def to_dict(self):
-        """
-        Convert the dataclass to a dictionary
-        """
-        result = {}
-
-        for field in fields(self):
-            value = getattr(self, field.name)
-            if isinstance(
-                value, dict
-            ):  # If the value is another dataclass, convert it
-                result[field.name] = json.dumps(value)
-            elif isinstance(
-                value, Path
-            ):  # Handle lists/dicts that might contain dataclasses
-                result[field.name] = str(value.absolute())
-            elif isinstance(
-                value, Target
-            ):  # Handle lists/dicts that might contain dataclasses
-                result[field.name] = value.name
-            elif value is None:
-                result[field.name] = "None"
-            else:
-                result[field.name] = value
-        return result
-
-
-@dataclass
-class BitFlipExperimentResult(MutationExperiment):
-    flipped_addr: int
-    flipped_index: int
-    mutation: str = "single_bit"
-    source_code: Optional[Path] = None
-
-
-@dataclass
-class NopExperimentResult(MutationExperiment):
-    nopped_addr: int
-    mutation: str = "nop"
-    source_code: Optional[Path] = None
 
 
 def preserve_debug_sections(orig_binary, patched_binary):
@@ -1721,20 +1612,6 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
         raise e
 
 
-def parallel_runs():
-    """
-    Run the binaries in parallel
-    """
-
-    return
-
-
-# def run_command(cmd):
-#    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-#    stdout, stderr = process.communicate()
-#    return (process.returncode, stdout.decode(), stderr.decode())
-
-
 
 @app.command()
 def para_bit_no_comp(common: CommandParameters, num_cpus: int):
@@ -1934,12 +1811,6 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
 
     disasm = disassemble_text_section(common.program_file)
 
-    #other_returncodes = [
-    #    ("critical_code_ran", 0),
-    #    ("critical_code_did_not_run", 97),
-    #    ("failed_to_run", -900),
-    #]
-
     futures = []
     results: list[BitFlipExperimentResult] = []
 
@@ -2079,11 +1950,6 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
 
     target = detect_target(common.program_file)
 
-    #other_returncodes = [
-    #    ("critical_code_ran", 0),
-    #    ("critical_code_did_not_run", 97),
-    #    ("failed_to_run", 1),
-    #]
 
     futures = []
     results: list[NopExperimentResult] = []
@@ -2204,12 +2070,6 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
             return
 
     target = detect_target(common.program_file)
-
-    #other_returncodes = [
-    #    ("critical_code_ran", 0),
-    #    ("critical_code_did_not_run", 97),
-    #    ("failed_to_run", 1),
-    #]
 
     futures = []
     results: list[NopExperimentResult] = []

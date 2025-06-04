@@ -3,11 +3,19 @@ from cyclopts import App, Parameter
 from pathlib import Path
 from typing import Union
 import pandas as pd 
+from typing import Optional
+
+from dataclasses import dataclass, fields
 
 from enums import LinuxExitCodes
+from binary_tools import Target
 
 from rich.table import Table
 from rich.console import Console
+import logging
+
+
+logger = logging.getLogger(__name__)   # module-level logger
 
 @Parameter(name="*")
 @dataclass
@@ -181,6 +189,101 @@ def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
 
     return out
 
+
+def generate_run_cmd(inp: Path, target: Target) -> list[str]:
+    """
+    Create the compile command
+    """
+
+    match target:
+        case Target.X86_64:
+            #TODO: Useing the -g for debug symbols
+            return [f"{inp.expanduser().absolute()}", "-g" ]
+        case Target.RISCV:
+            return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
+                " "
+            )
+        case Target.ARM_32:
+            return [
+                "qemu-arm-static",
+                #"-L",
+                #"/usr/arm-linux-gnueabi",
+                f"{inp.expanduser().absolute()}",
+            ]
+        case Target.ARM_64:
+            return [
+                "qemu-aarch64-static",
+                "-L",
+                "/usr/aarch64-linux-gnu",
+                f"{inp.expanduser().absolute()}",
+            ]
+        case Target.RISCV_32:
+            cmd = f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
+                " "
+            )
+            logger.debug(f"Command is : {cmd}")
+            return cmd
+
+        case _:
+            raise Exception(f"Unsupported target {target}")
+    return
+
+
+@dataclass
+class MutationExperiment:
+    source_file: Path | None
+    unmutated_binary: Path | None
+    binary_path: Path
+    return_code: int
+    program_input: str
+    program_stdout: str
+    target: Target
+    expected_stdout: str
+    expected_returncode: int
+    custom_returncodes: list[tuple[str, int]]
+
+    def to_dict(self):
+        """
+        Convert the dataclass to a dictionary
+        """
+        result = {}
+
+        for field in fields(self):
+            value = getattr(self, field.name)
+            if isinstance(
+                value, dict
+            ):  # If the value is another dataclass, convert it
+                result[field.name] = json.dumps(value)
+            elif isinstance(
+                value, Path
+            ):  # Handle lists/dicts that might contain dataclasses
+                result[field.name] = str(value.absolute())
+            elif isinstance(
+                value, Target
+            ):  # Handle lists/dicts that might contain dataclasses
+                result[field.name] = value.name
+            elif value is None:
+                result[field.name] = "None"
+            else:
+                result[field.name] = value
+        return result
+
+
+
+
+@dataclass
+class BitFlipExperimentResult(MutationExperiment):
+    flipped_addr: int
+    flipped_index: int
+    mutation: str = "single_bit"
+    source_code: Optional[Path] = None
+
+
+@dataclass
+class NopExperimentResult(MutationExperiment):
+    nopped_addr: int
+    mutation: str = "nop"
+    source_code: Optional[Path] = None
 
 
 
