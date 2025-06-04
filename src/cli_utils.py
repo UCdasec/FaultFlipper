@@ -44,6 +44,7 @@ def show_results(
     df: pd.DataFrame,
     other_returncodes: list[tuple[str, int]],
     print_df: bool = False,
+    quiet: bool = True,
 ):
     if print_df:
         console.print(
@@ -59,8 +60,6 @@ def show_results(
 
     if common.list_expected:
         good_names = set([])
-
-        print(f"HEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRRRR")
         print(f"THe expected stdout is: {common.expected_stdout}")
         if isinstance(common.expected_stdout, str):
             info = df[
@@ -98,12 +97,13 @@ def show_results(
         0: v for k, v in stdout_freqs.items() if common.expected_stdout in k
     }
 
-    if correct_freq != {}:
-        print(
-            f"{correct_freq[0]} programs out of {len(df)} total had the expected stdout"
-        )
-    else:
-        print(f"0 programs out of {len(df)} had the expected stdout")
+    if not quiet:
+        if correct_freq != {}:
+            print(
+                f"{correct_freq[0]} programs out of {len(df)} total had the expected stdout"
+            )
+        else:
+            print(f"0 programs out of {len(df)} had the expected stdout")
     return
 
 

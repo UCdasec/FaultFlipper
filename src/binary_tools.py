@@ -13,14 +13,19 @@ class Target(Enum):
     RISCV = 2
     ARM_64 = 3
     ARM_32 = 4
+    RISCV_32 = 5
 
 
 class Nop(Enum):
     X86_64 = [0x90]
     RISCV = [0x13, 0x00, 0x00, 0x00]
     RISCV_COMPACT = [0x01, 0x00]
-    ARM_64 = [0xD5, 0x03, 0x20, 0x1F]
-    ARM_32 = [0xE1, 0xA0, 0x00, 0x00]
+    #ARM_64 = [0xd5, 0x03, 0x20, 0x1f] #bad endian ness
+    ARM_64 = [0xf1, 0x02, 0x30, 0x5d] 
+    #ARM_32 = [0xe1, 0xa0, 0x00, 0x00] # bad endianness
+    ARM_32 = [0x00, 0x00, 0xA0, 0xE1]
+    RISCV_32 = [0x13, 0x00, 0x00, 0x00]
+    RISCV_32_COMPACT = [0x01, 0x00]
 
 
 
@@ -284,6 +289,24 @@ def generate_nop_mutated_bin(common, target, inst) -> Path:
     out_file.chmod(0o755)
 
     return out_file
+
+def _generate_nop_mutated_bin(source:Path, target, inst, out_dir:Path) -> Path:
+    """
+    Geneate a single mutated binary
+    """
+
+    out_file = out_dir.joinpath(
+        source.name + f"_{hex(inst.address)}"
+    )
+
+    shutil.copy(source, out_file)
+    nop_patch = gen_nop_patch(inst, target=target)
+
+    in_place_patch(source, out_file, inst.address, bytes(nop_patch))
+    out_file.chmod(0o755)
+
+    return out_file
+
 
 
 
