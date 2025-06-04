@@ -512,7 +512,7 @@ def count_bit_differences(bytes_1, bytes_2):
 # TODO: Removed in favor of bit_exp
 # @app.command
 def bit(
-    common: CommandParameters, source_code: Optional[Path] = None
+    common: CommandParameters, source_code: Optional[Path] = None, quiet: bool = True
 ) -> pd.DataFrame:
     """
     Patch all the addrs in the binar , and save bins that
@@ -535,16 +535,10 @@ def bit(
     results: list[BitFlipExperimentResult] = []
 
     binary = lief.parse(common.program_file)
-    # original_file = common.program_file
-
-    #other_returncodes = [
-    #    ("critical_code_ran", 0),
-    #    ("critical_code_did_not_run", 97),
-    #    ("failed_to_run", -900),
-    #]
 
     # For every instructions
     for inst in alive_it(disasm):
+
         # Need to pad the left with zeroes
         inst_bits = list(
             "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
@@ -578,9 +572,8 @@ def bit(
                     timeout=common.timeout,
                 )
                 status = shift_exit_code(status)
-
             except Exception:
-                status = -900
+                status = -999
                 stdout = ""
 
             result = BitFlipExperimentResult(
@@ -604,7 +597,8 @@ def bit(
     save_df(df, common.save_results)
 
     # Dsiplay result info
-    show_results(common, df, other_returncodes)
+    if not quiet:
+        show_results(common, df, other_returncodes)
 
     return df
 
@@ -873,6 +867,187 @@ def nop_exp(
 
     return df
 
+
+
+
+# TODO: Removing this as a command in favor of nop_exp
+@app.command
+def bit_no_comp_inout(
+    common: CommandParameters, 
+    source_code: Optional[Path] = None, 
+    ins: List[str] | None = None, 
+    outs: List[str] | None = None,
+    expected_correct: int | None = None,
+) -> pd.DataFrame:
+    """
+    Patch all the addrs in the binar , and save bins that
+    have a succesffuly exist code what running WITH NO FLAGS
+    """
+    other_returncodes = [
+            ("failed_to_run", -999),
+            ("correct_prediction", 0),
+        ]
+
+    if common.save_results.exists():
+        # Gather the results
+        df = pd.read_csv(common.save_results)
+        print(f"Loading existing results")
+    else:
+        print(f"Old results: {common.save_results} does not exists")
+        common.out_dir.mkdir(exist_ok=True)
+
+        # Intermeidate results
+        result_out = common.out_dir.joinpath("intermediate_results")
+        result_out.mkdir(exist_ok=True)
+
+        # Adjust the out dir 
+        common.out_dir = common.out_dir.joinpath("mutated_bins")
+        common.out_dir.mkdir(exist_ok=True)
+
+        disasm = disassemble_text_section(common.program_file)
+        if not common.yes:
+            cont = str(input(f"Good for {len(disasm)} instructions? (Yy/Nn)"))
+
+            if cont.lower() != "y":
+                return
+
+        # Load the target type
+        target = detect_target(common.program_file)
+        logger.debug(f"Detected Target: {target}")
+
+        results: list[BitFlipExperimentResult] = []
+        
+
+        # Iterate over single instructions
+        for inst in alive_it(disasm):
+
+            # Need to pad the left with zeroes
+            inst_bits = list(
+                "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
+            )
+
+            # For every bit see if we get a valid opcode.
+            for i in range(len(inst_bits)):
+                # Generate the mutated binary - If we did not generate a good one continue
+                out_file = generate_bit_mutated_file(
+                    i, inst_bits, target, inst, common
+                )
+
+                if out_file is None:
+                    continue
+
+                # The out file is at out_dir/...
+                #out_file = generate_nop_mutated_bin(common, target, inst)
+
+                # Run all the possible inputs and outputs
+                for cur_in, cur_out in zip(ins,outs):
+                    cur_in = Path(cur_in)
+
+                    # See if the intermediate result exists yet
+                    intermediate_out = result_out.joinpath(out_file.name + f"_{cur_in.name.split('.')[0]}" + f"_{i}_" +".json")
+
+                    if intermediate_out.exists():
+                        print(f"Reading existing file {intermediate_out}")
+                        # Load and skip test
+                        with open(intermediate_out, 'r') as f: 
+                            result = json.load(f)
+                            result = BitFlipExperimentResult(**result)
+                    else:
+                        # Test the binary
+                        status, stdout, _ = run_binary_w_calltime_input(
+                            out_file,
+                            cur_in,
+                            target=target,
+                            timeout=common.timeout,
+                        )
+
+                        # Status is None when there is a Timeout or 
+                        # when there the input image does not exist
+
+                        if status is not None:
+                            status = shift_exit_code(status)
+                        else:
+                            status = -999
+                            logger.debug("File failed")
+
+                        result = BitFlipExperimentResult(
+                            source_file=source_code,
+                            unmutated_binary=common.program_file,
+                            binary_path=out_file,
+                            flipped_addr=inst.address,
+                            flipped_index=i,
+                            return_code=status,
+                            program_input=cur_in,
+                            program_stdout=stdout,
+                            expected_stdout=cur_out,
+                            target=target,
+                            expected_returncode=common.expected_returncode,
+                            custom_returncodes=other_returncodes,
+                        )
+
+                        dicted_result = result.to_dict()
+                        with open(intermediate_out, 'w') as f:
+                            json.dump(dicted_result, f)
+
+                    results.append(result)
+
+
+        df = dataclass_to_dataframe(results)
+        save_df(df, common.save_results)
+
+    print(f"Return code value counts...")
+    print(df['return_code'].value_counts())
+
+    # Number of (bin, inp) paris that had the expected output 
+    correct_prediction_mask = df.apply(lambda row: str(row['expected_stdout']) in str(row['program_stdout']), axis=1)
+
+    # Sum of ALL cases where a prediction was correct
+    total_equal = correct_prediction_mask.sum()
+    print(f"{total_equal} correct input binary pairs")
+
+
+    # Per nopped addr, get the number of correct predictions 
+    correct_per_mutated = df[correct_prediction_mask].groupby('nopped_addr').size().reset_index('count')
+
+    counts = correct_per_mutated.value_counts()
+    print(f"The value counts of correct predictions:")
+    print(counts)
+
+    #TODO: These are wrogn
+    # Get the list of binaries that got the same expected
+    #expected_correct_mutations =  correct_per_mutated["count"] == expected_correct
+    num_correct_mutations =  (correct_per_mutated == expected_correct).sum()
+    #num_correct_mutations = counts == expected_correct
+    print(f"Number of files that got  correct predictions: {num_correct_mutations}")
+
+    #expected_correct_mutations =  correct_per_mutated["count"] < expected_correct
+    num_less_mutations =  (correct_per_mutated < expected_correct).sum()
+    print(f"Number of files that got less than  correct predictions: {num_less_mutations}")
+
+
+    # Number of failed binaries
+    failed_result_mask = df[df['return_code'] == -999].groupby('nopped_addr').size().reset_index('count')
+    print(f"{failed_result_mask.shape[0]} failed binaries input combinations")
+
+
+    # Get the addrs that had both of the following (1) An occurance of correct
+    # prediction (2) An occurance of -999 return code
+
+    # Mask 1 is correct_prediction_mask 
+    correct_and_failed = df[correct_prediction_mask & failed_result_mask]
+    if correct_and_failed.shape[0] == 0:
+        print(f"No occurance of a mutated binary getting a prediction correct for one sample and failing to run for another sample")
+
+
+    show_results(common, df, other_returncodes)
+
+
+    return df
+
+
+
+
+
 # TODO: Removing this as a command in favor of nop_exp
 @app.command
 def nop_no_comp_inout(
@@ -986,24 +1161,63 @@ def nop_no_comp_inout(
         df = dataclass_to_dataframe(results)
         save_df(df, common.save_results)
 
+
+    # Doing the analyiss.............................
+
+    print(f"Return code value counts...")
     print(df['return_code'].value_counts())
 
-    # Number of (bin, inp) paris that had the expected output 
-    correct_prediction_mask = df['program_stdout'] == df['expected_stdout']
-    #correct_prediction_mask = df.apply(lambda row: row['program_stdout'] in row['expected_stdout'], axis=1)
+    # Add a column to see if there was a match
 
-    # Sum of ALL cases where a prediction was correct
-    total_equal = correct_prediction_mask.sum()
-    print(f"Of {df.shape[0]} we had {total_equal} correct input binary paris")
+    df['correct'] = df.apply(lambda row: str(row['expected_stdout']) in str(row['program_stdout']), axis=1)
+
+    df['failed'] = df['return_code'] == -999
+
+    # Use this to get the number of mutated bines that 
+    # got 0 correct BUT still ran correctly
+    addrs_with_failed = df.loc[df['return_code'] == -999, 'nopped_addr'].unique()
+    df_no_fail = df[~df['nopped_addr'].isin(addrs_with_failed)]
+
+    # nopped addrs that have one failed ANY
+
+    # Grop by the addr and record the failed and correct
+    agg_df = df.groupby('nopped_addr').agg(
+        total_correct = ('correct', 'sum'),
+        total_failed = ('failed', 'sum')
+    ).reset_index()
+
+    agg_df_no_fail = df_no_fail.groupby('nopped_addr').agg(
+        total_correct = ('correct', 'sum'),
+        total_failed = ('failed', 'sum')
+    ).reset_index()
+
+    print(f"We have {agg_df.shape} shaped agg df")
+    print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
+    #print(agg_df.head())
+
+    # This is the count of number of corrects. Notice, that 
+    # if the number of correct predictions is 0 it may 
+    # or may not be a case where the model ran correctly 
+    # and outputed zero.
+    print(f"Counts of corrects:\n {agg_df['total_correct'].value_counts()}")
+    print(f"Counts of failed:\n {agg_df['total_failed'].value_counts()}")
+
+    print(f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}")
+
+    print(f"How many failed on ALL inputs:\n {(agg_df['total_failed'] == 80).sum()}")
+
+    # Overlapp of correct and failed
+    mask = (agg_df['total_failed'] != 0 ) & (agg_df['total_correct'] != 0 )
+    print(f"Number of nonzero failed and nonzero correct:\n {agg_df[mask].value_counts()}")
 
 
-    # Per binary, get the number of corrected predictions
-    correct_per_mutated = df[correct_prediction_mask].groupby('nopped_addr').size().rename("count")
-    print(correct_per_mutated)
+    # See how many counts of correct == expected cont 
+    print(f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] == expected_correct).sum()} had the same number of correct predictions")
+    print(f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] < expected_correct).sum()} had less than the correct predictions")
+    print(f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_failed'] >= 1).sum()} had atleast one sample that caused a failed experiment")
 
-    failed_result_mask = df['return_code'] == 'None'
-    print(f"Out of {df.shape[0]} we had {failed_result_mask.sum()} failed binaries input combinations")
     show_results(common, df, other_returncodes)
+
 
     return df
 
@@ -2270,6 +2484,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         "para_nop": para_nop,
         "para_bit": para_bit,
         "nop_no_comp_inout": nop_no_comp_inout,
+        "bit_no_comp_inout": bit_no_comp_inout,
     }
 
     for exp_name, exp in experiments.items():
@@ -2308,8 +2523,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
 
             # Get the other required params
             cmd_func(params, target=target, num_cpus=num_cpus)
-        elif command_name == "nop_no_comp_inout":
-
+        elif command_name in ["nop_no_comp_inout", "bit_no_comp_inout"]:
             ins = formated.pop('ins')
             outs = formated.pop('outs')
             target = formated.pop('target')
