@@ -2972,7 +2972,7 @@ def gen_fault_plot(inp:Path):
 
 
 @app.command()
-def generate_exp_file( exp_file_out: Path, out_dir:Path, target:Target, timeout:int,  expected_stdouts: str,  program_inputs:str, program_file:Path, expected_correct: int):
+def generate_exp_file( exp_file_out: Path, out_dir:Path, target:Target, timeout:int,  expected_stdouts: str,  program_inputs:str, program_file:Path, expected_correct: int, result_file:Path):
     """
     Save a toml that defines the experiment for the neural networks
 
@@ -2997,7 +2997,9 @@ def generate_exp_file( exp_file_out: Path, out_dir:Path, target:Target, timeout:
         "yes= true ",
         f"target = '{target.name}' ",
         f"expected-correct= '{expected_correct}' ",
-        f"no_compile= true "]
+        f"no_compile= true ",
+        f"save-results='{str(result_file.absolute())}'",
+    ]
 
     # Make parent out 
     if not exp_file_out.parent.exists():
@@ -3007,11 +3009,12 @@ def generate_exp_file( exp_file_out: Path, out_dir:Path, target:Target, timeout:
         for line in file:
             f.write(line + '\n')
 
+    print(f"Saved exp file to: {exp_file_out.absolute()}")
     return 
 
 
 @app.command()
-def nn_generate_exp_files( exp_file: Path, binary:Path, timeout:int, out_dir:Path,  input_dir:Path, expected_correct:int):
+def nn_generate_exp_files( exp_file: Path, binary:Path, timeout:int, out_dir:Path,  input_dir:Path, expected_correct:int, result_file:Path):
     """
     A temporary function to generate experiemnt files for classifier testing
     """
@@ -3028,7 +3031,7 @@ def nn_generate_exp_files( exp_file: Path, binary:Path, timeout:int, out_dir:Pat
         ins.append(str(file.absolute()))
         outs.append(lbl)
 
-    generate_exp_file(exp_file, out_dir, target=target, timeout=timeout, expected_stdouts=outs, program_inputs=ins, program_file=binary,expected_correct=expected_correct)
+    generate_exp_file(exp_file, out_dir, target=target, timeout=timeout, expected_stdouts=outs, program_inputs=ins, program_file=binary,expected_correct=expected_correct, result_file=result_file)
 
     return 
 
