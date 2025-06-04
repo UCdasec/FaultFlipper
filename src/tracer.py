@@ -308,18 +308,19 @@ def save_results_csv(results: List[CriticalHitResult], csv_path: str):
         for r in results:
             writer.writerow(r.to_dict())
 
+
 @app.command()
-def trace(
+def trace_dumb(
     binary,
     stdin,
-    critical_asm:Optional[list[str]] = None,
-    source:Optional[Path] = None,
-    critical_source_lines: Optional[list[str]] = None,
+    #critical_asm:Optional[list[str]] = None,
+    #source:Optional[Path] = None,
+    #critical_source_lines: Optional[list[str]] = None,
     csv_out: Optional[Path] = None,
     arch: Target = Target.X86_64,
 ):
     """
-    Trace the program. 
+    Trace the program. No need to critical sections - just get a trace 
 
     Two options:
     (1) Provide source code + critical lines 
@@ -328,31 +329,8 @@ def trace(
 
     # 
     hit_map, base_addr = run_angr_concrete(binary,  stdin_data=stdin)
-
-    # Determine the set of "critical" addresses to monitor
-    if critical_asm is not None:
-        # We have direct addresses
-        critical_addresses = [int(x, 16) for x in critical_asm]
-    else:
-        # We must have a source file + lines
-        if not source or not critical_source_lines:
-            print("Error: If --critical-asm is not provided, you must specify --source and --critical-source-lines.")
-            sys.exit(1)
-
-        #critcial_source_lines = critical_source_lines.split('-')
-        print( critical_source_lines)
-
-        # Parse the line(s) or range(s)
-        critical_lines = parse_line_numbers(critical_source_lines)
-
-        # Use pyelftools & capstone to find the instruction addresses for those lines
-        critical_addresses, addr_to_line = find_addresses_with_pyelftools(binary, source, critical_lines, base_addr, arch)
-
-    if not critical_addresses:
-        print("No critical addresses resolved. Exiting.")
-        return
-
     new_map = {}
+
     for val in critical_addresses:
         if (x:=val+base_addr) in hit_map.keys():
             new_map[val] = hit_map[x]
@@ -371,6 +349,9 @@ def trace(
     if csv_out:
         save_results_csv(results, csv_out)
         print(f"[+] Results saved to {csv_out}")
+
+
+
 
 if __name__ == "__main__":
     app()
