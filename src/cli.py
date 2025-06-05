@@ -2241,7 +2241,7 @@ def save_report(
     #    ("failed_to_run", -900),
     #]
 
-    freqs = calc_freqs(df, common, other_returncodes)
+    freqs = calc_freqs(df, common.expected_stdout, other_returncodes)
     table = "## Return Code Frequencies \n"
     table_str = list_tuple_table(["Exit code", "Frequency"], freqs)
     table += table_str

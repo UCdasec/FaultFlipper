@@ -143,17 +143,17 @@ def print_histogram(results):
     return
 
 
-def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
+def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     """
     Get the frequencies of returncdoes
     """
 
     freqs = df["return_code"].value_counts().to_dict()
-    if isinstance(common.expected_stdout, list):
+    if isinstance(expected_stdout, list):
         correct_stdouts = []
     else:
         correct_stdouts = df[
-        df["program_stdout"].str.contains(common.expected_stdout, na=False)
+        df["program_stdout"].str.contains(expected_stdout, na=False)
     ]
 
     new_freqs = {}
