@@ -140,7 +140,7 @@ def show_results(
         print(f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}")
         print(info[["return_code", "program_stdout", "binary_path"]])
 
-    new_freqs = calc_freqs(df, common, other_returncodes)
+    new_freqs = calc_freqs(df, common.expected_stdout, other_returncodes)
     print_histogram(new_freqs)
 
     # Make a histogam of program stdouts

@@ -1,0 +1,90 @@
+
+
+########
+# ARM64
+########
+
+[experiment.para_nop_arm64]
+command = "para_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm64_password_check"
+yes= true
+target = "arm_64"
+num_cpus=8
+
+[experiment.para_nop_arm64]
+command = "para_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm64_password_check_DETECT"
+yes= true
+target = "arm_64"
+num_cpus=8
+
+
+[experiment.para_nop_arm64]
+command = "para_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm64_password_check_BRANCH"
+yes= true
+target = "arm_64"
+num_cpus=8
+
+
+[experiment.para_nop_arm64]
+command = "para_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm64_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_64"
+num_cpus=8
+
+
+[experiment.para_nop_arm64]
+command = "para_nop"
+program-file = "test_files/fib.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm64_fib"
+yes= true
+target = "arm_64"
+num_cpus=8
+
+
+
+[experiment.para_nop_arm64]
+command = "para_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm64_fib_LOOPCHECK"
+yes= true
+target = "arm_64"
+num_cpus=8
+
+
