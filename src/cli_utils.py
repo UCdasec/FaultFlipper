@@ -298,11 +298,13 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
             return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
                 " "
             )
+
+        #TODO: Static bins don't need the linker
         case Target.ARM_32:
             return [
                 "qemu-arm-static",
-                #"-L",
-                #"/usr/arm-linux-gnueabi",
+                "-L",
+                "/usr/arm-linux-gnueabi",
                 f"{inp.expanduser().absolute()}",
             ]
         case Target.ARM_64:

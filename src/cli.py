@@ -130,7 +130,13 @@ def nop_para_run_helper(common, inst, target: Target):
         returncode, stdout, stderr = run_binary_w_input(
             out_file, common.program_input, target, common.timeout
         )
-        returncode = shift_exit_code(returncode)
+
+        if returncode is None and stdout is None and stderr is None:
+            print("Failed to run")
+            return 
+
+        if returncode is not None:
+            returncode = shift_exit_code(returncode)
         return out_file, returncode, inst, common, target, stdout, stderr
     except Exception as e:
         print(f"Failed to run bin with {e}")
@@ -234,7 +240,7 @@ def run_binary_w_calltime_input(
 
 def run_binary_w_input(
     path: Path, program_input: str, target: Target, timeout: int = 60
-)->Tuple[int|None, str, str] | None:
+)->Tuple[int|None, str|None, str|None]:
     """
     Run a binary and capture its output
     """
@@ -250,7 +256,7 @@ def run_binary_w_input(
     # Verify that the path exists and is a file
     if not path.is_file():
         print(f"Error: The path '{path}' does not exist or is not a file.")
-        return None
+        return None, None, None
 
     # Run the compiled C program
     process = subprocess.Popen(
@@ -2041,6 +2047,137 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
     )
 
     return
+
+
+@app.command()
+def seq_nop(common: CommandParameters, target: Target):
+    """
+    Take c source code as input, compile it, mutate it, and test
+    """
+
+    # Make the dir
+    common.out_dir.mkdir(exist_ok=True, parents=True)
+    program_context = common.program_file.parent.joinpath(
+        common.program_file.name.replace(".c", ".toml")
+    )
+    base_out = common.out_dir
+
+    # Copy the source cdoe to the experiement
+    source_code = common.program_file
+    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+
+    bin_out = common.out_dir.joinpath(
+        common.program_file.name.replace(".c", ".o")
+    )
+
+    common.save_results = common.out_dir.joinpath("results.csv")
+    common.out_dir = common.out_dir.joinpath("mutated_bins")
+    common.out_dir.mkdir(exist_ok=True)
+
+    # Compile the binary for the target
+    common.program_file = compile_program(source_code, bin_out, target)
+
+    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+
+    original_bin = common.program_file
+
+    disasm = disassemble_text_section(common.program_file)
+    num_instructions = len(disasm)
+    if not common.yes:
+        cont = str(
+            input(
+                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
+
+    target = detect_target(common.program_file)
+
+    futures = []
+    results: list[NopExperimentResult] = []
+
+    start_time = datetime.now()
+
+    # Run the threads
+    for inst in alive_it(disasm):
+        if common.program_input[-1:] != "\n":
+            common.program_input += "\n"
+
+        # Generate hte mutated binary
+        try:
+            out_file = generate_nop_mutated_bin(common, target, inst)
+        except Exception as e:
+            print(f"Issue making binary: {e}")
+            return Path(""), -100, inst, common, target, "", ""
+        try:
+            returncode, stdout, stderr = run_binary_w_input(
+                out_file, common.program_input, target, common.timeout
+            )
+
+            if returncode is None and stdout is None and stderr is None:
+                print("Failed to run")
+                return 
+
+            if returncode is not None:
+                returncode = shift_exit_code(returncode)
+            #return out_file, returncode, inst, common, target, stdout, stderr
+        except Exception as e:
+            print(f"Failed to run bin with {e}")
+            stdout = ""
+            stderr = ""
+            #return out_file, -100, inst, common, target, "", ""
+
+        print(stdout)
+
+        result = NopExperimentResult(
+                    source_file=source_code,
+                    unmutated_binary=original_bin,
+                    binary_path=out_file,
+                    nopped_addr=inst.address,
+                    program_input=common.program_input,
+                    return_code=returncode,
+                    program_stdout=stdout,
+                    target=target,
+                    expected_returncode=common.expected_returncode,
+                    expected_stdout=common.expected_stdout,
+                    custom_returncodes=other_returncodes,
+                )
+        results.append(result)
+
+    runtime = datetime.now() - start_time
+
+    df = dataclass_to_dataframe(results)
+    save_df(df, common.save_results)
+    show_results(common, df, other_returncodes)
+
+    # Lastly save the experiment parameters
+    params = common.to_dict()
+    params["target"] = target.value
+
+    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+        json.dump(params, f, indent=4)
+
+    num_bits = (
+        len(lief.parse(common.program_file).get_section(".text").content) * 8
+    )
+
+    report_path = common.save_results.parent.joinpath("report.md")
+    save_report(
+        report_path,
+        common,
+        df,
+        runtime,
+        results,
+        num_instructions,
+        num_bits,
+        compile_cmd,
+        source_code,
+        program_context,
+    )
+
+    return
+
 
 
 
