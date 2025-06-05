@@ -925,7 +925,13 @@ def bit_no_comp_inout(
     # prediction (2) An occurance of -999 return code
 
     # Mask 1 is correct_prediction_mask 
+    #correct_df = df[correct_prediction_mask]
+    #correct_and_failed = correct_df[failed_result_mask[correct_prediction_mask]]
+    #correct_df = df[correct_prediction_mask]
+    #correct_and_failed = correct_df[failed_result_mask.loc[correct_df.index]]
+    #comb_mask = correct_per_mutated & failed_result_mask
     correct_and_failed = df[correct_prediction_mask & failed_result_mask]
+    #correct_and_failed = df[comb_mask]
     if correct_and_failed.shape[0] == 0:
         print(f"No occurance of a mutated binary getting a prediction correct for one sample and failing to run for another sample")
 
