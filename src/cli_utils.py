@@ -14,8 +14,11 @@ from rich.table import Table
 from rich.console import Console
 import logging
 
+from rich.console import Console
 
 logger = logging.getLogger(__name__)   # module-level logger
+
+console = Console()
 
 @Parameter(name="*")
 @dataclass
@@ -45,6 +48,49 @@ class CommandParameters:
             "save_results": str(self.save_results.absolute()),
             "yes": self.yes,
         }
+
+
+def smol_show_results(
+    df: pd.DataFrame,
+    other_returncodes: list[tuple[str, int]],
+    expected_stdout: str,
+    quiet: bool = True,
+):
+    #if print_df:
+    #    console.print(
+    #        df[
+    #            [
+    #                x
+    #                for x in df.columns
+    #                if x not in ["binary_path", "other_returncodes"]
+    #            ]
+    #        ]
+    #    )
+    #    print(f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}")
+    #    print(info[["return_code", "program_stdout", "binary_path"]])
+
+    new_freqs = calc_freqs(df, expected_stdout, other_returncodes)
+    print_histogram(new_freqs)
+
+    # Make a histogam of program stdouts
+    stdout_freqs = df["program_stdout"].value_counts().to_dict()
+
+    # Get the outputs that contain the epected output
+    correct_freq = {
+        0: v for k, v in stdout_freqs.items() if expected_stdout in k
+    }
+
+    if not quiet:
+        if correct_freq != {}:
+            print(
+                f"{correct_freq[0]} programs out of {len(df)} total had the expected stdout"
+            )
+        else:
+            print(f"0 programs out of {len(df)} had the expected stdout")
+    return
+
+
+
 
 
 def show_results(
@@ -143,17 +189,18 @@ def print_histogram(results):
     return
 
 
-def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
+
+def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     """
     Get the frequencies of returncdoes
     """
 
     freqs = df["return_code"].value_counts().to_dict()
-    if isinstance(common.expected_stdout, list):
+    if isinstance(expected_stdout, list):
         correct_stdouts = []
     else:
         correct_stdouts = df[
-        df["program_stdout"].str.contains(common.expected_stdout, na=False)
+        df["program_stdout"].str.contains(expected_stdout, na=False)
     ]
 
     new_freqs = {}
@@ -188,6 +235,55 @@ def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
     out = [(k, v) for k, v in new_freqs.items()]
 
     return out
+
+
+
+
+#def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
+#    """
+#    Get the frequencies of returncdoes
+#    """
+#
+#    freqs = df["return_code"].value_counts().to_dict()
+#    if isinstance(common.expected_stdout, list):
+#        correct_stdouts = []
+#    else:
+#        correct_stdouts = df[
+#        df["program_stdout"].str.contains(common.expected_stdout, na=False)
+#    ]
+#
+#    new_freqs = {}
+#    weird_codes = {}
+#
+#    # For return value and the number of returns that had that value
+#    for k, v in freqs.items():
+#        try:
+#            return_code_name = str(LinuxExitCodes(k).name) + f" ({k})"
+#        except:
+#            return_code_name = str(k)
+#            weird_codes[return_code_name] = list(
+#                df[df["return_code"] == k]["binary_path"]
+#            )
+#
+#        # Replace with a fun name if otherwise specified
+#        for name, value in other_returncodes:
+#            if k == value:
+#                return_code_name = name + f" ({value})"
+#
+#        # Split the return code of 1 into two groups:
+#        # 1. Returncode 1 + Good stdout
+#        # 2. Returncode 1 + bad stdout
+#        if k == 0:
+#            new_freqs[return_code_name] = len(correct_stdouts)
+#            if v - len(correct_stdouts) > 0:
+#                new_freqs["Exit 0 : Bad STDOUT"] = v - len(correct_stdouts)
+#        else:
+#            new_freqs[return_code_name] = v
+#
+#    # Make the output a list of tuples
+#    out = [(k, v) for k, v in new_freqs.items()]
+#
+#    return out
 
 
 def generate_run_cmd(inp: Path, target: Target) -> list[str]:

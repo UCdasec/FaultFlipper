@@ -38,7 +38,7 @@ from alive_progress import alive_it
 
 from logger_utils import setup_logger
 
-from cli_utils import CommandParameters, show_results, calc_freqs, generate_run_cmd, BitFlipExperimentResult, NopExperimentResult
+from cli_utils import CommandParameters, show_results, calc_freqs, generate_run_cmd, BitFlipExperimentResult, NopExperimentResult, smol_show_results
 
 from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin
 
@@ -1418,23 +1418,40 @@ def read_results(inp: Path):
     Read the results of an experiment
     """
 
-    if inp.is_file():
-        # Load the pandas dataframe
-        df = pd.read_csv(inp)
-    else:
-        raise Exception
+    if not inp.is_file():
+        raise Exception("The input file does not exists")
+
+    df = pd.read_csv(inp)
+
+    #df = dataclass_to_dataframe(results)
+    #save_df(df, common.save_results)
+        #show_results(df, other_returncodes)
+    expected_stdout = df['expected_stdout'].to_list()[0]
+    custom_returncodes = df['custom_returncodes'].to_list()[0]
+
+    ret_codes = custom_returncodes.replace('[','').replace(']','').replace('"','').replace("'","")
+    ret_codes = ret_codes.split(')')
+    ret_codes = [x.replace('(','') for x in ret_codes if x != '']
+
+    codes = []
+    for substr in ret_codes:
+        # This should have two valles 
+        splits = [x.strip() for x in substr.split(',') if x.strip() != '']
+        #print(splits)
+        codes.append((splits[0], int(splits[1])))
+
+    smol_show_results(df, codes, expected_stdout)
 
     # Get the number of accepted passwords, this is return code 1
-    df = df[df["return_code"] == 1]
+    #df = df[df["return_code"] == 0]
 
-    # The result could be a nop experiment or a bit experiment
-    if "nop" in list(df["experiment_type"]):
-        info = df[["return_code", "nopped_addr"]]
-    elif "bit" in list(df["experiment_type"]):
-        info = df[["return_code", "flipped_addr", "flipped_index"]]
+    ## The result could be a nop experiment or a bit experiment
+    #if "nop" in list(df["experiment_type"]):
+    #    info = df[["return_code", "nopped_addr"]]
+    #elif "bit" in list(df["experiment_type"]):
+    #    info = df[["return_code", "flipped_addr", "flipped_index"]]
 
     # Want the number of exit codes that are 1
-
     print(df)
     return
 
@@ -1730,9 +1747,7 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
     )
 
     df = dataclass_to_dataframe(results)
-
     save_df(df, common.save_results)
-
     show_results(common, df, other_returncodes)
 
     # Lastly save the experiment parameters
@@ -2228,14 +2243,8 @@ def save_report(
         f"- The runtime to generate and run all binaries was: {runtime}\n"
     )
 
-    # 2. Exit code frequecies
-    #other_returncodes = [
-    #    ("critcal_code_ran", 0),
-    #    ("critical_code_did_not_run", 97),
-    #    ("failed_to_run", -900),
-    #]
 
-    freqs = calc_freqs(df, common, other_returncodes)
+    freqs = calc_freqs(df, common.expected_stdout, other_returncodes)
     table = "## Return Code Frequencies \n"
     table_str = list_tuple_table(["Exit code", "Frequency"], freqs)
     table += table_str
