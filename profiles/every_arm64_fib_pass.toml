@@ -74,7 +74,7 @@ num_cpus=8
 
 
 
-[experiment.para_nop_arm64_fib]
+[experiment.para_nop_arm64_fib_loopcheck]
 command = "para_nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = "wrong\n"
@@ -163,7 +163,7 @@ num_cpus=8
 
 
 
-[experiment.para_bit_arm64_fib]
+[experiment.para_bit_arm64_fib_loopcheck]
 command = "para_bit"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = "wrong\n"
