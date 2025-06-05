@@ -189,7 +189,6 @@ def print_histogram(results):
     return
 
 
-
 def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     """
     Get the frequencies of returncdoes
