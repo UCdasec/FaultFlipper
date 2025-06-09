@@ -25,7 +25,7 @@ from capstone import (
     CS_ARCH_RISCV,
     CS_MODE_RISCV64,
     CS_MODE_RISCVC,
-    CS_MODE_LITTLE_ENDIAN
+    CS_MODE_LITTLE_ENDIAN,
 )
 
 import capstone
@@ -36,6 +36,7 @@ from rich.console import Console
 from typing_extensions import Annotated
 from enum import Enum
 import subprocess
+import re
 import pandas as pd
 from enums import LinuxExitCodes
 
@@ -47,8 +48,10 @@ from typing import Union, Any
 from alive_progress import alive_it
 
 
-import logging 
+import logging
 import sys
+from tempfile import NamedTemporaryFile
+
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
@@ -60,19 +63,28 @@ if not DEFAULT_LOGS.exists():
     DEFAULT_LOGS.mkdir()
 
 
-
 other_returncodes = [
-        #("critical_code_ran", 0),
-        ("critical_code_did_not_run", 97),
-        ("failed_to_run", -900),
-    ]
+    # ("critical_code_ran", 0),
+    ("critical_code_did_not_run", 97),
+    ("failed_to_run", -900),
+]
 
 
-
-from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, generate_nop_mutated_bin
+from binary_tools import (
+    Target,
+    Nop,
+    shift_exit_code,
+    in_place_patch,
+    get_capstone_arch_mode,
+    get_lief_arch,
+    gen_nop_patch,
+    generate_nop_mutated_bin,
+    generate_nop_mutated_bin,
+)
 
 
 DEBUG = True
+
 
 def enable_debug_logging():
 
@@ -82,7 +94,7 @@ def enable_debug_logging():
     handler.setLevel(logging.DEBUG)
     # Define a simple logging format
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
     handler.setFormatter(formatter)
     # Add the handler to your logger
@@ -98,7 +110,7 @@ class CommandParameters:
     program_file: Path
     out_dir: Path
     program_input: str
-    expected_stdout:  str | Path #| list[str]
+    expected_stdout: str | Path  # | list[str]
     expected_returncode: int
     list_expected: bool = False
     timeout: int = 5
@@ -129,8 +141,8 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
 
     match target:
         case Target.X86_64:
-            #TODO: Useing the -g for debug symbols
-            return [f"{inp.expanduser().absolute()}", "-g" ]
+            # TODO: Useing the -g for debug symbols
+            return [f"{inp.expanduser().absolute()}", "-g"]
         case Target.RISCV:
             return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
                 " "
@@ -149,13 +161,23 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
                 "/usr/aarch64-linux-gnu",
                 f"{inp.expanduser().absolute()}",
             ]
+        case Target.AVR:
+            # defaults to mega2560 arduino board for now
+            return [
+                "qemu-system-avr",
+                "-chardev", f"socket,path=/tmp/{inp.name}.con,server=on,wait=on,id=gdb0",
+                "-gdb", "chardev:gdb0",
+                "-S",
+                "-machine", "mega2560",
+                "-nographic",
+                "-bios", f"{inp.expanduser().absolute()}",
+            ]
         case Target.RISCV_32:
             cmd = f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
                 " "
             )
             logger.debug(f"Command is : {cmd}")
             return cmd
-
         case _:
             raise Exception(f"Unsupported target {target}")
     return
@@ -172,9 +194,7 @@ def bit_para_run_helper(common, inst, target: Target):
     else:
         input = common.program_input
 
-    inst_bits = list(
-        "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
-    )
+    inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
 
     results = []
 
@@ -313,12 +333,43 @@ def run_binary_w_input(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+    gdb_python = f"""
+target remote /tmp/{path.name}.con 
+set confirm off
+break exit
+break _exit
+commands 
+    dump binary memory {path.name}.bin 0x0100 0x21FF
+end
+continue
+kill
+quit
+    """
 
+    with NamedTemporaryFile("w", delete=False, suffix=".gdb") as script_file:
+        script_file.write(gdb_python)
+        script_path = script_file.name
+
+    gdb = [
+        # simultaneously start gdb
+        "avr-gdb",
+        "-batch",
+        "-q",
+        "-x", f"{script_path}",
+        f"{path.expanduser().absolute()}",
+    ]
+
+    process_gdb = subprocess.Popen(
+        gdb,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
     try:
         # Gather the outputs
         stdout, stderr = process.communicate(
             input=program_input.encode(), timeout=timeout
         )
+        process_gdb.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill()
         stdout, stderr = b"", b"timeout expired"
@@ -326,6 +377,7 @@ def run_binary_w_input(
         process.returncode = LinuxExitCodes.EX_SIGSEGV
 
     return process.returncode, stdout.decode(), stderr.decode()
+
 
 def is_valid_instruction(opcode_bytes, target):
     """
@@ -343,7 +395,10 @@ def is_valid_instruction(opcode_bytes, target):
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
-            md = Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM | capstone.CS_MODE_LITTLE_ENDIAN)
+            md = Cs(
+                capstone.CS_ARCH_ARM,
+                capstone.CS_MODE_ARM | capstone.CS_MODE_LITTLE_ENDIAN,
+            )
         case _:
             raise Exception
 
@@ -401,9 +456,7 @@ class MutationExperiment:
 
         for field in fields(self):
             value = getattr(self, field.name)
-            if isinstance(
-                value, dict
-            ):  # If the value is another dataclass, convert it
+            if isinstance(value, dict):  # If the value is another dataclass, convert it
                 result[field.name] = json.dumps(value)
             elif isinstance(
                 value, Path
@@ -449,13 +502,11 @@ def preserve_debug_sections(orig_binary, patched_binary):
         new_sec.flags = sec.flags
         new_sec.align = sec.align
         # Possibly set other fields to match original
-        patched_binary.add(new_sec, loaded=False)  
+        patched_binary.add(new_sec, loaded=False)
         # 'loaded=False' so it doesn't try to place it in a PT_LOAD segment
 
 
-def generate_bit_mutated_file(
-    i, inst_bits, target, inst, common
-) -> Union[None, Path]:
+def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> Union[None, Path]:
     binary = lief.parse(common.program_file)
 
     original_bits = [x for x in inst_bits]
@@ -477,7 +528,6 @@ def generate_bit_mutated_file(
 
     if not good_inst:
         return None
-
 
     # Re-adjust the patch so that it is a list of ints
     patch = [
@@ -513,9 +563,7 @@ def count_bit_differences(bytes_1, bytes_2):
 
 # TODO: Removed in favor of bit_exp
 # @app.command
-def bit(
-    common: CommandParameters, source_code: Optional[Path] = None
-) -> pd.DataFrame:
+def bit(common: CommandParameters, source_code: Optional[Path] = None) -> pd.DataFrame:
     """
     Patch all the addrs in the binar , and save bins that
     have a succesffuly exist code what running WITH NO FLAGS
@@ -539,25 +587,21 @@ def bit(
     binary = lief.parse(common.program_file)
     # original_file = common.program_file
 
-    #other_returncodes = [
+    # other_returncodes = [
     #    ("critical_code_ran", 0),
     #    ("critical_code_did_not_run", 97),
     #    ("failed_to_run", -900),
-    #]
+    # ]
 
     # For every instructions
     for inst in alive_it(disasm):
         # Need to pad the left with zeroes
-        inst_bits = list(
-            "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
-        )
+        inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
 
         # For every bit see if we get a valid opcode.
         for i in range(len(inst_bits)):
             # Generate the mutated binary - If we did not generate a good one continue
-            out_file = generate_bit_mutated_file(
-                i, inst_bits, target, inst, common
-            )
+            out_file = generate_bit_mutated_file(i, inst_bits, target, inst, common)
 
             if out_file is None:
                 continue
@@ -621,14 +665,14 @@ def disasm(
     pad: int = 2,
 ) -> str:
     """
-    An over-engineered function to re-create objdump... but this allows 
-    me to easily inject its results into a PDF report! :D (and also make 
-    the output colorful) 
+    An over-engineered function to re-create objdump... but this allows
+    me to easily inject its results into a PDF report! :D (and also make
+    the output colorful)
 
 
-    start_addr: int 
-        The decimal 10 start address 
-    end_addr: int 
+    start_addr: int
+        The decimal 10 start address
+    end_addr: int
         The decimsal 10 end address
     """
 
@@ -637,9 +681,7 @@ def disasm(
         disassembly = disassemble_text_section(bin)
 
         filter_disasm = [
-            x
-            for x in disassembly
-            if x.address >= start_addr and x.address <= end_addr
+            x for x in disassembly if x.address >= start_addr and x.address <= end_addr
         ]
         if len(filter_disasm) == 0:
             raise Exception
@@ -659,7 +701,7 @@ def disasm(
 
         bin_pretty_insns = []
         # Iterate over the instructions in the range of the addrs
-        for thing in filter_disasm: 
+        for thing in filter_disasm:
 
             # Crate the bytes array
             byte_ar = thing.bytes
@@ -765,9 +807,7 @@ def bit_exp(
     source_code = common.program_file
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
+    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
@@ -786,6 +826,7 @@ def bit_exp(
         json.dump(params, f, indent=4)
 
     return df
+
 
 @app.command
 def nop_exp_no_comp(
@@ -809,9 +850,7 @@ def nop_exp_no_comp(
     source_code = common.program_file
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
+    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
@@ -827,7 +866,6 @@ def nop_exp_no_comp(
         json.dump(params, f, indent=4)
 
     return df
-
 
 
 @app.command
@@ -853,9 +891,7 @@ def nop_exp(
     source_code = common.program_file
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
+    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
@@ -876,7 +912,6 @@ def nop_exp(
     return df
 
 
-
 # TODO: Removing this as a command in favor of nop_exp
 @app.command
 def nop_no_comp(
@@ -887,8 +922,10 @@ def nop_no_comp(
     have a succesffuly exist code what running WITH NO FLAGS
     """
 
-    if not isinstance(common.expected_stdout, list) and not isinstance(common.expected_stdout, str):
-        with open(common.expected_stdout, 'r') as f:
+    if not isinstance(common.expected_stdout, list) and not isinstance(
+        common.expected_stdout, str
+    ):
+        with open(common.expected_stdout, "r") as f:
             lines = f.readlines()
             common.expected_stdout = lines
 
@@ -902,8 +939,8 @@ def nop_no_comp(
             return
 
     # Parse the input binary
-    #binary = lief.parse(common.program_file)
-    #if not binary:
+    # binary = lief.parse(common.program_file)
+    # if not binary:
     #    raise ValueError(f"Failed to parse the binary: {common.program_file}")
 
     # Load the target type
@@ -919,10 +956,10 @@ def nop_no_comp(
     results: list[NopExperimentResult] = []
 
     # Iterate over single instructions
-    tmp = 0 
+    tmp = 0
     for inst in alive_it(disasm):
-        tmp+=1
-        #if tmp >= 20:
+        tmp += 1
+        # if tmp >= 20:
         #    break
         # Generate the mutated binary
         out_file = generate_nop_mutated_bin(common, target, inst)
@@ -974,8 +1011,8 @@ def calc_freqs(df, common, other_returncodes) -> list[tuple[str, int]]:
         correct_stdouts = []
     else:
         correct_stdouts = df[
-        df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    ]
+            df["program_stdout"].str.contains(common.expected_stdout, na=False)
+        ]
 
     new_freqs = {}
     weird_codes = {}
@@ -1019,15 +1056,8 @@ def show_results(
 ):
     if print_df:
         console.print(
-            df[
-                [
-                    x
-                    for x in df.columns
-                    if x not in ["binary_path", "other_returncodes"]
-                ]
-            ]
+            df[[x for x in df.columns if x not in ["binary_path", "other_returncodes"]]]
         )
-
 
     if common.list_expected:
         good_names = set([])
@@ -1038,14 +1068,12 @@ def show_results(
             info = df[
                 df["program_stdout"].str.contains(common.expected_stdout, na=False)
             ]
-            good_names =  set([Path(x).name for x in list(info["binary_path"])])
+            good_names = set([Path(x).name for x in list(info["binary_path"])])
         else:
             print(f"Using the list of stdout")
             for line in common.expected_stdout:
-                info = df[
-                    df["program_stdout"].str.contains(line, na=False)
-                ]
-                out_names =  set([Path(x).name for x in list(info["binary_path"])])
+                info = df[df["program_stdout"].str.contains(line, na=False)]
+                out_names = set([Path(x).name for x in list(info["binary_path"])])
                 print(f"Have {len(out_names)}")
 
                 if len(good_names) == 0:
@@ -1053,10 +1081,11 @@ def show_results(
                 else:
                     good_names = good_names.intersection(out_names)
 
-            #good_names.append(names)
+            # good_names.append(names)
 
-
-        print(f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}")
+        print(
+            f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}"
+        )
         print(info[["return_code", "program_stdout", "binary_path"]])
 
     new_freqs = calc_freqs(df, common, other_returncodes)
@@ -1114,15 +1143,11 @@ def disasm2(binary: Path, start_addr: str, end_addr: str):
     start_addr = int(start_addr, 16)
     end_addr = int(end_addr, 16)
 
-    max_len = max(
-        len(" ".join([f"{b:02x}" for b in x.bytes])) for x in disassembly
-    )
+    max_len = max(len(" ".join([f"{b:02x}" for b in x.bytes])) for x in disassembly)
 
     # for instr in disassembly:
     for thing in [
-        x
-        for x in disassembly
-        if x.address >= start_addr and x.address <= end_addr
+        x for x in disassembly if x.address >= start_addr and x.address <= end_addr
     ]:
         byte_ar = thing.bytes
         byte_string = " ".join([f"{b:02x}" for b in byte_ar])
@@ -1146,7 +1171,7 @@ def detect_target(bin: Path) -> Target:
         case lief.ELF.ARCH.RISCV:
             return Target.RISCV
 
-        #case lief.ELF.ARCH.RISC:
+        # case lief.ELF.ARCH.RISC:
         #    return Target.RISCV_32
 
         case lief.ELF.ARCH.ARM:
@@ -1154,10 +1179,12 @@ def detect_target(bin: Path) -> Target:
 
         case lief.ELF.ARCH.AARCH64:
             return Target.ARM_64
+
+        case lief.ELF.ARCH.AVR:
+            return Target.AVR
+
         case _:
-            raise ValueError(
-                "This script is intended for x86_64 ELF binaries only."
-            )
+            raise ValueError("This script is intended for x86_64 ELF binaries only.")
     return
 
 
@@ -1188,12 +1215,52 @@ def disassemble_text_section(binary_path):
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
             text_section = binary.get_section(".text")
         case Target.ARM_32:
-            md = Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM | capstone.CS_MODE_LITTLE_ENDIAN)
+            md = Cs(
+                capstone.CS_ARCH_ARM,
+                capstone.CS_MODE_ARM | capstone.CS_MODE_LITTLE_ENDIAN,
+            )
             text_section = binary.get_section(".text")
+        case Target.AVR:
+            return parse_avr_disassembly(binary_path)
         case _:
             raise Exception("Unsupported file type")
 
     return list(md.disasm(text_section.content, text_section.virtual_address))
+
+
+# mimic CsInsn class with same fields
+class AVRInsn:
+    def __init__(self, address, bytes_hex, mnemonic, operands):
+        self.address = address
+        self.bytes = bytes.fromhex(bytes_hex.replace(" ", ""))
+        self.mnemonic = mnemonic
+        self.op_str = operands
+
+    def __repr__(self):
+        return f"{self.address:0x}: {self.mnemonic} {self.op_str}"
+
+
+# disassemble avr instruction set with avr-objdump
+def parse_avr_disassembly(file_path):
+    result = subprocess.run(
+        ["avr-objdump", "-d", file_path], capture_output=True, text=True
+    )
+    lines = result.stdout.splitlines()
+
+    instructions = []
+    # gpt generated regex...
+    pattern = re.compile(r"^\s*([0-9a-f]+):\s+([0-9a-f ]+)\s+(\S+)(?:\s+(.*))?$")
+
+    for line in lines:
+        match = pattern.match(line)
+        if match:
+            address = int(match.group(1), 16)
+            bytes_hex = match.group(2).strip()
+            mnemonic = match.group(3)
+            operands = match.group(4) if match.group(4) else ""
+            instructions.append(AVRInsn(address, bytes_hex, mnemonic, operands))
+
+    return instructions
 
 
 def compare_disassembly(
@@ -1261,18 +1328,12 @@ def compare_disassembly(
         elif right_line == "":
             out = (
                 f"{GRUVBOX_YELLOW}{i:<{i_pad}}" + "|"
-                f"{left_line:<{max_left}}"
-                + "|"
-                + f"{' ' * short_max_right}"
-                + "|"
+                f"{left_line:<{max_left}}" + "|" + f"{' ' * short_max_right}" + "|"
             )
         else:
             out = (
                 f"{GRUVBOX_YELLOW}{i:<{i_pad}}" + "|"
-                f"{left_line:<{max_left}}"
-                + "|"
-                + f"{right_line:<{max_right}}"
-                + "|"
+                f"{left_line:<{max_left}}" + "|" + f"{right_line:<{max_right}}" + "|"
             )
 
         if not text or verbose:
@@ -1299,9 +1360,7 @@ def find_faulted(results: Path, padding: int):
     df = pd.read_csv(results)
 
     expected_stdout = str(list(df["expected_stdout"])[0])
-    filtered_df = df[
-        df["program_stdout"].str.contains(expected_stdout, na=False)
-    ]
+    filtered_df = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
 
     # Get the mutated paths that have the expected stdouts
     mutated_binaries = [Path(x) for x in filtered_df["binary_path"]]
@@ -1367,16 +1426,12 @@ def many_bit(
 
         # First compile the binary
         out_name = bin_dir.joinpath(f"{target.value}.o")
-        common.program_file = compile_program(
-            common.program_file, out_name, target
-        )
+        common.program_file = compile_program(common.program_file, out_name, target)
 
         # Second run the bit expert
         common.out_dir = common.out_dir.joinpath(f"{target.value}")
         if common.save_results is not None:
-            common.save_results = common.save_results.joinpath(
-                f"{target.value}"
-            )
+            common.save_results = common.save_results.joinpath(f"{target.value}")
         bit(common)
         # bin, mutated_out, comprogram_input, expected_output, list_expected, timeout, save_results)
     return
@@ -1405,9 +1460,7 @@ def many_nop(
         print(f"Compiling for target {target} : {common.program_file}")
         # First compile the binary
         out_name = bin_dir.joinpath(f"{target.name}.o")
-        common.program_file = compile_program(
-            common.program_file, out_name, target
-        )
+        common.program_file = compile_program(common.program_file, out_name, target)
 
         # Second run the bit expert
         common.out_dir.mkdir(exist_ok=True)
@@ -1445,13 +1498,18 @@ def compile_many(inp: Path, out_dir: Path, targets: list[Target]):
                 compiler = "aarch64-linux-gnu-gcc"
             case Target.ARM_32:
                 compiler = "arm-linux-gnueabi-gcc"
+            case Target.AVR:
+                # use atmega2560 for now
+                compiler = "avr-gcc -g -mmcu=atmega2560"
             case _:
                 raise Exception("No support for nops")
 
         new_name = inp.name.replace(".c", "")
 
-        cmd = f"{compiler} {inp} -o {out_dir.joinpath(f'{new_name}_{compiler}.o')}".split(
-            " "
+        cmd = (
+            f"{compiler} {inp} -o {out_dir.joinpath(f'{new_name}_{compiler}.o')}".split(
+                " "
+            )
         )
         try:
             subprocess.run(cmd)
@@ -1478,6 +1536,8 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
             compiler = "aarch64-linux-gnu-gcc"
         case Target.ARM_32:
             compiler = "arm-linux-gnueabi-gcc"
+        case Target.AVR:
+            compiler = "avr-gcc -g -mmcu=atmega2560"
         case _:
             raise Exception("No support for nops")
 
@@ -1503,6 +1563,8 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
             compiler = "aarch64-linux-gnu-gcc"
         case Target.ARM_32:
             compiler = "arm-linux-gnueabi-gcc"
+        case Target.AVR:
+            compiler = "avr-gcc -g -mmcu=atmega2560"
         case _:
             raise Exception("No support for nops")
 
@@ -1534,24 +1596,18 @@ def parallel_runs():
 #    return (process.returncode, stdout.decode(), stderr.decode())
 
 
-
 @app.command()
 def para_bit_no_comp(common: CommandParameters, num_cpus: int):
     """
     Parallelize the bit
     """
 
-
     if isinstance(common.expected_stdout, Path):
-        with open(common.expected_stdout, 'r') as f:
+        with open(common.expected_stdout, "r") as f:
             lines = f.readlines()
             common.expected_stdout = lines
-     
 
-
-    max_workers = max(
-        1, num_cpus // 2
-    )  # avoid 0 in case cpu_count() returns None
+    max_workers = max(1, num_cpus // 2)  # avoid 0 in case cpu_count() returns None
 
     # Make the dir
     common.out_dir.mkdir(exist_ok=True, parents=True)
@@ -1565,14 +1621,12 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
 
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
     if program_context.exists():
-        shutil.copy(
-            program_context, common.out_dir.joinpath(program_context.name)
-        )
+        shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
 
-    #bin_out = common.out_dir.joinpath(
+    # bin_out = common.out_dir.joinpath(
     #    common.program_file.name.replace(".c", ".o")
-    #)
-    #compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+    # )
+    # compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
     compile_cmd = ""
 
     common.save_results = common.out_dir.joinpath("results.csv")
@@ -1580,7 +1634,7 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
     common.out_dir.mkdir(exist_ok=True)
 
     # Compile the binary for the target
-    #common.program_file = compile_program(source_code, bin_out, target)
+    # common.program_file = compile_program(source_code, bin_out, target)
 
     target = detect_target(common.program_file)
 
@@ -1647,9 +1701,7 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
 
     num_instructions = len(disasm)
 
-    num_bits = (
-        len(lief.parse(common.program_file).get_section(".text").content) * 8
-    )
+    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     df = dataclass_to_dataframe(results)
 
@@ -1682,17 +1734,13 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
     return
 
 
-
-
 @app.command()
 def para_bit(common: CommandParameters, target: Target, num_cpus: int):
     """
     Parallelize the bit
     """
 
-    max_workers = max(
-        1, num_cpus // 2
-    )  # avoid 0 in case cpu_count() returns None
+    max_workers = max(1, num_cpus // 2)  # avoid 0 in case cpu_count() returns None
 
     # Make the dir
     common.out_dir.mkdir(exist_ok=True, parents=True)
@@ -1706,13 +1754,9 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
 
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
     if program_context.exists():
-        shutil.copy(
-            program_context, common.out_dir.joinpath(program_context.name)
-        )
+        shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
 
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
+    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
     compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
 
     common.save_results = common.out_dir.joinpath("results.csv")
@@ -1733,11 +1777,11 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
 
     disasm = disassemble_text_section(common.program_file)
 
-    #other_returncodes = [
+    # other_returncodes = [
     #    ("critical_code_ran", 0),
     #    ("critical_code_did_not_run", 97),
     #    ("failed_to_run", -900),
-    #]
+    # ]
 
     futures = []
     results: list[BitFlipExperimentResult] = []
@@ -1791,9 +1835,7 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
 
     num_instructions = len(disasm)
 
-    num_bits = (
-        len(lief.parse(common.program_file).get_section(".text").content) * 8
-    )
+    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     df = dataclass_to_dataframe(results)
 
@@ -1825,19 +1867,17 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
 
     return
 
+
 @app.command()
-def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
+def para_nop_no_comp(common: CommandParameters, num_cpus: int):
     """
     Take c source code as input, compile it, mutate it, and test
     """
 
-
     if isinstance(common.expected_stdout, Path):
-        with open(common.expected_stdout, 'r') as f:
+        with open(common.expected_stdout, "r") as f:
             lines = f.readlines()
             common.expected_stdout = lines
-        
-
 
     max_workers = max(1, num_cpus // 2)
 
@@ -1857,9 +1897,9 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
     common.out_dir.mkdir(exist_ok=True)
 
     # Compile the binary for the target
-    #common.program_file = compile_program(source_code, bin_out, target)
+    # common.program_file = compile_program(source_code, bin_out, target)
 
-    #compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+    # compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
 
     compile_cmd = ""
 
@@ -1878,11 +1918,11 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
 
     target = detect_target(common.program_file)
 
-    #other_returncodes = [
+    # other_returncodes = [
     #    ("critical_code_ran", 0),
     #    ("critical_code_did_not_run", 97),
     #    ("failed_to_run", 1),
-    #]
+    # ]
 
     futures = []
     results: list[NopExperimentResult] = []
@@ -1934,9 +1974,7 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
     with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
         json.dump(params, f, indent=4)
 
-    num_bits = (
-        len(lief.parse(common.program_file).get_section(".text").content) * 8
-    )
+    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     report_path = common.save_results.parent.joinpath("report.md")
     save_report(
@@ -1953,8 +1991,6 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
     )
 
     return
-
-
 
 
 @app.command()
@@ -1976,13 +2012,14 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
     source_code = common.program_file
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
+    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
+
+    base_out = base_out.joinpath("mem_dumps");
+    base_out.mkdir(exist_ok=True)
 
     # Compile the binary for the target
     common.program_file = compile_program(source_code, bin_out, target)
@@ -2004,11 +2041,11 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
 
     target = detect_target(common.program_file)
 
-    #other_returncodes = [
+    # other_returncodes = [
     #    ("critical_code_ran", 0),
     #    ("critical_code_did_not_run", 97),
     #    ("failed_to_run", 1),
-    #]
+    # ]
 
     futures = []
     results: list[NopExperimentResult] = []
@@ -2017,9 +2054,11 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
+        i = 0
         for inst in disasm:
             future = executor.submit(nop_para_run_helper, common, inst, target)
             futures.append(future)
+            break
 
         total_tasks = len(futures)
 
@@ -2060,9 +2099,7 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
     with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
         json.dump(params, f, indent=4)
 
-    num_bits = (
-        len(lief.parse(common.program_file).get_section(".text").content) * 8
-    )
+    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     report_path = common.save_results.parent.joinpath("report.md")
     save_report(
@@ -2114,9 +2151,7 @@ def save_report(
 
     for k, v in settings.items():
         if k in ["program_input", "expected_stdout"]:
-            settings_bullets = (
-                settings_bullets + f"- **{k}**:" + f"`{list(v)}`" + "\n"
-            )
+            settings_bullets = settings_bullets + f"- **{k}**:" + f"`{list(v)}`" + "\n"
             continue
         settings_bullets += f"- **{k}**: {v}\n"
 
@@ -2141,6 +2176,8 @@ def save_report(
             nop = Nop.ARM_64
         case Target.ARM_32:
             nop = Nop.ARM_32
+        case Target.AVR:
+            nop = Nop.AVR
         case _:
             raise Exception("No support for nops")
 
@@ -2148,7 +2185,9 @@ def save_report(
     binary_info += f"- Contains **{num_instructions}** instructions\n"
     binary_info += f"- Contains **{num_bits}** bits in the .text section\n"
     if is_bit:
-        binary_info += f"- Therefore, FaultSim attempted to make **{num_bits}** mutations\n"
+        binary_info += (
+            f"- Therefore, FaultSim attempted to make **{num_bits}** mutations\n"
+        )
         binary_info += f"- Of the **{num_bits}** attempted mutations, **{len(df)}** valid mutated binaries were generated\n"
     else:
         binary_info += f"- Therefore, FaultSim attempted to make **{num_instructions}** mutations\n"
@@ -2160,19 +2199,15 @@ def save_report(
     run_cmd = ["timeout", f"{common.timeout}s"] + run_cmd
     run_cmd = " ".join(run_cmd)
     binary_info += f"- An example run command: `{run_cmd}`\n"
-    binary_info += (
-        f"- The NOP for this target is: `{nop}` with values: {nop.value}\n"
-    )
-    binary_info += (
-        f"- The runtime to generate and run all binaries was: {runtime}\n"
-    )
+    binary_info += f"- The NOP for this target is: `{nop}` with values: {nop.value}\n"
+    binary_info += f"- The runtime to generate and run all binaries was: {runtime}\n"
 
     # 2. Exit code frequecies
-    #other_returncodes = [
+    # other_returncodes = [
     #    ("critcal_code_ran", 0),
     #    ("critical_code_did_not_run", 97),
     #    ("failed_to_run", -900),
-    #]
+    # ]
 
     freqs = calc_freqs(df, common, other_returncodes)
     table = "## Return Code Frequencies \n"
@@ -2182,9 +2217,7 @@ def save_report(
     # 3. list of programs that ran critical code
     list_of_progs = "## Programs that ran critical code \n"
 
-    info = df[
-        df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    ]
+    info = df[df["program_stdout"].str.contains(common.expected_stdout, na=False)]
     names = [Path(x).name for x in list(info["binary_path"])]
 
     list_of_progs += f"**{len(names)}** programs ran the critical code out of **{len(df)}** mutated binaries. The binaires were:\n"
@@ -2207,9 +2240,7 @@ def save_report(
             mut_addr = mut_addr.split("_")[0]
             mut_addr = int(mut_addr, 16)
         else:
-            mut_addr = int(
-                bin.name.replace(f"{common.program_file.name}_", ""), 16
-            )
+            mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
         start_addr = mut_addr - pad
         end_addr = mut_addr + pad
@@ -2256,9 +2287,7 @@ def save_report(
     # Generate the pdf version
     generate_pdf_report(
         report_path.absolute(),
-        report_path.parent.joinpath(
-            report_path.name.replace(".md", ".pdf")
-        ).absolute(),
+        report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
 
     return
@@ -2325,9 +2354,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
 
 
 @app.command
-def gather_reports(
-    inp: Path, out: Path, force: bool = False, substrs: list[str] = []
-):
+def gather_reports(inp: Path, out: Path, force: bool = False, substrs: list[str] = []):
     """
     Gather the reports in the directory
     """
@@ -2356,9 +2383,7 @@ def gather_reports(
     for p in inp.rglob("*"):
         if p.name == "report.pdf":
             # Filter for the substrs
-            if (not any(x in str(p.parent) for x in substrs)) or (
-                substrs != []
-            ):
+            if (not any(x in str(p.parent) for x in substrs)) or (substrs != []):
                 continue
 
             shutil.copy(p, out.joinpath(p.parent.name + ".pdf"))
@@ -2419,11 +2444,10 @@ def get_overhead(
     if output.exists():
         raise Exception
 
-    with open(output, 'w') as f:
+    with open(output, "w") as f:
         for i, info in enumerate(results):
             print(f"INP {inps[i]} results: {info}")
             f.write(f"{inps[i]} | {' | '.join(str(x) for x in info)}\n")
-
 
     # out.unlink()
     shutil.rmtree(out)
@@ -2449,17 +2473,24 @@ def cumulative_report(inp: Path, out: Path):
 
     return
 
-def dataset_split_random(data, val_size=0.25, test_size=0.25, random_state=3, column='split'):
+
+def dataset_split_random(
+    data, val_size=0.25, test_size=0.25, random_state=3, column="split"
+):
     """
     Split DataFrame into 3 non-overlapping parts: train,val,test with specified proportions
 
     Returns a new DataFrame with the rows marked by the assigned split in @column
     """
-    train_size = (1.0 - val_size - test_size)
-    
-    train_val_idx, test_idx = train_test_split(data.index, test_size=test_size, random_state=random_state)
-    val_ratio = (val_size / (val_size+train_size))
-    train_idx, val_idx = train_test_split(train_val_idx, test_size=val_ratio, random_state=random_state)
+    train_size = 1.0 - val_size - test_size
+
+    train_val_idx, test_idx = train_test_split(
+        data.index, test_size=test_size, random_state=random_state
+    )
+    val_ratio = val_size / (val_size + train_size)
+    train_idx, val_idx = train_test_split(
+        train_val_idx, test_size=val_ratio, random_state=random_state
+    )
 
     train = data.loc[train_idx]
     val = data.loc[val_idx]
@@ -2468,42 +2499,38 @@ def dataset_split_random(data, val_size=0.25, test_size=0.25, random_state=3, co
     return train, val, test
 
 
-def evaluate_model(bin_path:Path, test, arm:bool):
+def evaluate_model(bin_path: Path, test, arm: bool):
 
     # Make predictions on dataset
-    X_test = test[['x','y']]
-    Y_test = test[['label']]
+    X_test = test[["x", "y"]]
+    Y_test = test[["label"]]
 
     y_pred_c = predict(str(bin_path), X_test, 5, arm)
 
     f1_score_c = sklearn.metrics.f1_score(Y_test, y_pred_c)
     return f1_score_c
 
-def predict(bin_path, X, timeout:int, use_arm: bool = False):
+
+def predict(bin_path, X, timeout: int, use_arm: bool = False):
 
     def predict_one(x):
         if use_arm:
-            args = [ "qemu-arm-static", bin_path, str(x[0]), str(x[1]) ]
+            args = ["qemu-arm-static", bin_path, str(x[0]), str(x[1])]
         else:
-            args = [ bin_path, str(x[0]), str(x[1]) ]
-
+            args = [bin_path, str(x[0]), str(x[1])]
 
         args = ["timeout", f"{timeout}s"] + args
         out = subprocess.check_output(args)
         cls = int(out)
         return cls
 
-    y = [ predict_one(x) for x in np.array(X) ]
+    y = [predict_one(x) for x in np.array(X)]
     return np.array(y)
 
 
-
-
-
-
 @app.command()
-def nn_test(inp:Path,out:Path, num_cpus: int):
-#def nn_test(inp:Path, dataset: Path, out:Path):
+def nn_test(inp: Path, out: Path, num_cpus: int):
+    # def nn_test(inp:Path, dataset: Path, out:Path):
     """
     A very hard coded version to run a NN using emlearn
     """
@@ -2523,12 +2550,11 @@ def nn_test(inp:Path,out:Path, num_cpus: int):
 
     mutated_bins = []
     bin_futures = []
-    #with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    # with ThreadPoolExecutor(max_workers=max_workers) as executor:
     #    for inst in alive_it(disasm, title='submitting mutations'):
     #        future = executor.submit( _generate_nop_mutated_bin, inp,target, inst, out)
     #        bin_futures.append(future)
     #    total_tasks = len(bin_futures)
-
 
     #    # for _, future in enumerate(futures):
     #    with alive_bar(total_tasks, title="Collecting mutations") as bar:
@@ -2538,25 +2564,22 @@ def nn_test(inp:Path,out:Path, num_cpus: int):
     #            bar()  # increment the progress bar by 1
 
     results = []
-    for inst in alive_it(disasm, title='generating mutatations'):
+    for inst in alive_it(disasm, title="generating mutatations"):
         res = _generate_nop_mutated_bin(inp, target, inst, out)
         mutated_bins.append(res)
-        results.append(nn_helper(res,arm))
+        results.append(nn_helper(res, arm))
         res.unlink()
 
-
-    # For mutation in mutatations, get the f1 
+    # For mutation in mutatations, get the f1
     expected_acc = 0.9677
 
     good_res = {}
     bad_res = {}
     failed_bin = []
 
-
     futures = []
 
-
-    #with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    # with ThreadPoolExecutor(max_workers=max_workers) as executor:
     #    # Run the threads
     #    for bin in mutated_bins:
     #        future = executor.submit(nn_helper, bin, arm)
@@ -2570,17 +2593,15 @@ def nn_test(inp:Path,out:Path, num_cpus: int):
     #            results.append(future.result())
     #            bar()  # increment the progress bar by 1
 
-    for (bin, model_acc) in results:
-        if abs(model_acc- expected_acc) < .03:
+    for bin, model_acc in results:
+        if abs(model_acc - expected_acc) < 0.03:
             good_res[bin.name] = model_acc
         elif model_acc == -99_9999:
             failed_bin.append(failed_bin)
         else:
             bad_res[bin.name] = model_acc
 
-
-
-    #for bin in alive_it(mutated_bins):
+    # for bin in alive_it(mutated_bins):
     #    #compiled_model_path = Path(bin).absolute()
 
     #    try:
@@ -2598,14 +2619,14 @@ def nn_test(inp:Path,out:Path, num_cpus: int):
     print(f"Had {len(bad_res.keys())} bad results")
     print(f"Had {len(failed_bin)} failed results")
 
-
     # Need to mutate the binay
     return
+
 
 def nn_helper(model, arm):
 
     dataset = Path("test_packages/emlearn/examples/dataset.csv")
-    df= pd.read_csv(dataset)
+    df = pd.read_csv(dataset)
     _, _, test = dataset_split_random(df, test_size=0.10)
     try:
         acc = evaluate_model(model, test, arm)
@@ -2613,8 +2634,9 @@ def nn_helper(model, arm):
     except Exception as e:
         return (model, -99_999)
 
+
 @app.command()
-def new_nn_test(inp:Path, out:Path, test_size:int):
+def new_nn_test(inp: Path, out: Path, test_size: int):
     """
     Temp function to run against the new neural net
     """
@@ -2632,18 +2654,17 @@ def new_nn_test(inp:Path, out:Path, test_size:int):
 
     logger.debug(f"Detected Target: {target}")
 
-
-    mutated_bins = [] 
+    mutated_bins = []
     for inst in alive_it(disasm, title="generating mutations"):
-        # 1. mutate 
+        # 1. mutate
         mutated_bins.append(_generate_nop_mutated_bin(inp, target, inst, out))
 
-    # Now, for each bin I need to see if, for every input 
-    # there is a potential difference. 
-    # 
-    # There are index 0-449, so, first obtain the correct 
-    # predictions from the original model, anything with 
-    # "CORRECT" in the stdout 
+    # Now, for each bin I need to see if, for every input
+    # there is a potential difference.
+    #
+    # There are index 0-449, so, first obtain the correct
+    # predictions from the original model, anything with
+    # "CORRECT" in the stdout
 
     baseline_correct_predictions = []
     for i in range(test_size):
@@ -2652,17 +2673,17 @@ def new_nn_test(inp:Path, out:Path, test_size:int):
         if "CORRECT" in stdout.decode():
             baseline_correct_predictions.append(i)
 
-    # Now, try only those in the mutated model and see what 
-    # we get 
+    # Now, try only those in the mutated model and see what
+    # we get
     results = []
 
     atleast_one_mistake = 0
 
-    for bin in alive_it(mutated_bins, title='testing mutations'):
+    for bin in alive_it(mutated_bins, title="testing mutations"):
         bin_results = {
-            'correct' : [],
-            'wrong' : [],
-            'failed' : [],
+            "correct": [],
+            "wrong": [],
+            "failed": [],
         }
 
         for i in baseline_correct_predictions:
@@ -2670,57 +2691,57 @@ def new_nn_test(inp:Path, out:Path, test_size:int):
                 stdout = class_helper(bin, i, 2, arm)
 
                 if "CORRECT" in stdout.decode():
-                    bin_results['correct'].append(bin)
+                    bin_results["correct"].append(bin)
                 elif "WRONG" in stdout.decode():
-                    bin_results['wrong'].append(bin)
+                    bin_results["wrong"].append(bin)
                     print(f"Bin: {bin} wrong on {i}")
                 else:
-                    bin_results['failed'].append(bin)
+                    bin_results["failed"].append(bin)
             except:
-                bin_results['failed'].append(bin)
+                bin_results["failed"].append(bin)
 
-        if len(bin_results['wrong']) > 0:
-            atleast_one_mistake +=1
-        if len(bin_results['failed']) > 0:
-            atleast_one_mistake +=1
+        if len(bin_results["wrong"]) > 0:
+            atleast_one_mistake += 1
+        if len(bin_results["failed"]) > 0:
+            atleast_one_mistake += 1
 
-        results.append((bin,bin_results))
+        results.append((bin, bin_results))
 
-    console.print(f"Baseline correctly labeled {len(baseline_correct_predictions)} inputs")
-    console.print(f"Of {len(mutated_bins)}, {atleast_one_mistake} mutated bins incorrect labeled an input that baseline correctly labeld")
+    console.print(
+        f"Baseline correctly labeled {len(baseline_correct_predictions)} inputs"
+    )
+    console.print(
+        f"Of {len(mutated_bins)}, {atleast_one_mistake} mutated bins incorrect labeled an input that baseline correctly labeld"
+    )
 
-    for (bin,res) in results:
-        if len(res['wrong']) > 0:
-                print(f"{bin.name} | mistakes: {res['wrong']}\n")
+    for bin, res in results:
+        if len(res["wrong"]) > 0:
+            print(f"{bin.name} | mistakes: {res['wrong']}\n")
 
-    with open("TEMPDELME.txt", 'w') as f:
-        for (bin,res) in results:
-            if len(res['wrong']) > 0:
+    with open("TEMPDELME.txt", "w") as f:
+        for bin, res in results:
+            if len(res["wrong"]) > 0:
                 f.write(f"{bin.name} | mistakes: {res['wrong']}\n")
-
-
 
     return
 
-def class_helper(bin_path: Path, input:int, timeout:int, use_arm:bool):
+
+def class_helper(bin_path: Path, input: int, timeout: int, use_arm: bool):
     """
-    Helper for a simple nerual net 
+    Helper for a simple nerual net
     """
 
     if use_arm:
-        args = [ "qemu-arm-static", bin_path, str(input) ]
+        args = ["qemu-arm-static", bin_path, str(input)]
     else:
-        args = [ bin_path, str(input) ]
+        args = [bin_path, str(input)]
 
     args = ["timeout", f"{timeout}s"] + args
-    #print(f"running: {args}")
-    out = subprocess.check_output(args,
-            stderr=subprocess.DEVNULL  # ← toss all stderr
-                                      )
-#qemu: uncaught target signal 11 (Segmentation fault) - core dumped
+    # print(f"running: {args}")
+    out = subprocess.check_output(args, stderr=subprocess.DEVNULL)  # ← toss all stderr
+    # qemu: uncaught target signal 11 (Segmentation fault) - core dumped
 
     return out
-
 
 
 def plot_faults_and_failures(start_addr, end_addr, faulted_addresses, failed_addresses):
@@ -2746,40 +2767,36 @@ def plot_faults_and_failures(start_addr, end_addr, faulted_addresses, failed_add
 
     # Plot faulted addresses
     for addr in faulted_addresses:
-        ax.axvline(x=addr, color='yellow', linestyle='--', linewidth=2, label='Faulted')
+        ax.axvline(x=addr, color="yellow", linestyle="--", linewidth=2, label="Faulted")
 
     # Plot failed addresses
     for addr in failed_addresses:
-        ax.axvline(x=addr, color='red', linestyle='-', linewidth=2, label='Failed')
+        ax.axvline(x=addr, color="red", linestyle="-", linewidth=2, label="Failed")
 
     # Create a legend without duplicate entries
     handles, labels = ax.get_legend_handles_labels()
     unique = dict(zip(labels, handles))
-    ax.legend(unique.values(), unique.keys(), loc='upper right')
+    ax.legend(unique.values(), unique.keys(), loc="upper right")
 
-    ax.set_xlabel('Address')
-    ax.set_yticks([])               # hide y-tick marks
-    ax.set_title('Memory Faults and Failures')
+    ax.set_xlabel("Address")
+    ax.set_yticks([])  # hide y-tick marks
+    ax.set_title("Memory Faults and Failures")
 
     return plt
 
 
-
-
 @app.command()
-def gen_fault_plot(inp:Path):
+def gen_fault_plot(inp: Path):
     """
-    Generate a plot of addresses with a line at the addresses that 
-    caused a successful fualt, and a line at the addresses that 
-    caused the program to fail to run 
+    Generate a plot of addresses with a line at the addresses that
+    caused a successful fualt, and a line at the addresses that
+    caused the program to fail to run
 
     Input
     -----
-    csv with two 
+    csv with two
     """
-    return 
-
-
+    return
 
 
 if __name__ == "__main__":
