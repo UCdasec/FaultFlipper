@@ -20,8 +20,10 @@ class Nop(Enum):
     X86_64 = [0x90]
     RISCV = [0x13, 0x00, 0x00, 0x00]
     RISCV_COMPACT = [0x01, 0x00]
-    #ARM_64 = [0xd5, 0x03, 0x20, 0x1f] #bad endian ness
-    ARM_64 = [0xf1, 0x02, 0x30, 0x5d] 
+
+    # Below is good endianness for how we read it :) 
+    ARM_64 = [0xd5, 0x03, 0x20, 0x1f] 
+
     #ARM_32 = [0xe1, 0xa0, 0x00, 0x00] # bad endianness
     ARM_32 = [0x00, 0x00, 0xA0, 0xE1]
     RISCV_32 = [0x13, 0x00, 0x00, 0x00]
@@ -272,6 +274,29 @@ def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
 
     nop_patch = nop.value * int((len(inst.bytes) / len(nop.value)))
     return nop_patch
+
+
+def generate_double_nop_mutated_bin(common, target, inst1, inst2) -> Path:
+    """
+    Geneate a single mutated binary
+    """
+
+    out_file = common.out_dir.joinpath(
+        common.program_file.name + f"_{hex(inst1.address)}"
+    )
+
+    shutil.copy(common.program_file, out_file)
+    nop_patch = gen_nop_patch(inst1, target=target)
+    in_place_patch(common.program_file, out_file, inst1.address, bytes(nop_patch))
+
+    nop_patch = gen_nop_patch(inst2, target=target)
+    in_place_patch(out_file, out_file, inst2.address, bytes(nop_patch))
+
+    out_file.chmod(0o755)
+
+    return out_file
+
+
 
 def generate_nop_mutated_bin(common, target, inst) -> Path:
     """
