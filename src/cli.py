@@ -51,6 +51,8 @@ from alive_progress import alive_it
 import logging
 import sys
 from tempfile import NamedTemporaryFile
+import textwrap
+import hashlib
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
@@ -219,7 +221,7 @@ def bit_para_run_helper(common, inst, target: Target):
 
         try:
             returncode, stdout, stderr = run_binary_w_input(
-                out_file, input, target, common.timeout
+                out_file, common.out_dir, input, target, common.timeout
             )
             returncode = shift_exit_code(returncode)
             results.append(
@@ -250,7 +252,7 @@ def nop_para_run_helper(common, inst, target: Target):
 
     try:
         returncode, stdout, stderr = run_binary_w_input(
-            out_file, common.program_input, target, common.timeout
+            out_file, common.out_dir, common.program_input, target, common.timeout
         )
         returncode = shift_exit_code(returncode)
         return out_file, returncode, inst, common, target, stdout, stderr
@@ -308,8 +310,72 @@ def timed_run_binary_w_input(
     )
 
 
+def run_binary_w_hash(
+    path: Path, out_dir: Path, target: Target, gdb_type: str, mem_region: tuple[int, int], timeout: int = 60
+):
+    cmd = generate_run_cmd(path, target)
+    #cmd = ["timeout", f"{timeout}s"] + cmd
+
+    # Verify that the path exists and is a file
+    if not path.is_file():
+        print(f"Error: The path '{path}' does not exist or is not a file.")
+        return
+
+    mem_dump = Path(f"{out_dir}/{path.name}.dump")
+    mem_dump.parent.mkdir(parents=True, exist_ok=True);
+    mem_dump.touch()
+
+    gdb_script = textwrap.dedent(f"""\
+        target remote /tmp/{path.name}.con
+        set confirm off
+        break exit
+        commands
+            dump binary memory {mem_dump} {mem_region[0]} {mem_region[1]}
+        end
+        continue
+        kill
+        quit
+    """)
+
+    with NamedTemporaryFile("w", delete=False, suffix=".gdb") as script_file:
+        script_file.write(gdb_script)
+        script_path = script_file.name
+
+    gdb = [
+        gdb_type,
+        "-batch",
+        "-q",
+        "-x", f"{script_path}",
+        f"{path.expanduser().absolute()}",
+    ]
+
+    # Run the compiled C program
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr = subprocess.DEVNULL
+    )
+
+    process_gdb = subprocess.Popen(
+        gdb,
+        # floods console with output if not disabled
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+
+    try:
+        # Gather the outputs
+        process_gdb.wait(timeout=timeout)
+        process.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process_gdb.kill()
+
+    return mem_dump
+
+
 def run_binary_w_input(
-    path: Path, program_input: str, target: Target, timeout: int = 60
+    path: Path, out_dir: Path, program_input: str, target: Target, timeout: int = 60
 ):
     """
     Run a binary and capture its output
@@ -333,43 +399,12 @@ def run_binary_w_input(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
-    gdb_python = f"""
-target remote /tmp/{path.name}.con 
-set confirm off
-break exit
-break _exit
-commands 
-    dump binary memory {path.name}.bin 0x0100 0x21FF
-end
-continue
-kill
-quit
-    """
 
-    with NamedTemporaryFile("w", delete=False, suffix=".gdb") as script_file:
-        script_file.write(gdb_python)
-        script_path = script_file.name
-
-    gdb = [
-        # simultaneously start gdb
-        "avr-gdb",
-        "-batch",
-        "-q",
-        "-x", f"{script_path}",
-        f"{path.expanduser().absolute()}",
-    ]
-
-    process_gdb = subprocess.Popen(
-        gdb,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
-    )
     try:
         # Gather the outputs
         stdout, stderr = process.communicate(
             input=program_input.encode(), timeout=timeout
         )
-        process_gdb.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill()
         stdout, stderr = b"", b"timeout expired"
@@ -619,6 +654,7 @@ def bit(common: CommandParameters, source_code: Optional[Path] = None) -> pd.Dat
             try:
                 status, stdout, _ = run_binary_w_input(
                     out_file,
+                    common.out_dir,
                     common.program_input,
                     target=target,
                     timeout=common.timeout,
@@ -809,6 +845,9 @@ def bit_exp(
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
+
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
 
@@ -822,7 +861,7 @@ def bit_exp(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     return df
@@ -852,6 +891,9 @@ def nop_exp_no_comp(
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
+
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
 
@@ -862,7 +904,7 @@ def nop_exp_no_comp(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     return df
@@ -893,6 +935,8 @@ def nop_exp(
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
 
@@ -906,7 +950,7 @@ def nop_exp(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     return df
@@ -968,6 +1012,7 @@ def nop_no_comp(
         try:
             status, stdout, _ = run_binary_w_input(
                 out_file,
+                common.out_dir,
                 common.program_input,
                 target=target,
                 timeout=common.timeout,
@@ -1062,7 +1107,6 @@ def show_results(
     if common.list_expected:
         good_names = set([])
 
-        print(f"HEEEEEEEEEEEEERRRRRRRRRRRRRRRRRRRRRRRRRRR")
         print(f"THe expected stdout is: {common.expected_stdout}")
         if isinstance(common.expected_stdout, str):
             info = df[
@@ -1582,6 +1626,15 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
         raise e
 
 
+def hash_file(filepath, hash_algo='sha256', block_size=65536):
+    """Return the hash of a file using the specified algorithm."""
+    hasher = hashlib.new(hash_algo)
+    with open(filepath, 'rb') as f:
+        for chunk in iter(lambda: f.read(block_size), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
 def parallel_runs():
     """
     Run the binaries in parallel
@@ -1629,6 +1682,8 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
     # compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
     compile_cmd = ""
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
@@ -1713,7 +1768,7 @@ def para_bit_no_comp(common: CommandParameters, num_cpus: int):
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.save_results.parent.joinpath("report.md")
@@ -1759,6 +1814,8 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
     compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
@@ -1847,7 +1904,7 @@ def para_bit(common: CommandParameters, target: Target, num_cpus: int):
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.save_results.parent.joinpath("report.md")
@@ -1892,6 +1949,8 @@ def para_nop_no_comp(common: CommandParameters, num_cpus: int):
     source_code = common.program_file
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
@@ -1971,7 +2030,7 @@ def para_nop_no_comp(common: CommandParameters, num_cpus: int):
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -1991,6 +2050,29 @@ def para_nop_no_comp(common: CommandParameters, num_cpus: int):
     )
 
     return
+
+
+def diff_sim(baseline_hash, disasm, out_dir, timeout, target, max_workers, helperfn):
+    futures = []
+    start_time = datetime.now()
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Run the threads
+        for inst in disasm:
+            future = executor.submit(helperfn, out_dir, target, timeout, inst)
+            futures.append(future)
+
+        total_tasks = len(futures)
+
+        same_count = 0
+        with alive_bar(total_tasks, title="Processing tasks") as bar:
+            for future in as_completed(futures):
+                dump_hash = future.result()
+                if dump_hash == baseline_hash:
+                    same_count += 1
+                bar()  # increment the progress bar by 1
+
+    runtime = datetime.now() - start_time
+    print("SAME COUNT:", same_count)
 
 
 @app.command()
@@ -2014,12 +2096,12 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
+    mem_dumps_dir = common.out_dir.joinpath("mem_dumps")
+    mem_dumps_dir.mkdir(exist_ok=True)
+
     common.save_results = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
-
-    base_out = base_out.joinpath("mem_dumps");
-    base_out.mkdir(exist_ok=True)
 
     # Compile the binary for the target
     common.program_file = compile_program(source_code, bin_out, target)
@@ -2052,13 +2134,28 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
 
     start_time = datetime.now()
 
+    if target == Target.AVR:
+        baseline_prog = run_binary_w_hash(
+            common.program_file, mem_dumps_dir, target, "avr-gdb", (0x0100, 0x21ff), common.timeout
+        )
+        baseline_hash = hash_file(baseline_prog)
+
+        def nop_helper(out_dir, target, timeout, inst):
+            out_file = generate_nop_mutated_bin(common, target, inst)
+            mem_dump = run_binary_w_hash(
+                out_file, out_dir, target, "avr-gdb", (0x0100, 0x21ff), timeout
+            )
+            dump_hash = hash_file(mem_dump)
+            return dump_hash, inst
+
+        diff_sim(baseline_hash, disasm, mem_dumps_dir, common.timeout, target, max_workers, nop_helper)
+        return
+
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
-        i = 0
         for inst in disasm:
             future = executor.submit(nop_para_run_helper, common, inst, target)
             futures.append(future)
-            break
 
         total_tasks = len(futures)
 
@@ -2096,7 +2193,7 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
