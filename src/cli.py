@@ -118,6 +118,7 @@ class CommandParameters:
     timeout: int = 5
     save_results: Union[Path, None] = None
     yes: bool = False
+    compare_tb: bool = True
 
     def to_dict(self):
         if self.save_results is None:
@@ -133,6 +134,7 @@ class CommandParameters:
             "timeout": self.timeout,
             "save_results": str(self.save_results.absolute()),
             "yes": self.yes,
+            "compare_tb": self.compare_tb,
         }
 
 
@@ -152,8 +154,8 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
         case Target.ARM_32:
             return [
                 "qemu-arm-static",
-                "-L",
-                "/usr/arm-linux-gnueabi",
+                "-L", "/usr/arm-linux-gnueabi",
+                "-d", "in_asm", # can also include cpu
                 f"{inp.expanduser().absolute()}",
             ]
         case Target.ARM_64:
@@ -161,6 +163,7 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
                 "qemu-aarch64-static",
                 "-L",
                 "/usr/aarch64-linux-gnu",
+                "-d", "in_asm", # can also include cpu
                 f"{inp.expanduser().absolute()}",
             ]
         case Target.AVR:
@@ -174,12 +177,12 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
                 "-nographic",
                 "-bios", f"{inp.expanduser().absolute()}",
             ]
-        case Target.RISCV_32:
-            cmd = f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-            logger.debug(f"Command is : {cmd}")
-            return cmd
+        #case Target.RISCV_32:
+        #    cmd = f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
+        #        " "
+        #    )
+        #    logger.debug(f"Command is : {cmd}")
+        #    return cmd
         case _:
             raise Exception(f"Unsupported target {target}")
     return
@@ -221,7 +224,7 @@ def bit_para_run_helper(common, inst, target: Target):
 
         try:
             returncode, stdout, stderr = run_binary_w_input(
-                out_file, common.out_dir, input, target, common.timeout
+                out_file, input, target, common.timeout
             )
             returncode = shift_exit_code(returncode)
             results.append(
@@ -242,7 +245,7 @@ def nop_para_run_helper(common, inst, target: Target):
     if common.program_input[-1:] != "\n":
         common.program_input += "\n"
 
-    # Generate hte mutated binary
+    # Generate the mutated binary
     try:
         out_file = generate_nop_mutated_bin(common, target, inst)
 
@@ -252,7 +255,7 @@ def nop_para_run_helper(common, inst, target: Target):
 
     try:
         returncode, stdout, stderr = run_binary_w_input(
-            out_file, common.out_dir, common.program_input, target, common.timeout
+            out_file, common.program_input, target, common.timeout
         )
         returncode = shift_exit_code(returncode)
         return out_file, returncode, inst, common, target, stdout, stderr
@@ -311,10 +314,10 @@ def timed_run_binary_w_input(
 
 
 def run_binary_w_hash(
-    path: Path, out_dir: Path, target: Target, gdb_type: str, mem_region: tuple[int, int], timeout: int = 60
+    path: Path, out_dir: Path, target: Target, gdb_type: str, mem_region: tuple[int, int], timeout: int = 60, program_input: str = ""
 ):
     cmd = generate_run_cmd(path, target)
-    #cmd = ["timeout", f"{timeout}s"] + cmd
+    cmd = ["timeout", f"{timeout}s"] + cmd
 
     # Verify that the path exists and is a file
     if not path.is_file():
@@ -352,8 +355,10 @@ def run_binary_w_hash(
     # Run the compiled C program
     process = subprocess.Popen(
         cmd,
-        stdout=subprocess.DEVNULL,
-        stderr = subprocess.DEVNULL
+        stdout=subprocess.PIPE,
+        stdin=subprocess.PIPE,
+        stderr = subprocess.PIPE,
+        text=True
     )
 
     process_gdb = subprocess.Popen(
@@ -364,9 +369,12 @@ def run_binary_w_hash(
     )
 
     try:
+        if program_input:
+            process.stdin.write(program_input)
+            process.stdin.flush()
         # Gather the outputs
-        process_gdb.wait(timeout=timeout)
         process.wait(timeout=timeout)
+        process_gdb.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         process.kill()
         process_gdb.kill()
@@ -375,7 +383,7 @@ def run_binary_w_hash(
 
 
 def run_binary_w_input(
-    path: Path, out_dir: Path, program_input: str, target: Target, timeout: int = 60
+    path: Path, program_input: str, target: Target, timeout: int = 60
 ):
     """
     Run a binary and capture its output
@@ -514,13 +522,14 @@ class BitFlipExperimentResult(MutationExperiment):
     flipped_index: int
     mutation: str = "single_bit"
     source_code: Optional[Path] = None
+    data_dump: str = ""
 
 
 @dataclass
 class NopExperimentResult(MutationExperiment):
     nopped_addr: int
     mutation: str = "nop"
-    source_code: Optional[Path] = None
+    data_dump: str = ""
 
 
 def preserve_debug_sections(orig_binary, patched_binary):
@@ -654,7 +663,6 @@ def bit(common: CommandParameters, source_code: Optional[Path] = None) -> pd.Dat
             try:
                 status, stdout, _ = run_binary_w_input(
                     out_file,
-                    common.out_dir,
                     common.program_input,
                     target=target,
                     timeout=common.timeout,
@@ -1012,7 +1020,6 @@ def nop_no_comp(
         try:
             status, stdout, _ = run_binary_w_input(
                 out_file,
-                common.out_dir,
                 common.program_input,
                 target=target,
                 timeout=common.timeout,
@@ -1098,6 +1105,7 @@ def show_results(
     df: pd.DataFrame,
     other_returncodes: list[tuple[str, int]],
     print_df: bool = False,
+    baseline_hash = "",
 ):
     if print_df:
         console.print(
@@ -1107,7 +1115,7 @@ def show_results(
     if common.list_expected:
         good_names = set([])
 
-        print(f"THe expected stdout is: {common.expected_stdout}")
+        print(f"The expected stdout is: {common.expected_stdout}")
         if isinstance(common.expected_stdout, str):
             info = df[
                 df["program_stdout"].str.contains(common.expected_stdout, na=False)
@@ -1149,6 +1157,12 @@ def show_results(
         )
     else:
         print(f"0 programs out of {len(df)} had the expected stdout")
+
+    if common.compare_tb:
+        total_matches = (df["data_dump"] == baseline_hash).sum()
+        print(f"Total Matches between diffed files: {total_matches}")
+    print("Baseline Hash:", baseline_hash)
+
     return
 
 
@@ -1541,7 +1555,7 @@ def compile_many(inp: Path, out_dir: Path, targets: list[Target]):
             case Target.ARM_64:
                 compiler = "aarch64-linux-gnu-gcc"
             case Target.ARM_32:
-                compiler = "arm-linux-gnueabi-gcc"
+                compiler = "arm-linux-gnueabi-gcc -g"
             case Target.AVR:
                 # use atmega2560 for now
                 compiler = "avr-gcc -g -mmcu=atmega2560"
@@ -1579,7 +1593,7 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
         case Target.ARM_64:
             compiler = "aarch64-linux-gnu-gcc"
         case Target.ARM_32:
-            compiler = "arm-linux-gnueabi-gcc"
+            compiler = "arm-linux-gnueabi-gcc -g"
         case Target.AVR:
             compiler = "avr-gcc -g -mmcu=atmega2560"
         case _:
@@ -1606,7 +1620,7 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
         case Target.ARM_64:
             compiler = "aarch64-linux-gnu-gcc"
         case Target.ARM_32:
-            compiler = "arm-linux-gnueabi-gcc"
+            compiler = "arm-linux-gnueabi-gcc -g"
         case Target.AVR:
             compiler = "avr-gcc -g -mmcu=atmega2560"
         case _:
@@ -1626,7 +1640,7 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
         raise e
 
 
-def hash_file(filepath, hash_algo='sha256', block_size=65536):
+def hash_file(filepath, hash_algo='sha256', block_size=65536) -> str:
     """Return the hash of a file using the specified algorithm."""
     hasher = hashlib.new(hash_algo)
     with open(filepath, 'rb') as f:
@@ -2052,27 +2066,36 @@ def para_nop_no_comp(common: CommandParameters, num_cpus: int):
     return
 
 
-def diff_sim(baseline_hash, disasm, out_dir, timeout, target, max_workers, helperfn):
+def diff_sim(baseline_hash, out_dir, common, disasm, target, max_workers, gdb, mem_region, helperfn):
+    results = []
     futures = []
     start_time = datetime.now()
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
         for inst in disasm:
-            future = executor.submit(helperfn, out_dir, target, timeout, inst)
+            future = executor.submit(helperfn, out_dir, common, target, inst, gdb, mem_region) 
             futures.append(future)
 
         total_tasks = len(futures)
 
-        same_count = 0
         with alive_bar(total_tasks, title="Processing tasks") as bar:
             for future in as_completed(futures):
-                dump_hash = future.result()
+                dump_hash, inst = future.result()
                 if dump_hash == baseline_hash:
-                    same_count += 1
+                   results.append(disasm.index(inst) + 1) 
                 bar()  # increment the progress bar by 1
 
     runtime = datetime.now() - start_time
-    print("SAME COUNT:", same_count)
+    print("SAME COUNT:", results)
+
+
+def nop_helper(out_dir: Path, common, target, inst, gdb: str, mem_region: tuple[int, int]):
+    out_file = generate_nop_mutated_bin(common, target, inst)
+    mem_dump = run_binary_w_hash(
+        out_file, out_dir, target, gdb, mem_region, common.timeout, common.program_input
+    )
+    dump_hash = hash_file(mem_dump)
+    return dump_hash, inst
 
 
 @app.command()
@@ -2134,22 +2157,25 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
 
     start_time = datetime.now()
 
-    if target == Target.AVR:
+    # hijack the run-process if our target is AVR
+    if target is Target.AVR:
+        gdb = "avr-gdb"
+        mem_region = (0x0100, 0x21ff)
         baseline_prog = run_binary_w_hash(
-            common.program_file, mem_dumps_dir, target, "avr-gdb", (0x0100, 0x21ff), common.timeout
+            common.program_file, mem_dumps_dir, target, gdb, mem_region, common.timeout
         )
         baseline_hash = hash_file(baseline_prog)
 
-        def nop_helper(out_dir, target, timeout, inst):
-            out_file = generate_nop_mutated_bin(common, target, inst)
-            mem_dump = run_binary_w_hash(
-                out_file, out_dir, target, "avr-gdb", (0x0100, 0x21ff), timeout
-            )
-            dump_hash = hash_file(mem_dump)
-            return dump_hash, inst
-
-        diff_sim(baseline_hash, disasm, mem_dumps_dir, common.timeout, target, max_workers, nop_helper)
+        diff_sim(baseline_hash, mem_dumps_dir, common, disasm, target, max_workers, gdb, mem_region, nop_helper)
         return
+
+    baseline_hash = ""
+    # get baseline
+    if common.compare_tb:
+        _, _, stderr = run_binary_w_input(common.program_file, common.program_input, target, common.timeout)
+        baseline_dump = mem_dumps_dir / "baseline.dump" 
+        baseline_dump.write_text(stderr)
+        baseline_hash = hash_file(baseline_dump)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
@@ -2180,6 +2206,12 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
                     expected_stdout=common.expected_stdout,
                     custom_returncodes=other_returncodes,
                 )
+
+                if common.compare_tb:
+                    instr_dump = mem_dumps_dir / f"{out_file.name}.dump"
+                    instr_dump.write_text(stderr)
+                    result.data_dump = hash_file(instr_dump)
+
                 results.append(result)
                 bar()  # increment the progress bar by 1
 
@@ -2187,8 +2219,6 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
 
     df = dataclass_to_dataframe(results)
     save_df(df, common.save_results)
-    show_results(common, df, other_returncodes)
-
     # Lastly save the experiment parameters
     params = common.to_dict()
     params["target"] = target.value
@@ -2196,6 +2226,7 @@ def para_nop(common: CommandParameters, target: Target, num_cpus: int):
     with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
+    show_results(common, df, other_returncodes, baseline_hash=baseline_hash)
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     report_path = common.save_results.parent.joinpath("report.md")
