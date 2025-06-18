@@ -1,5 +1,3 @@
-
-
 from enum import Enum
 import capstone
 import lief
@@ -20,13 +18,13 @@ class Nop(Enum):
     RISCV = [0x13, 0x00, 0x00, 0x00]
     RISCV_COMPACT = [0x01, 0x00]
     ARM_64 = [0xD5, 0x03, 0x20, 0x1F]
-    ARM_32 = [0xE1, 0xA0, 0x00, 0x00]
-
+    # fix endianness
+    ARM_32 = [0x00, 0x00, 0xA0, 0xE1]
 
 
 def shift_exit_code(x: int) -> int:
     """
-    When python reads an exit code thats less than 
+    When python reads an exit code thats less than
     0, flip its sign and add 128
     """
     if x < 0:
@@ -34,12 +32,7 @@ def shift_exit_code(x: int) -> int:
     return x
 
 
-def in_place_patch(
-    in_file: str,
-    out_file: str,
-    patch_addr: int,
-    patch_data: bytes
-):
+def in_place_patch(in_file: str, out_file: str, patch_addr: int, patch_data: bytes):
     """
     Patches a running (virtual) address 'patch_addr' in 'in_file'
     with the bytes in 'patch_data', writing to 'out_file' in place.
@@ -67,7 +60,7 @@ def in_place_patch(
     segment_found = None
     for seg in binary.segments:
         va_start = seg.virtual_address
-        va_end   = va_start + seg.virtual_size
+        va_end = va_start + seg.virtual_size
         if va_start <= patch_addr < va_end:
             segment_found = seg
             break
@@ -78,7 +71,9 @@ def in_place_patch(
     # Compute the file offset
     # For that segment, the offset in the file that corresponds to 'patch_addr' is:
     #   file_offset_of_address = segment.file_offset + (patch_addr - segment.virtual_address)
-    offset_in_file = segment_found.file_offset + (patch_addr - segment_found.virtual_address)
+    offset_in_file = segment_found.file_offset + (
+        patch_addr - segment_found.virtual_address
+    )
 
     # Read the entire file into memory
     with open(in_file, "rb") as f:
@@ -96,7 +91,7 @@ def in_place_patch(
     with open(out_file, "wb") as f:
         f.write(data)
 
-    #print(f"Patched 0x{patch_addr:x} in {in_file}, wrote result to {out_file}")
+    # print(f"Patched 0x{patch_addr:x} in {in_file}, wrote result to {out_file}")
 
     return
 
@@ -158,11 +153,7 @@ def get_capstone_arch_mode(filename):
         elif machine_type == lief.ELF.ARCH.MIPS:
             cs_arch = capstone.CS_ARCH_MIPS
             # MIPS can be 32 or 64
-            cs_mode = (
-                capstone.CS_MODE_MIPS32
-                if not is_64
-                else capstone.CS_MODE_MIPS64
-            )
+            cs_mode = capstone.CS_MODE_MIPS32 if not is_64 else capstone.CS_MODE_MIPS64
             # Add endianness
             if is_le:
                 cs_mode |= capstone.CS_MODE_LITTLE_ENDIAN
@@ -268,6 +259,7 @@ def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
     nop_patch = nop.value * int((len(inst.bytes) / len(nop.value)))
     return nop_patch
 
+
 def generate_nop_mutated_bin(common, target, inst) -> Path:
     """
     Geneate a single mutated binary
@@ -284,6 +276,3 @@ def generate_nop_mutated_bin(common, target, inst) -> Path:
     out_file.chmod(0o755)
 
     return out_file
-
-
-
