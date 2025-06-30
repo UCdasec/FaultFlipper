@@ -634,8 +634,13 @@ def nop_no_comp_inout(
     expected_correct: int | None = None,
 ) -> pd.DataFrame:
     """
-    Patch all the addrs in the binar , and save bins that
-    have a succesffuly exist code what running WITH NO FLAGS
+    This version of the experiments takes tuples of:
+    [ (INPUT, EXPECTED_OUTPUT), ....]
+
+    And runs each mutated program on _every tuple_. 
+
+    So if we have 4 tuples, and 10 mutated programs, we get 
+    40 results in total.
     """
     other_returncodes = [
             #("critical_code_ran", 0),
@@ -2342,11 +2347,6 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         experiments = settings.get("experiment", {})
 
         commands = {
-            # "nop": nop,
-            # "bit": bit,
-            # "nop_exp": nop_exp,
-            #"many_nop": many_nop,
-            #"many_bit": many_bit,
             "nop": nop,
             "para_double_nop": para_double_nop,
             "para_bit": para_bit,
