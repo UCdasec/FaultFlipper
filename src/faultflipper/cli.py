@@ -14,17 +14,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import numpy as np
 from pathlib import Path
-from capstone import (
-    Cs,
-    CS_ARCH_X86,
-    CS_MODE_64,
-    CS_ARCH_RISCV,
-    CS_MODE_RISCV64,
-    CS_MODE_RISCVC,
-    CS_MODE_LITTLE_ENDIAN
-)
-import capstone
-from cyclopts import App, Parameter
+from cyclopts import App
 from rich.console import Console
 import subprocess
 import pandas as pd
@@ -33,7 +23,7 @@ from alive_progress import alive_it
 from logger_utils import setup_logger
 from cli_utils import CommandParameters, show_results, calc_freqs, BitFlipExperimentResult, NopExperimentResult, smol_show_results
 
-from binary_tools import Target, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, is_valid_instruction, run_binary_w_calltime_input, timed_run_binary_w_input, generate_run_cmd
+from binary_tools import Target, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, is_valid_instruction, run_binary_w_calltime_input, timed_run_binary_w_input, generate_run_cmd, disassemble_text_section
 
 from parallel_runner import  bit_para_run_helper, double_bit_para_run_helper, double_nop_para_run_helper, nop_para_run_helper
 
@@ -691,7 +681,14 @@ def nop_no_comp_inout(
 
             # The out file is at out_dir/...
             #out_file = generate_nop_mutated_bin(common, target, inst)
-            out_file = generate_nops_mutated_bin(common, target, [inst])
+
+            insts = [inst]
+            out_path = common.out_dir.joinpath(
+                common.program_file.name + f"_{hex(insts[0].address)}"
+            )
+            out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+
+            #out_file = generate_nops_mutated_bin(common, target, [inst])
 
             # Run all the possible inputs and outputs
             for cur_in, cur_out in zip(ins,outs):
@@ -848,7 +845,14 @@ def nop_no_comp(
     for inst in alive_it(disasm):
         # Generate the mutated binary
         #kout_file = generate_nop_mutated_bin(common, target, inst)
-        out_file = generate_nops_mutated_bin(common, target, [inst])
+
+        insts = [inst]
+        out_path = common.out_dir.joinpath(
+            common.program_file.name + f"_{hex(insts[0].address)}"
+        )
+        out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+
+        #out_file = generate_nops_mutated_bin(common, target, [inst])
 
 
         # Test the binary
@@ -886,45 +890,6 @@ def nop_no_comp(
     show_results(common, df, other_returncodes)
 
     return df
-
-
-def disassemble_text_section(binary_path):
-    """
-    Disassemble the .text section of the binary and output instructions.
-    """
-
-    if not binary_path.exists():
-        raise Exception("No bin")
-
-    # Parse the binary
-    binary = lief.parse(binary_path)
-
-    # Find the .text section
-    text_section = binary.get_section(".text")
-    if not text_section:
-        raise ValueError(".text section not found in the binary.")
-
-    target = detect_target(binary_path)
-
-    match target:
-        case Target.X86_64:
-            md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
-            text_section = binary.get_section(".text")
-        case Target.RISCV:
-            # md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCVC)
-            md = Cs(CS_ARCH_RISCV, CS_MODE_RISCV64 | CS_MODE_RISCVC)
-            text_section = binary.get_section(".text")
-
-        case Target.ARM_64:
-            md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
-            text_section = binary.get_section(".text")
-        case Target.ARM_32:
-            md = Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM | capstone.CS_MODE_LITTLE_ENDIAN)
-            text_section = binary.get_section(".text")
-        case _:
-            raise Exception("Unsupported file type")
-
-    return list(md.disasm(text_section.content, text_section.virtual_address))
 
 
 def compare_disassembly(
@@ -1233,39 +1198,38 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
     return cmd
 
 
-#@app.command()
-#def compile_program(inp: Path, out: Path, target: Target) -> Path:
-#    """
-#    Compile a program for a specific arch
-#    """
-#
-#    if not out.parent.exists():
-#        out.parent.mkdir(parents=True)
-#
-#    match target:
-#        case Target.X86_64:
-#            compiler = "gcc -g"
-#        case Target.RISCV:
-#            compiler = "riscv64-linux-gnu-gcc"
-#        case Target.ARM_64:
-#            compiler = "aarch64-linux-gnu-gcc"
-#        case Target.ARM_32:
-#            compiler = "arm-linux-gnueabi-gcc"
-#        case _:
-#            raise Exception("No support for nops")
-#
-#    cmd = f"{compiler} {inp} -o {out}".split(" ")
-#
-#    try:
-#        subprocess.run(cmd)
-#        if not out.exists():
-#            raise Exception(f"Failed to compile program")
-#        return out
-#    except Exception as e:
-#        # TODO
-#        print(f"[ERRORRRRRRRRRRRRRR] Error compiling with command: {cmd}")
-#        print(e)
-#        raise e
+def compile_program(inp: Path, out: Path, target: Target) -> Path:
+    """
+    Compile a program for a specific arch
+    """
+
+    if not out.parent.exists():
+        out.parent.mkdir(parents=True)
+
+    match target:
+        case Target.X86_64:
+            compiler = "gcc -g"
+        case Target.RISCV:
+            compiler = "riscv64-linux-gnu-gcc"
+        case Target.ARM_64:
+            compiler = "aarch64-linux-gnu-gcc"
+        case Target.ARM_32:
+            compiler = "arm-linux-gnueabi-gcc"
+        case _:
+            raise Exception("No support for nops")
+
+    cmd = f"{compiler} {inp} -o {out}".split(" ")
+
+    try:
+        subprocess.run(cmd)
+        if not out.exists():
+            raise Exception(f"Failed to compile program")
+        return out
+    except Exception as e:
+        # TODO
+        print(f"[ERRORRRRRRRRRRRRRR] Error compiling with command: {cmd}")
+        print(e)
+        raise e
 
 
 
@@ -1860,7 +1824,12 @@ def seq_nop(common: CommandParameters, target: Target):
 
         # Generate hte mutated binary
         try:
-            out_file = generate_nops_mutated_bin(common, target, [inst])
+
+            insts = [inst]
+            out_path = common.out_dir.joinpath(
+                common.program_file.name + f"_{hex(insts[0].address)}"
+            )
+            out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
 
             disasm_mut = disassemble_text_section(out_file)
             if len(disasm) != len(disasm_mut):
@@ -1995,7 +1964,6 @@ def para_double_nop(common: CommandParameters, target: Target, num_cpus: int):
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
         for i in range(len(disasm)-1):
-        #for inst in disasm:
             inst1, inst2 = disasm[i], disasm[i+1]
             future = executor.submit(double_nop_para_run_helper, common, inst1, inst2, target)
             futures.append(future)
@@ -2114,6 +2082,7 @@ def nop(common: CommandParameters, target: Target, num_cpus: int):
 
     start_time = datetime.now()
 
+    print("Beging execution...")
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
         for inst in disasm:
@@ -2405,17 +2374,8 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             if "target" in formated.keys():
                 formated["target"] = Target[formated["target"].upper()]
 
-            if command_name in ["nop", "bit"]:
-                params = CommandParameters(**formated)
-                # Run the function
-                cmd_func(params)
-            elif command_name == "nop_exp":
-                target = formated.pop("target")
-                params = CommandParameters(**formated)
-
-                # Get the other required params
-                cmd_func(params, target=target)
-            elif command_name in ["para_nop", "para_bit", "para_double_nop", "para_double_bit"]:
+            if command_name in ["nop", "para_bit", "para_double_nop", "para_double_bit"]:
+                print("Launching exp")
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
                 params = CommandParameters(**formated)

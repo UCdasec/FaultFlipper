@@ -33,6 +33,47 @@ class Nop(Enum):
     RISCV_32_COMPACT = [0x01, 0x00]
 
 
+def disassemble_text_section(binary_path):
+    """
+    Disassemble the .text section of the binary and output instructions.
+    """
+
+    if not binary_path.exists():
+        raise Exception("No bin")
+
+    # Parse the binary
+    binary = lief.parse(binary_path)
+
+    # Find the .text section
+    text_section = binary.get_section(".text")
+    if not text_section:
+        raise ValueError(".text section not found in the binary.")
+
+    target = detect_target(binary_path)
+
+    match target:
+        case Target.X86_64:
+            md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
+            text_section = binary.get_section(".text")
+        case Target.RISCV:
+            # md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCVC)
+            md = Cs(CS_ARCH_RISCV, CS_MODE_RISCV64 | CS_MODE_RISCVC)
+            text_section = binary.get_section(".text")
+
+        case Target.ARM_64:
+            md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
+            text_section = binary.get_section(".text")
+        case Target.ARM_32:
+            md = Cs(capstone.CS_ARCH_ARM, capstone.CS_MODE_ARM | capstone.CS_MODE_LITTLE_ENDIAN)
+            text_section = binary.get_section(".text")
+        case _:
+            raise Exception("Unsupported file type")
+
+    return list(md.disasm(text_section.content, text_section.virtual_address))
+
+
+
+
 
 def shift_exit_code(x: int) -> int:
     """
@@ -45,8 +86,8 @@ def shift_exit_code(x: int) -> int:
 
 
 def in_place_patch(
-    in_file: str,
-    out_file: str,
+    in_file: Path,
+    out_file: Path,
     patch_addr: int,
     patch_data: bytes
 ):
@@ -54,17 +95,6 @@ def in_place_patch(
     Patches a running (virtual) address 'patch_addr' in 'in_file'
     with the bytes in 'patch_data', writing to 'out_file' in place.
     Does NOT remove any debug sections, because it avoids a full rebuild.
-
-    This is a minimal example. It:
-      1) Parses the ELF with LIEF to find which loadable segment covers 'patch_addr'.
-      2) Computes the file offset corresponding to 'patch_addr'.
-      3) Overwrites that region in the input file, saving the result to 'out_file'.
-
-    Parameters:
-      in_file   : Path to the original ELF binary (with debug info).
-      out_file  : Where to write the patched ELF.
-      patch_addr: The *virtual* address you want to patch (e.g. 0x4012cf).
-      patch_data: The bytes you want to place there (e.g. b'\\x90\\x90').
     """
 
     # Parse the original ELF with LIEF
@@ -105,8 +135,6 @@ def in_place_patch(
     # Write out the new file
     with open(out_file, "wb") as f:
         f.write(data)
-
-    #print(f"Patched 0x{patch_addr:x} in {in_file}, wrote result to {out_file}")
 
     return
 
@@ -256,7 +284,10 @@ def get_lief_arch(filename):
 
 def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
     """
-    Rewrite the instruction with nop
+    Generate a list of bytes that corresponds to the targets NOP instruction.
+
+    If the target instructio requies 4 NOPS to completely overwrite, then 
+    the byte sequence for 4 nops will be returned
     """
 
     match target:
@@ -277,6 +308,25 @@ def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
 
     nop_patch = nop.value * int((len(inst.bytes) / len(nop.value)))
     return nop_patch
+
+
+def get_target_nop(target):
+    """
+    Helper to return the nop for the target arch
+    """
+    match target:
+        case Target.X86_64:
+            return Nop.X86_64
+        case Target.RISCV:
+            return Nop.RISCV_COMPACT
+        case Target.ARM_64:
+            return Nop.ARM_64
+        case Target.ARM_32:
+            return Nop.ARM_32
+        case _:
+            raise ValueError("No support for nops")
+
+
 
 
 
@@ -321,6 +371,7 @@ def generate_double_bit_mutated_file(
     # If we get here the instruction is good
 
     binary.patch_address(inst.address, patch)
+
     out_file = common.out_dir.joinpath(
         common.program_file.name + f"_{hex(inst.address)}_{i}"
     )
@@ -378,39 +429,41 @@ def generate_bit_mutated_file(
 
 
 
-def generate_nops_mutated_bin(common, target, instructions:list) -> Path:
+def generate_nops_mutated_bin(binary:Path, target, instructions:list, output:Path) -> Path:
     """
     Geneate a single mutated binary
     """
 
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(instructions[0].address)}"
-    )
+    #out_file = common.out_dir.joinpath(
+    #    common.program_file.name + f"_{hex(instructions[0].address)}"
+    #)
 
-    shutil.copy(common.program_file, out_file)
+    shutil.copy(binary, output)
 
     # Run many patches - patching in place so they all get applied
     for inst in instructions:
         nop_patch = gen_nop_patch(inst, target=target)
-        in_place_patch(common.program_file, out_file, inst.address, bytes(nop_patch))
-    out_file.chmod(0o755)
+        in_place_patch(binary, output, inst.address, bytes(nop_patch))
+    output.chmod(0o755)
 
-    return out_file
+    return output
 
 
 
-def generate_double_nop_mutated_bin(common, target, inst1, inst2) -> Path:
+#def generate_double_nop_mutated_bin(common, target, inst1, inst2) -> Path:
+def generate_double_nop_mutated_bin(program_file:Path, target, inst1, inst2, out_file:Path) -> Path:
     """
     Geneate a single mutated binary
     """
 
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst1.address)}"
-    )
+    #out_file = common.out_dir.joinpath(
+    #    common.program_file.name + f"_{hex(inst1.address)}"
+    #)
 
-    shutil.copy(common.program_file, out_file)
+    shutil.copy(program_file, out_file)
     nop_patch = gen_nop_patch(inst1, target=target)
-    in_place_patch(common.program_file, out_file, inst1.address, bytes(nop_patch))
+    #in_place_patch(common.program_file, out_file, inst1.address, bytes(nop_patch))
+    in_place_patch(program_file, out_file, inst1.address, bytes(nop_patch))
 
     nop_patch = gen_nop_patch(inst2, target=target)
     in_place_patch(out_file, out_file, inst2.address, bytes(nop_patch))
@@ -637,9 +690,6 @@ def run_binary_w_input(
 def is_valid_instruction(opcode_bytes, target):
     """
     Check if the provided byte sequence is a valid insturction
-
-    :param opcode_bytes: Byte sequence representing the opcode.
-    :return: Boolean indicating the validity of the instruction.
     """
 
     match target:

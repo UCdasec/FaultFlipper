@@ -1,5 +1,6 @@
 
-from binary_tools import Target,  shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences
+from pathlib import Path
+from binary_tools import Target,  shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input
 
 import lief
 
@@ -119,7 +120,14 @@ def double_nop_para_run_helper(common, inst1, inst2, target: Target):
 
     # Generate hte mutated binary
     try:
-        out_file = generate_nops_mutated_bin(common, target, [inst1, inst2])
+
+        insts = [inst1, inst2]
+        out_path = common.out_dir.joinpath(
+            common.program_file.name + f"_{hex(insts[0].address)}"
+        )
+        out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+
+        #out_file = generate_nops_mutated_bin(common, target, [inst1, inst2])
 
     except Exception as e:
         print(f"Issue making binary: {e}")
@@ -149,7 +157,13 @@ def nop_para_run_helper(common, inst, target: Target):
 
     # Generate hte mutated binary
     try:
-        out_file = generate_nops_mutated_bin(common, target, [inst])
+
+        insts = [inst]
+        out_path = common.out_dir.joinpath(
+            common.program_file.name + f"_{hex(insts[0].address)}"
+        )
+        out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+        #out_file = generate_nops_mutated_bin(common, target, [inst])
 
     except Exception as e:
         print(f"Issue making binary: {e}")
