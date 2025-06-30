@@ -4,7 +4,18 @@ In this example we train *two classifiers* on *two datasets*
 and convert all classifiers to *c implementations* and run 
 inference using compiled binaries! 
 
-# Usage 
+
+# 1. Installation 
+
+```bash
+pip install emlearn
+```
+
+```bash
+git clone https://github.com/emlearn/emlearn
+```
+
+# 2. Usage 
 
 To train all classifiers, and generate corresponding c files with emlearn: 
 ```bash

@@ -14,7 +14,9 @@ int main(int argc, char **argv)
     }
 
     int w,h,c;
+
     uint8_t *pix = stbi_load(argv[1], &w, &h, &c, 1);
+
     if (!pix) { 
         fputs(stbi_failure_reason(), stderr); 
         printf("FILE READ ERRPR");
@@ -25,6 +27,7 @@ int main(int argc, char **argv)
     for (int i=0;i<4096;++i) {
         feats[i] = (float)pix[i] * 0.0039215686f;;    // divide by 255 to get between 0 and 1
     }
+
     pred = face_mlp_predict(feats, 4096);
     printf("PREDICTION: %d\n", pred);
 

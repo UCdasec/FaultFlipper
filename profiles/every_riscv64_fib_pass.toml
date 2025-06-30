@@ -89,6 +89,96 @@ num_cpus=8
 
 
 
+
+########
+# NOP
+########
+
+[experiment.para_double_nop_pass_riscv64]
+command = "para_double_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_riscv64_password_check"
+yes= true
+target = "riscv"
+num_cpus=8
+
+[experiment.para_double_nop_riscv64_pass_detect]
+command = "para_double_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_riscv64_password_check_DETECT"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+[experiment.para_double_nop_riscv64_pass_branch]
+command = "para_double_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_riscv64_password_check_BRANCH"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+[experiment.para_double_nop_riscv64_pass_double_check]
+command = "para_double_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_riscv64_password_check_DOUBLE_CHECK"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+[experiment.para_double_nop_riscv64_fib]
+command = "para_double_nop"
+program-file = "test_files/fib.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_riscv64_fib"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+
+[experiment.para_double_nop_riscv64_fib_loopcheck]
+command = "para_double_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_riscv64_fib_LOOPCHECK"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+
 ########
 # BIT
 ########
@@ -172,6 +262,94 @@ expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
 out-dir = "experiments/para_bit_riscv64_fib_LOOPCHECK"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+########
+# DOUBLE BIT
+########
+
+[experiment.para_double_bit_pass_riscv64]
+command = "para_double_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_riscv64_password_check"
+yes= true
+target = "riscv"
+num_cpus=8
+
+[experiment.para_double_bit_riscv64_pass_detect]
+command = "para_double_bit"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_riscv64_password_check_DETECT"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+[experiment.para_double_bit_riscv64_pass_branch]
+command = "para_double_bit"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_riscv64_password_check_BRANCH"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+[experiment.para_double_bit_riscv64_pass_double_check]
+command = "para_double_bit"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_riscv64_password_check_DOUBLE_CHECK"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+[experiment.para_double_bit_riscv64_fib]
+command = "para_double_bit"
+program-file = "test_files/fib.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_riscv64_fib"
+yes= true
+target = "riscv"
+num_cpus=8
+
+
+
+[experiment.para_double_bit_riscv64_fib_loopcheck]
+command = "para_double_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_riscv64_fib_LOOPCHECK"
 yes= true
 target = "riscv"
 num_cpus=8

@@ -90,6 +90,9 @@ Give a ⭐️ if you think this project is interesting!
 
 ## Roadmap 
 
+
+- [ ] Clean up the CLI instance
+
 - [x] Add RISC 
 - [x] Add ARM32
 - [x] Add ARM64

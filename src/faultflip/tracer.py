@@ -351,6 +351,49 @@ def trace_dumb(
         print(f"[+] Results saved to {csv_out}")
 
 
+@app.command()
+def trace(
+    binary,
+    stdin,
+    critical_asm:Optional[list[str]] = None,
+    source:Optional[Path] = None,
+    critical_source_lines: Optional[list[str]] = None,
+    csv_out: Optional[Path] = None,
+    arch: Target = Target.X86_64,
+):
+    """
+    Trace the program. No need to critical sections - just get a trace 
+
+    Two options:
+    (1) Provide source code + critical lines 
+    (2) Provide asm critcal lines
+    """
+
+    # 
+    hit_map, base_addr = run_angr_concrete(binary,  stdin_data=stdin)
+    new_map = {}
+
+    for val in critical_addresses:
+        if (x:=val+base_addr) in hit_map.keys():
+            new_map[val] = hit_map[x]
+        else:
+            new_map[val] = 0
+
+    # Build result objects
+    results = []
+    for addr in sorted(new_map.keys()):
+        results.append(CriticalHitResult(address=addr, hit_count=new_map[addr]))
+
+    # Print with Rich
+    print_results_rich(results)
+
+    # Optionally save to CSV
+    if csv_out:
+        save_results_csv(results, csv_out)
+        print(f"[+] Results saved to {csv_out}")
+
+
+
 
 
 if __name__ == "__main__":

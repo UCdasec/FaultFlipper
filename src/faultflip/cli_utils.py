@@ -285,47 +285,6 @@ def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
 #    return out
 
 
-def generate_run_cmd(inp: Path, target: Target) -> list[str]:
-    """
-    Create the compile command
-    """
-
-    match target:
-        case Target.X86_64:
-            #TODO: Useing the -g for debug symbols
-            return [f"{inp.expanduser().absolute()}", "-g" ]
-        case Target.RISCV:
-            return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-
-        #TODO: Static bins don't need the linker
-        case Target.ARM_32:
-            return [
-                "qemu-arm-static",
-                "-L",
-                "/usr/arm-linux-gnueabi",
-                f"{inp.expanduser().absolute()}",
-            ]
-        case Target.ARM_64:
-            return [
-                "qemu-aarch64-static",
-                "-L",
-                "/usr/aarch64-linux-gnu",
-                f"{inp.expanduser().absolute()}",
-            ]
-        case Target.RISCV_32:
-            cmd = f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-            logger.debug(f"Command is : {cmd}")
-            return cmd
-
-        case _:
-            raise Exception(f"Unsupported target {target}")
-    return
-
-
 @dataclass
 class MutationExperiment:
     source_file: Path | None

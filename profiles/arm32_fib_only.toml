@@ -1,0 +1,138 @@
+
+
+########
+# NOP
+########
+
+
+[experiment.para_nop_arm32_fib]
+command = "para_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+[experiment.para_nop_arm32_fib_loopcheck]
+command = "para_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_nop_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+########
+# DOUBLE NOP
+########
+
+[experiment.para_double_nop_arm32_fib]
+command = "para_double_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+[experiment.para_double_nop_arm32_fib_loopcheck]
+command = "para_double_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_nop_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+
+########
+# BIT
+########
+
+[experiment.para_bit_arm32_fib]
+command = "para_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_bit_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+[experiment.para_bit_arm32_fib_loopcheck]
+command = "para_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_bit_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+########
+# DOUBLE BIT
+########
+
+[experiment.para_double_bit_arm32_fib]
+command = "para_double_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+[experiment.para_double_bit_arm32_fib_loopcheck]
+command = "para_double_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/para_double_bit_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+

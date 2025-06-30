@@ -8,6 +8,11 @@ faultsim_log/
 results
 experiments
 DEP
+ML_RESULTS
+
+# profiles 
+classifier_profiles
+logs
 
 __pycache__/
 __pycache__
