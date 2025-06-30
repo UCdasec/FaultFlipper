@@ -27,21 +27,15 @@ from capstone import (
 )
 import capstone
 from cyclopts import App, Parameter
-from rich.table import Table
 from rich.console import Console
-from enum import Enum
 import subprocess
 import pandas as pd
 from enums import LinuxExitCodes
-from typing import Union, Any
 from alive_progress import alive_it
-
-
 from logger_utils import setup_logger
-
 from cli_utils import CommandParameters, show_results, calc_freqs, generate_run_cmd, BitFlipExperimentResult, NopExperimentResult, smol_show_results
 
-from binary_tools import Target, Nop, shift_exit_code, in_place_patch, get_capstone_arch_mode, get_lief_arch, gen_nop_patch, generate_nop_mutated_bin, _generate_nop_mutated_bin, generate_double_nop_mutated_bin
+from binary_tools import Target, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target
 
 
 console = Console()
@@ -73,12 +67,10 @@ def double_bit_para_run_helper(common, inst, target: Target):
     inst_bits = list(
         "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
     )
-
     results = []
 
     # For every bit see if we get a valid opcode.
     for i in range(len(inst_bits)-1):
-        #out_file = generate_bit_mutated_file(i, inst_bits, target, inst, common)
         out_file = generate_double_bit_mutated_file(i, inst_bits, target, inst, common)
 
         if out_file is None:
@@ -175,7 +167,7 @@ def double_nop_para_run_helper(common, inst1, inst2, target: Target):
 
     # Generate hte mutated binary
     try:
-        out_file = generate_double_nop_mutated_bin(common, target, inst1, inst2)
+        out_file = generate_nops_mutated_bin(common, target, [inst1, inst2])
 
     except Exception as e:
         print(f"Issue making binary: {e}")
@@ -205,7 +197,7 @@ def nop_para_run_helper(common, inst, target: Target):
 
     # Generate hte mutated binary
     try:
-        out_file = generate_nop_mutated_bin(common, target, inst)
+        out_file = generate_nops_mutated_bin(common, target, [inst])
 
     except Exception as e:
         print(f"Issue making binary: {e}")
@@ -427,101 +419,6 @@ def preserve_debug_sections(orig_binary, patched_binary):
         patched_binary.add(new_sec, loaded=False)  
         # 'loaded=False' so it doesn't try to place it in a PT_LOAD segment
 
-def generate_double_bit_mutated_file(
-    i, inst_bits, target, inst, common
-) -> Union[None, Path]:
-    binary = lief.parse(common.program_file)
-
-    original_bits = [x for x in inst_bits]
-    if original_bits[i] == "0":
-        original_bits[i] = 1
-    else:
-        original_bits[i] = 0
-
-    if original_bits[i+1] == "0":
-        original_bits[i+1] = 1
-    else:
-        original_bits[i+1] = 0
-
-
-    bit_flipped_inst = "".join([str(x) for x in original_bits])
-
-    # Turn the bits back to an instruction for the patch
-    patch = bytes(
-        int("".join(bit_flipped_inst[i : i + 8]), 2)
-        for i in range(0, len(bit_flipped_inst), 8)
-    )
-
-    # If the instruction is not valid, go to the next instruction
-    good_inst, new_inst = is_valid_instruction(patch, target)
-
-    if not good_inst:
-        return None
-
-
-    # Re-adjust the patch so that it is a list of ints
-    patch = [
-        int("".join(bit_flipped_inst[i : i + 8]), 2)
-        for i in range(0, len(bit_flipped_inst), 8)
-    ]
-
-    # If we get here the instruction is good
-
-    binary.patch_address(inst.address, patch)
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst.address)}_{i}"
-    )
-    binary.write(str(out_file.resolve()))
-
-    out_file.chmod(0o755)
-    return out_file
-
-
-
-def generate_bit_mutated_file(
-    i, inst_bits, target, inst, common
-) -> Union[None, Path]:
-    binary = lief.parse(common.program_file)
-
-    original_bits = [x for x in inst_bits]
-    if original_bits[i] == "0":
-        original_bits[i] = 1
-    else:
-        original_bits[i] = 0
-
-    bit_flipped_inst = "".join([str(x) for x in original_bits])
-
-    # Turn the bits back to an instruction for the patch
-    patch = bytes(
-        int("".join(bit_flipped_inst[i : i + 8]), 2)
-        for i in range(0, len(bit_flipped_inst), 8)
-    )
-
-    # If the instruction is not valid, go to the next instruction
-    good_inst, new_inst = is_valid_instruction(patch, target)
-
-    if not good_inst:
-        return None
-
-
-    # Re-adjust the patch so that it is a list of ints
-    patch = [
-        int("".join(bit_flipped_inst[i : i + 8]), 2)
-        for i in range(0, len(bit_flipped_inst), 8)
-    ]
-
-    # If we get here the instruction is good
-
-    binary.patch_address(inst.address, patch)
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst.address)}_{i}"
-    )
-    binary.write(str(out_file.resolve()))
-
-    out_file.chmod(0o755)
-    return out_file
-
-
 def count_bit_differences(bytes_1, bytes_2):
     if len(bytes_1) != len(bytes_2):
         return float("inf")  # Ensure same size; otherwise, reject
@@ -538,96 +435,96 @@ def count_bit_differences(bytes_1, bytes_2):
 
 # TODO: Removed in favor of bit_exp
 # @app.command
-def bit(
-    common: CommandParameters, source_code: Optional[Path] = None, quiet: bool = True
-) -> pd.DataFrame:
-    """
-    Patch all the addrs in the binar , and save bins that
-    have a succesffuly exist code what running WITH NO FLAGS
-    """
-
-    common.out_dir.mkdir(exist_ok=True)
-    disasm = disassemble_text_section(common.program_file)
-
-    if not common.yes:
-        cont = str(
-            input(
-                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content)} mutated binaries, continue? (Yy/Nn)"
-            )
-        )
-        if cont.lower() != "y":
-            return
-
-    target = detect_target(common.program_file)
-    results: list[BitFlipExperimentResult] = []
-
-    binary = lief.parse(common.program_file)
-
-    # For every instructions
-    for inst in alive_it(disasm):
-
-        # Need to pad the left with zeroes
-        inst_bits = list(
-            "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
-        )
-
-        # For every bit see if we get a valid opcode.
-        for i in range(len(inst_bits)):
-            # Generate the mutated binary - If we did not generate a good one continue
-            out_file = generate_bit_mutated_file(
-                i, inst_bits, target, inst, common
-            )
-
-            if out_file is None:
-                continue
-
-            # Sanity check that a single bit has been changed and thats it
-            mutated_text = lief.parse(out_file).get_section(".text")
-            vanilla_text = binary.get_section(".text")
-
-            number_of_different_bits = count_bit_differences(
-                mutated_text.content, vanilla_text.content
-            )
-
-            if number_of_different_bits != 1:
-                raise Exception("Great than 1 difference in bits")
-            try:
-                status, stdout, _ = run_binary_w_input(
-                    out_file,
-                    common.program_input,
-                    target=target,
-                    timeout=common.timeout,
-                )
-                status = shift_exit_code(status)
-            except Exception:
-                status = -999
-                stdout = ""
-
-            result = BitFlipExperimentResult(
-                source_file=source_code,
-                unmutated_binary=common.program_file,
-                binary_path=out_file,
-                flipped_addr=inst.address,
-                flipped_index=i,
-                return_code=status,
-                program_input=common.program_input,
-                program_stdout=stdout,
-                expected_stdout=common.expected_stdout,
-                target=target,
-                expected_returncode=common.expected_returncode,
-                custom_returncodes=other_returncodes,
-            )
-            results.append(result)
-
-    # Convert the results to a data frame and save
-    df = dataclass_to_dataframe(results)
-    save_df(df, common.save_results)
-
-    # Dsiplay result info
-    if not quiet:
-        show_results(common, df, other_returncodes)
-
-    return df
+#def bit(
+#    common: CommandParameters, source_code: Optional[Path] = None, quiet: bool = True
+#) -> pd.DataFrame:
+#    """
+#    Patch all the addrs in the binar , and save bins that
+#    have a succesffuly exist code what running WITH NO FLAGS
+#    """
+#
+#    common.out_dir.mkdir(exist_ok=True)
+#    disasm = disassemble_text_section(common.program_file)
+#
+#    if not common.yes:
+#        cont = str(
+#            input(
+#                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content)} mutated binaries, continue? (Yy/Nn)"
+#            )
+#        )
+#        if cont.lower() != "y":
+#            return
+#
+#    target = detect_target(common.program_file)
+#    results: list[BitFlipExperimentResult] = []
+#
+#    binary = lief.parse(common.program_file)
+#
+#    # For every instructions
+#    for inst in alive_it(disasm):
+#
+#        # Need to pad the left with zeroes
+#        inst_bits = list(
+#            "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
+#        )
+#
+#        # For every bit see if we get a valid opcode.
+#        for i in range(len(inst_bits)):
+#            # Generate the mutated binary - If we did not generate a good one continue
+#            out_file = generate_bit_mutated_file(
+#                i, inst_bits, target, inst, common
+#            )
+#
+#            if out_file is None:
+#                continue
+#
+#            # Sanity check that a single bit has been changed and thats it
+#            mutated_text = lief.parse(out_file).get_section(".text")
+#            vanilla_text = binary.get_section(".text")
+#
+#            number_of_different_bits = count_bit_differences(
+#                mutated_text.content, vanilla_text.content
+#            )
+#
+#            if number_of_different_bits != 1:
+#                raise Exception("Great than 1 difference in bits")
+#            try:
+#                status, stdout, _ = run_binary_w_input(
+#                    out_file,
+#                    common.program_input,
+#                    target=target,
+#                    timeout=common.timeout,
+#                )
+#                status = shift_exit_code(status)
+#            except Exception:
+#                status = -999
+#                stdout = ""
+#
+#            result = BitFlipExperimentResult(
+#                source_file=source_code,
+#                unmutated_binary=common.program_file,
+#                binary_path=out_file,
+#                flipped_addr=inst.address,
+#                flipped_index=i,
+#                return_code=status,
+#                program_input=common.program_input,
+#                program_stdout=stdout,
+#                expected_stdout=common.expected_stdout,
+#                target=target,
+#                expected_returncode=common.expected_returncode,
+#                custom_returncodes=other_returncodes,
+#            )
+#            results.append(result)
+#
+#    # Convert the results to a data frame and save
+#    df = dataclass_to_dataframe(results)
+#    save_df(df, common.save_results)
+#
+#    # Dsiplay result info
+#    if not quiet:
+#        show_results(common, df, other_returncodes)
+#
+#    return df
 
 
 @app.command
@@ -643,7 +540,6 @@ def disasm(
     An over-engineered function to re-create objdump... but this allows 
     me to easily inject its results into a PDF report! :D (and also make 
     the output colorful) 
-
 
     start_addr: int 
         The decimal 10 start address 
@@ -722,7 +618,7 @@ def dataclass_to_dataframe(
     return pd.DataFrame([r.to_dict() for r in result])
 
 
-def save_df(df: pd.DataFrame, out: Union[Path, None]) -> None:
+def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
     """
     Save the dataframe
     """
@@ -743,156 +639,156 @@ def save_df(df: pd.DataFrame, out: Union[Path, None]) -> None:
     return
 
 
-@app.command
-def nop_compile(
-    common: CommandParameters, target: Target, bin_out: Path
-) -> pd.DataFrame:
-    """
-    Patch all the addrs in the binar , and save bins that
-    have a succesffuly exist code what running WITH NO FLAGS
-    """
-
-    source_code = common.program_file
-
-    # Compile the binary for the target
-    common.program_file = compile_program(common.program_file, bin_out, target)
-
-    # Now run nop
-    df = nop(common, source_code)
-    return df
-
-
-@app.command
-def bit_exp(
-    common: CommandParameters,
-    target: Target,
-) -> pd.DataFrame:
-    """
-    USE THIS WHEN YOU WHAT A SINGLE CLEAN EXPERIMENT !! :D
-
-    This will:
-    \n1. Compile the binary for the target
-    \n2. Run the nop experiment on the compiled binary
-    \n3. Copy: source code, binary, results, mutated bins, and params to out
-    """
-
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    base_out = common.out_dir
-
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
-
-    common.save_results = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target)
-
-    # Now run nop
-    df = bit(common, source_code)
-
-    # Lastly save the experiment parameters
-    params = common.to_dict()
-    params["target"] = target.value
-
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
-        json.dump(params, f, indent=4)
-
-    return df
-
-@app.command
-def nop_exp_no_comp(
-    common: CommandParameters,
-) -> pd.DataFrame:
-    """
-    USE THIS WHEN YOU WHAT A SINGLE CLEAN EXPERIMENT !! :D
-
-    This will:
-    1. Compile the binary for the target
-    2. Run the nop experiment on the compiled binary
-    3. Copy the source, the binary, the results, mutated binaries, command
-        parameters, to the out_dir
-    """
-
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    base_out = common.out_dir
-
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
-
-    common.save_results = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-
-    # Now run nop
-    df = nop(common, source_code)
-
-    # Lastly save the experiment parameters
-    params = common.to_dict()
-    params["target"] = target.value
-
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
-        json.dump(params, f, indent=4)
-
-    return df
+#@app.command
+#def nop_compile(
+#    common: CommandParameters, target: Target, bin_out: Path
+#) -> pd.DataFrame:
+#    """
+#    Patch all the addrs in the binar , and save bins that
+#    have a succesffuly exist code what running WITH NO FLAGS
+#    """
+#
+#    source_code = common.program_file
+#
+#    # Compile the binary for the target
+#    common.program_file = compile_program(common.program_file, bin_out, target)
+#
+#    # Now run nop
+#    df = nop(common, source_code)
+#    return df
 
 
+#@app.command
+#def bit_exp(
+#    common: CommandParameters,
+#    target: Target,
+#) -> pd.DataFrame:
+#    """
+#    USE THIS WHEN YOU WHAT A SINGLE CLEAN EXPERIMENT !! :D
+#
+#    This will:
+#    \n1. Compile the binary for the target
+#    \n2. Run the nop experiment on the compiled binary
+#    \n3. Copy: source code, binary, results, mutated bins, and params to out
+#    """
+#
+#    # Make the dir
+#    common.out_dir.mkdir(exist_ok=True, parents=True)
+#    base_out = common.out_dir
+#
+#    # Copy the source cdoe to the experiement
+#    source_code = common.program_file
+#    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+#
+#    bin_out = common.out_dir.joinpath(
+#        common.program_file.name.replace(".c", ".o")
+#    )
+#
+#    common.save_results = common.out_dir.joinpath("results.csv")
+#    common.out_dir = common.out_dir.joinpath("mutated_bins")
+#
+#    # Compile the binary for the target
+#    common.program_file = compile_program(source_code, bin_out, target)
+#
+#    # Now run nop
+#    df = bit(common, source_code)
+#
+#    # Lastly save the experiment parameters
+#    params = common.to_dict()
+#    params["target"] = target.value
+#
+#    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+#        json.dump(params, f, indent=4)
+#
+#    return df
 
-@app.command
-def nop_exp(
-    common: CommandParameters,
-    target: Target,
-) -> pd.DataFrame:
-    """
-    USE THIS WHEN YOU WHAT A SINGLE CLEAN EXPERIMENT !! :D
+#@app.command
+#def nop_exp_no_comp(
+#    common: CommandParameters,
+#) -> pd.DataFrame:
+#    """
+#    USE THIS WHEN YOU WHAT A SINGLE CLEAN EXPERIMENT !! :D
+#
+#    This will:
+#    1. Compile the binary for the target
+#    2. Run the nop experiment on the compiled binary
+#    3. Copy the source, the binary, the results, mutated binaries, command
+#        parameters, to the out_dir
+#    """
+#
+#    # Make the dir
+#    common.out_dir.mkdir(exist_ok=True, parents=True)
+#    base_out = common.out_dir
+#
+#    # Copy the source cdoe to the experiement
+#    source_code = common.program_file
+#    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+#
+#    bin_out = common.out_dir.joinpath(
+#        common.program_file.name.replace(".c", ".o")
+#    )
+#
+#    common.save_results = common.out_dir.joinpath("results.csv")
+#    common.out_dir = common.out_dir.joinpath("mutated_bins")
+#
+#    # Now run nop
+#    df = nop(common, source_code)
+#
+#    # Lastly save the experiment parameters
+#    params = common.to_dict()
+#    params["target"] = target.value
+#
+#    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+#        json.dump(params, f, indent=4)
+#
+#    return df
 
-    This will:
-    1. Compile the binary for the target
-    2. Run the nop experiment on the compiled binary
-    3. Copy the source, the binary, the results, mutated binaries, command
-        parameters, to the out_dir
-    """
 
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    base_out = common.out_dir
 
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-    bin_out = common.out_dir.joinpath(
-        common.program_file.name.replace(".c", ".o")
-    )
-
-    common.save_results = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target)
-
-    # Now run nop
-    df = nop(common, source_code)
-
-    # Lastly save the experiment parameters
-    params = common.to_dict()
-    params["target"] = target.value
-
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
-        json.dump(params, f, indent=4)
-
-    return df
+#@app.command
+#def nop_exp(
+#    common: CommandParameters,
+#    target: Target,
+#) -> pd.DataFrame:
+#    """
+#    USE THIS WHEN YOU WHAT A SINGLE CLEAN EXPERIMENT !! :D
+#
+#    This will:
+#    1. Compile the binary for the target
+#    2. Run the nop experiment on the compiled binary
+#    3. Copy the source, the binary, the results, mutated binaries, command
+#        parameters, to the out_dir
+#    """
+#
+#    # Make the dir
+#    common.out_dir.mkdir(exist_ok=True, parents=True)
+#    base_out = common.out_dir
+#
+#    # Copy the source cdoe to the experiement
+#    source_code = common.program_file
+#    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+#
+#    bin_out = common.out_dir.joinpath(
+#        common.program_file.name.replace(".c", ".o")
+#    )
+#
+#    common.save_results = common.out_dir.joinpath("results.csv")
+#    common.out_dir = common.out_dir.joinpath("mutated_bins")
+#
+#    # Compile the binary for the target
+#    common.program_file = compile_program(source_code, bin_out, target)
+#
+#    # Now run nop
+#    df = nop(common, source_code)
+#
+#    # Lastly save the experiment parameters
+#    params = common.to_dict()
+#    params["target"] = target.value
+#
+#    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+#        json.dump(params, f, indent=4)
+#
+#    return df
 
 
 
@@ -963,9 +859,6 @@ def bit_no_comp_inout(
                 if out_file is None:
                     continue
 
-                # The out file is at out_dir/...
-                #out_file = generate_nop_mutated_bin(common, target, inst)
-
                 # Run all the possible inputs and outputs
                 for cur_in, cur_out in zip(ins,outs):
                     cur_in = Path(cur_in)
@@ -1031,7 +924,6 @@ def bit_no_comp_inout(
 
     print(f"Accoring to the correct predficton mask the total nmber of corrrect is {correct_prediction_mask.sum()}")
 
-    #df['correct'] = df['program_stdout'].astype(str).str.contains(df['expected_stdout'].astype(str), regex=False)
     df['correct'] = [
         exp in prog
         for exp, prog in zip(df['expected_stdout'].astype(str),
@@ -1042,7 +934,6 @@ def bit_no_comp_inout(
 
     df['failed'] = df['return_code'] == -999
 
-    # ── Parameters you shouldn’t hard-code ──────────────────────────────────────────
     ROWS_PER_COMBO = (
         df.groupby(["flipped_addr", "flipped_index"]).size().iloc[0]
     )  # → 10 in your data
@@ -1099,34 +990,7 @@ def bit_no_comp_inout(
     print(f"Number of files that got less than the expected number of correct predictions:\n {num_less_mutations}")
 
 
-    # Number of failed binaries
-    #failed_result_mask = df[df['return_code'] == -999].groupby(['flipped_addr', 'flipped_index']).size().reset_index(name='count')
-    #failed_result_mask = df.groupby['flipped_addr', 'flipped_index'])['return_code']
-    #failed_df = df[df['return_code'] == -999]
-    #failed_df.groupby(['
-    #failed_result_mask = df[df['return_code'] == -999]
-    #nu
-    #print(f"{failed_result_mask.shape[0]} failed binaries input combinations")
-
-
-    # Get the addrs that had both of the following (1) An occurance of correct
-    # prediction (2) An occurance of -999 return code
-
-    # Mask 1 is correct_prediction_mask 
-    #correct_df = df[correct_prediction_mask]
-    #correct_and_failed = correct_df[failed_result_mask[correct_prediction_mask]]
-    #correct_df = df[correct_prediction_mask]
-    #correct_and_failed = correct_df[failed_result_mask.loc[correct_df.index]]
-    #comb_mask = correct_per_mutated & failed_result_mask
-    #correct_and_failed = df[correct_prediction_mask & failed_result_mask]
-    #correct_and_failed = df[comb_mask]
-    #if correct_and_failed.shape[0] == 0:
-    #    print(f"No occurance of a mutated binary getting a prediction correct for one sample and failing to run for another sample")
-
-
     show_results(common, df, other_returncodes)
-
-
     return df
 
 
@@ -1189,7 +1053,8 @@ def nop_no_comp_inout(
         for inst in alive_it(disasm):
 
             # The out file is at out_dir/...
-            out_file = generate_nop_mutated_bin(common, target, inst)
+            #out_file = generate_nop_mutated_bin(common, target, inst)
+            out_file = generate_nops_mutated_bin(common, target, [inst])
 
             # Run all the possible inputs and outputs
             for cur_in, cur_out in zip(ins,outs):
@@ -1278,7 +1143,6 @@ def nop_no_comp_inout(
 
     print(f"We have {agg_df.shape} shaped agg df")
     print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
-    #print(agg_df.head())
 
     # This is the count of number of corrects. Notice, that 
     # if the number of correct predictions is 0 it may 
@@ -1289,7 +1153,6 @@ def nop_no_comp_inout(
 
     print(f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}")
 
-    #print(f"How many failed on ALL inputs:\n {(agg_df['total_failed'] == 80).sum()}")
 
     # Overlapp of correct and failed
     mask = (agg_df['total_failed'] != 0 ) & (agg_df['total_correct'] != 0 )
@@ -1305,8 +1168,6 @@ def nop_no_comp_inout(
 
 
     return df
-
-
 
 
 # TODO: Removing this as a command in favor of nop_exp
@@ -1333,11 +1194,6 @@ def nop_no_comp(
         if cont.lower() != "y":
             return
 
-    # Parse the input binary
-    #binary = lief.parse(common.program_file)
-    #if not binary:
-    #    raise ValueError(f"Failed to parse the binary: {common.program_file}")
-
     # Load the target type
     target = detect_target(common.program_file)
     logger.debug(f"Detected Target: {target}")
@@ -1354,7 +1210,9 @@ def nop_no_comp(
     # Iterate over single instructions
     for inst in alive_it(disasm):
         # Generate the mutated binary
-        out_file = generate_nop_mutated_bin(common, target, inst)
+        #kout_file = generate_nop_mutated_bin(common, target, inst)
+        out_file = generate_nops_mutated_bin(common, target, [inst])
+
 
         # Test the binary
         try:
@@ -1391,60 +1249,6 @@ def nop_no_comp(
     show_results(common, df, other_returncodes)
 
     return df
-
-
-@app.command()
-def disasm2(binary: Path, start_addr: str, end_addr: str):
-    disassembly = disassemble_text_section(binary)
-
-    start_addr = int(start_addr, 16)
-    end_addr = int(end_addr, 16)
-
-    max_len = max(
-        len(" ".join([f"{b:02x}" for b in x.bytes])) for x in disassembly
-    )
-
-    # for instr in disassembly:
-    for thing in [
-        x
-        for x in disassembly
-        if x.address >= start_addr and x.address <= end_addr
-    ]:
-        byte_ar = thing.bytes
-        byte_string = " ".join([f"{b:02x}" for b in byte_ar])
-        res_str = f"0x{thing.address:x} {byte_string:<{max_len}} {thing.mnemonic} {thing.op_str}"
-        print(res_str)
-
-    return
-
-
-def detect_target(bin: Path) -> Target:
-    """
-    Detect the target of the binary
-    """
-    # parsed = lief.parse(bin)
-    lief_arch = get_lief_arch(bin)
-
-    match lief_arch:
-        case lief.ELF.ARCH.X86_64:
-            return Target.X86_64
-
-        case lief.ELF.ARCH.RISCV:
-            return Target.RISCV
-
-        #case lief.ELF.ARCH.RISC:
-        #    return Target.RISCV_32
-
-        case lief.ELF.ARCH.ARM:
-            return Target.ARM_32
-
-        case lief.ELF.ARCH.AARCH64:
-            return Target.ARM_64
-        case _:
-            raise ValueError(
-                "This script is intended for x86_64 ELF binaries only."
-            )
-    return
 
 
 def disassemble_text_section(binary_path):
@@ -1654,118 +1458,118 @@ def read_results(inp: Path):
     return
 
 
-@app.command
-def many_bit(
-    targets: Annotated[list[Target], Parameter(allow_leading_hyphen=True)],
-    bin_dir: Path,
-    common: CommandParameters,
-):
-    """
-    Run the bit flip across multiple architectures
-    """
-
-    bin_dir.mkdir(exist_ok=True)
-
-    orig_common = copy.deepcopy(common)
-
-    # For each target, compile the program then test it
-    for target in targets:
-        common = orig_common
-
-        # First compile the binary
-        out_name = bin_dir.joinpath(f"{target.value}.o")
-        common.program_file = compile_program(
-            common.program_file, out_name, target
-        )
-
-        # Second run the bit expert
-        common.out_dir = common.out_dir.joinpath(f"{target.value}")
-        if common.save_results is not None:
-            common.save_results = common.save_results.joinpath(
-                f"{target.value}"
-            )
-        bit(common)
-        # bin, mutated_out, comprogram_input, expected_output, list_expected, timeout, save_results)
-    return
-
-
-@app.command
-def many_nop(
-    targets: Annotated[list[Target], Parameter(allow_leading_hyphen=True)],
-    bin_dir: Path,
-    common: CommandParameters,
-):
-    """
-    Run the bit flip across multiple architectures
-    """
-
-    bin_dir.mkdir(exist_ok=True)
-
-    program_source_code = common.program_file
-    result_save_to = common.out_dir.joinpath("total_results.csv")
-    dfs = []
-
-    # For each target, compile the program then test it
-    for target in targets:
-        common.program_file = program_source_code
-
-        print(f"Compiling for target {target} : {common.program_file}")
-        # First compile the binary
-        out_name = bin_dir.joinpath(f"{target.name}.o")
-        common.program_file = compile_program(
-            common.program_file, out_name, target
-        )
-
-        # Second run the bit expert
-        common.out_dir.mkdir(exist_ok=True)
-        common.out_dir = common.out_dir.joinpath(f"{target.name}")
-        if common.save_results is not None:
-            common.save_results.mkdir(exist_ok=True)
-            common.save_results = common.save_results.joinpath(f"{target.name}")
-
-        print(f"Nopping for target {target} : {common.program_file}")
-        df = nop(common, program_source_code)
-        dfs.append(df)
-
-    # Aggreagate dfs
-    total_df = pd.concat(dfs, ignore_index=True)
-    total_df.to_csv(result_save_to)
-
-    return
+#@app.command
+#def many_bit(
+#    targets: Annotated[list[Target], Parameter(allow_leading_hyphen=True)],
+#    bin_dir: Path,
+#    common: CommandParameters,
+#):
+#    """
+#    Run the bit flip across multiple architectures
+#    """
+#
+#    bin_dir.mkdir(exist_ok=True)
+#
+#    orig_common = copy.deepcopy(common)
+#
+#    # For each target, compile the program then test it
+#    for target in targets:
+#        common = orig_common
+#
+#        # First compile the binary
+#        out_name = bin_dir.joinpath(f"{target.value}.o")
+#        common.program_file = compile_program(
+#            common.program_file, out_name, target
+#        )
+#
+#        # Second run the bit expert
+#        common.out_dir = common.out_dir.joinpath(f"{target.value}")
+#        if common.save_results is not None:
+#            common.save_results = common.save_results.joinpath(
+#                f"{target.value}"
+#            )
+#        bit(common)
+#        # bin, mutated_out, comprogram_input, expected_output, list_expected, timeout, save_results)
+#    return
 
 
-@app.command()
-def compile_many(inp: Path, out_dir: Path, targets: list[Target]):
-    """
-    Compile a program for a specific arch
-    """
+#@app.command
+#def many_nop(
+#    targets: Annotated[list[Target], Parameter(allow_leading_hyphen=True)],
+#    bin_dir: Path,
+#    common: CommandParameters,
+#):
+#    """
+#    Run the bit flip across multiple architectures
+#    """
+#
+#    bin_dir.mkdir(exist_ok=True)
+#
+#    program_source_code = common.program_file
+#    result_save_to = common.out_dir.joinpath("total_results.csv")
+#    dfs = []
+#
+#    # For each target, compile the program then test it
+#    for target in targets:
+#        common.program_file = program_source_code
+#
+#        print(f"Compiling for target {target} : {common.program_file}")
+#        # First compile the binary
+#        out_name = bin_dir.joinpath(f"{target.name}.o")
+#        common.program_file = compile_program(
+#            common.program_file, out_name, target
+#        )
+#
+#        # Second run the bit expert
+#        common.out_dir.mkdir(exist_ok=True)
+#        common.out_dir = common.out_dir.joinpath(f"{target.name}")
+#        if common.save_results is not None:
+#            common.save_results.mkdir(exist_ok=True)
+#            common.save_results = common.save_results.joinpath(f"{target.name}")
+#
+#        print(f"Nopping for target {target} : {common.program_file}")
+#        df = nop(common, program_source_code)
+#        dfs.append(df)
+#
+#    # Aggreagate dfs
+#    total_df = pd.concat(dfs, ignore_index=True)
+#    total_df.to_csv(result_save_to)
+#
+#    return
 
-    out_dir.mkdir(exist_ok=True)
 
-    for target in targets:
-        match target:
-            case Target.X86_64:
-                compiler = "gcc -g"
-            case Target.RISCV:
-                compiler = "riscv64-linux-gnu-gcc"
-            case Target.ARM_64:
-                compiler = "aarch64-linux-gnu-gcc"
-            case Target.ARM_32:
-                compiler = "arm-linux-gnueabi-gcc"
-            case _:
-                raise Exception("No support for nops")
-
-        new_name = inp.name.replace(".c", "")
-
-        cmd = f"{compiler} {inp} -o {out_dir.joinpath(f'{new_name}_{compiler}.o')}".split(
-            " "
-        )
-        try:
-            subprocess.run(cmd)
-        except:
-            # TODO
-            pass
-    return
+#@app.command()
+#def compile_many(inp: Path, out_dir: Path, targets: list[Target]):
+#    """
+#    Compile a program for a specific arch
+#    """
+#
+#    out_dir.mkdir(exist_ok=True)
+#
+#    for target in targets:
+#        match target:
+#            case Target.X86_64:
+#                compiler = "gcc -g"
+#            case Target.RISCV:
+#                compiler = "riscv64-linux-gnu-gcc"
+#            case Target.ARM_64:
+#                compiler = "aarch64-linux-gnu-gcc"
+#            case Target.ARM_32:
+#                compiler = "arm-linux-gnueabi-gcc"
+#            case _:
+#                raise Exception("No support for nops")
+#
+#        new_name = inp.name.replace(".c", "")
+#
+#        cmd = f"{compiler} {inp} -o {out_dir.joinpath(f'{new_name}_{compiler}.o')}".split(
+#            " "
+#        )
+#        try:
+#            subprocess.run(cmd)
+#        except:
+#            # TODO
+#            pass
+#    return
 
 
 def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
@@ -1792,39 +1596,39 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
     return cmd
 
 
-@app.command()
-def compile_program(inp: Path, out: Path, target: Target) -> Path:
-    """
-    Compile a program for a specific arch
-    """
-
-    if not out.parent.exists():
-        out.parent.mkdir(parents=True)
-
-    match target:
-        case Target.X86_64:
-            compiler = "gcc -g"
-        case Target.RISCV:
-            compiler = "riscv64-linux-gnu-gcc"
-        case Target.ARM_64:
-            compiler = "aarch64-linux-gnu-gcc"
-        case Target.ARM_32:
-            compiler = "arm-linux-gnueabi-gcc"
-        case _:
-            raise Exception("No support for nops")
-
-    cmd = f"{compiler} {inp} -o {out}".split(" ")
-
-    try:
-        subprocess.run(cmd)
-        if not out.exists():
-            raise Exception(f"Failed to compile program")
-        return out
-    except Exception as e:
-        # TODO
-        print(f"[ERRORRRRRRRRRRRRRR] Error compiling with command: {cmd}")
-        print(e)
-        raise e
+#@app.command()
+#def compile_program(inp: Path, out: Path, target: Target) -> Path:
+#    """
+#    Compile a program for a specific arch
+#    """
+#
+#    if not out.parent.exists():
+#        out.parent.mkdir(parents=True)
+#
+#    match target:
+#        case Target.X86_64:
+#            compiler = "gcc -g"
+#        case Target.RISCV:
+#            compiler = "riscv64-linux-gnu-gcc"
+#        case Target.ARM_64:
+#            compiler = "aarch64-linux-gnu-gcc"
+#        case Target.ARM_32:
+#            compiler = "arm-linux-gnueabi-gcc"
+#        case _:
+#            raise Exception("No support for nops")
+#
+#    cmd = f"{compiler} {inp} -o {out}".split(" ")
+#
+#    try:
+#        subprocess.run(cmd)
+#        if not out.exists():
+#            raise Exception(f"Failed to compile program")
+#        return out
+#    except Exception as e:
+#        # TODO
+#        print(f"[ERRORRRRRRRRRRRRRR] Error compiling with command: {cmd}")
+#        print(e)
+#        raise e
 
 
 
@@ -2250,8 +2054,6 @@ def para_nop_no_comp(common: CommandParameters,  num_cpus: int):
         with open(common.expected_stdout, 'r') as f:
             lines = f.readlines()
             common.expected_stdout = lines
-        
-
 
     max_workers = max(1, num_cpus // 2)
 
@@ -2423,7 +2225,8 @@ def seq_nop(common: CommandParameters, target: Target):
 
         # Generate hte mutated binary
         try:
-            out_file = generate_nop_mutated_bin(common, target, inst)
+            #out_file = generate_nop_mutated_bin(common, target, inst)
+            out_file = generate_nops_mutated_bin(common, target, [inst])
 
             disasm_mut = disassemble_text_section(out_file)
             if len(disasm) != len(disasm_mut):
@@ -3152,124 +2955,6 @@ def predict(bin_path, X, timeout:int, use_arm: bool = False):
     y = [ predict_one(x) for x in np.array(X) ]
     return np.array(y)
 
-
-
-
-
-
-#@app.command()
-#def nn_test(inp:Path,out:Path, num_cpus: int):
-##def nn_test(inp:Path, dataset: Path, out:Path):
-#    """
-#    A very hard coded version to run a NN using emlearn
-#    """
-#
-#    out.mkdir(exist_ok=True)
-#
-#    disasm = disassemble_text_section(inp)
-#
-#    # Load the target type
-#    target = detect_target(inp)
-#    if target == Target.ARM_32:
-#        arm = True
-#    else:
-#        arm = False
-#
-#    logger.debug(f"Detected Target: {target}")
-#
-#    mutated_bins = []
-#
-#    bin_futures = []
-#    #with ThreadPoolExecutor(max_workers=max_workers) as executor:
-#    #    for inst in alive_it(disasm, title='submitting mutations'):
-#    #        future = executor.submit( _generate_nop_mutated_bin, inp,target, inst, out)
-#    #        bin_futures.append(future)
-#    #    total_tasks = len(bin_futures)
-#
-#
-#    #    # for _, future in enumerate(futures):
-#    #    with alive_bar(total_tasks, title="Collecting mutations") as bar:
-#    #        for future in as_completed(bin_futures):
-#    #            # Check the status codes
-#    #            mutated_bins.append(future.result())
-#    #            bar()  # increment the progress bar by 1
-#
-#    results = []
-#    for inst in alive_it(disasm, title='generating mutatations'):
-#        res = _generate_nop_mutated_bin(inp, target, inst, out)
-#        mutated_bins.append(res)
-#        results.append(nn_helper(res,arm))
-#        res.unlink()
-#
-#
-#    # For mutation in mutatations, get the f1 
-#    expected_acc = 0.9677
-#
-#    good_res = {}
-#    bad_res = {}
-#    failed_bin = []
-#
-#
-#    futures = []
-#
-#
-#    #with ThreadPoolExecutor(max_workers=max_workers) as executor:
-#    #    # Run the threads
-#    #    for bin in mutated_bins:
-#    #        future = executor.submit(nn_helper, bin, arm)
-#    #        futures.append(future)
-#    #    total_tasks = len(futures)
-#
-#    #    # for _, future in enumerate(futures):
-#    #    with alive_bar(total_tasks, title="Running nets") as bar:
-#    #        for future in as_completed(futures):
-#    #            # Check the status codes
-#    #            results.append(future.result())
-#    #            bar()  # increment the progress bar by 1
-#
-#    for (bin, model_acc) in results:
-#        if abs(model_acc- expected_acc) < .03:
-#            good_res[bin.name] = model_acc
-#        elif model_acc == -99_9999:
-#            failed_bin.append(failed_bin)
-#        else:
-#            bad_res[bin.name] = model_acc
-#
-#
-#
-#    #for bin in alive_it(mutated_bins):
-#    #    #compiled_model_path = Path(bin).absolute()
-#
-#    #    try:
-#    #        acc = evaluate_model(bin, test, arm)
-#
-#    #        if abs(acc - expected_acc) < .03:
-#    #            good_res[bin.name] = acc
-#    #            print(f"File {bin} had Acc: {acc}")
-#    #        else:
-#    #            bad_res[bin.name] = acc
-#    #    except Exception as e:
-#    #        failed_bin.append(bin.name)
-#
-#    print(f"Had {len(good_res.keys())} good results")
-#    print(f"Had {len(bad_res.keys())} bad results")
-#    print(f"Had {len(failed_bin)} failed results")
-#
-#
-#    # Need to mutate the binay
-#    return
-#
-#def nn_helper(model, arm):
-#
-#    dataset = Path("test_packages/emlearn/examples/dataset.csv")
-#    df= pd.read_csv(dataset)
-#    _, _, test = dataset_split_random(df, test_size=0.10)
-#    try:
-#        acc = evaluate_model(model, test, arm)
-#        return (model, acc)
-#    except Exception as e:
-#        return (model, -99_999)
-
 @app.command()
 def new_nn_test(inp:Path, out:Path, test_size:int):
     """
@@ -3417,21 +3102,6 @@ def plot_faults_and_failures(start_addr, end_addr, faulted_addresses, failed_add
 
     return plt
 
-
-
-
-@app.command()
-def gen_fault_plot(inp:Path):
-    """
-    Generate a plot of addresses with a line at the addresses that 
-    caused a successful fualt, and a line at the addresses that 
-    caused the program to fail to run 
-
-    Input
-    -----
-    csv with two 
-    """
-    return 
 
 
 @app.command()
@@ -3598,14 +3268,11 @@ def compare_plot(nop_list, bit_list, static_list, segfaults, num_instructions, o
 
     plt.tight_layout()
     plt.savefig(out_path, dpi=300, bbox_inches="tight")
-    #plt.show()
     return plt
 
 
 
 if __name__ == "__main__":
     setup_logger(console_level="DEBUG")
-
     logger = logging.getLogger(__name__)   # module-level logger
-
     app()
