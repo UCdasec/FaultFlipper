@@ -1849,8 +1849,6 @@ def seq_nop(common: CommandParameters, target: Target):
             return
 
     target = detect_target(common.program_file)
-
-    futures = []
     results: list[NopExperimentResult] = []
 
     start_time = datetime.now()
@@ -1862,7 +1860,6 @@ def seq_nop(common: CommandParameters, target: Target):
 
         # Generate hte mutated binary
         try:
-            #out_file = generate_nop_mutated_bin(common, target, inst)
             out_file = generate_nops_mutated_bin(common, target, [inst])
 
             disasm_mut = disassemble_text_section(out_file)
@@ -2066,7 +2063,7 @@ def para_double_nop(common: CommandParameters, target: Target, num_cpus: int):
 
 
 @app.command()
-def para_nop(common: CommandParameters, target: Target, num_cpus: int):
+def nop(common: CommandParameters, target: Target, num_cpus: int):
     """
     Take c source code as input, compile it, mutate it, and test
     """
@@ -2379,9 +2376,9 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             # "nop": nop,
             # "bit": bit,
             # "nop_exp": nop_exp,
-            "many_nop": many_nop,
-            "many_bit": many_bit,
-            "para_nop": para_nop,
+            #"many_nop": many_nop,
+            #"many_bit": many_bit,
+            "nop": nop,
             "para_double_nop": para_double_nop,
             "para_bit": para_bit,
             "para_double_bit": para_double_bit,
