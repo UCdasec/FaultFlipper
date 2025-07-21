@@ -1,7 +1,7 @@
 #include <stdio.h>
-int main(void) {
+unsigned long long fib(int a ) {
     // The number of iterations in fibonnaci to run
-    int n = 20;
+    int n = a;
 
     // Run Fib
 
@@ -25,7 +25,17 @@ int main(void) {
     }
 
     // Print the results 6765
-    printf("Fibonacci of %d is: %llu\n", n, curr);
-    return 0;
+    return curr;
 }
 
+
+int main(){
+
+    int a = 20;
+
+    unsigned long long b = fib(a);
+
+    printf("Fibonacci of %d is: %llu\n", a, b);
+    return 0;
+
+}
