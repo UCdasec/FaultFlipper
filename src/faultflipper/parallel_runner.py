@@ -1,6 +1,6 @@
 
 from pathlib import Path
-from binary_tools import Target,  shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input
+from binary_tools import Target,  shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, sim_binary_w_input
 
 import lief
 
@@ -144,6 +144,76 @@ def double_nop_para_run_helper(common, inst1, inst2, target: Target):
     except Exception as e:
         print(f"Failed to run bin with {e}")
         return out_file, -100, inst1, common, target, "", ""
+
+
+def x_nop_para_run_helper(common, insts, target: Target):
+    """
+    Run a binary and capture its output
+    """
+
+    if common.program_input[-1:] != "\n":
+        common.program_input += "\n"
+
+    # Generate hte mutated binary
+    try:
+        out_path = common.out_dir.joinpath(
+            common.program_file.name + f"_{hex(insts[0].address)}"
+        )
+        out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+
+    except Exception as e:
+        print(f"Issue making binary: {e}")
+        return Path(""), -100, insts, common, target, "", ""
+
+    try:
+        returncode, stdout, stderr = run_binary_w_input(
+            out_file, common.program_input, target, common.timeout
+        )
+
+        if returncode is not None:
+            returncode = shift_exit_code(returncode)
+        return out_file, returncode, insts, common, target, stdout, stderr
+    except Exception as e:
+        print(f"Failed to run bin with {e}")
+        return out_file, -100, insts, common, target, "", ""
+
+
+
+
+
+def x_nop_angr_helper(common, insts, target: Target):
+    """
+    Run a binary and capture its output with angr
+    """
+
+    if common.program_input[-1:] != "\n":
+        common.program_input += "\n"
+
+    # Generate hte mutated binary
+    try:
+        out_path = common.out_dir.joinpath(
+            common.program_file.name + f"_{hex(insts[0].address)}"
+        )
+        out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+
+    except Exception as e:
+        print(f"Issue making binary: {e}")
+        return Path(""), -100, insts, common, target, "", ""
+
+    try:
+        returncode, stdout, captured = sim_binary_w_input(
+            out_file, common.program_input,
+        )
+
+        if returncode is not None:
+            returncode = shift_exit_code(returncode)
+        return out_file, returncode, insts, common, target, stdout, captured
+    except Exception as e:
+        print(f"Failed to run bin with {e}")
+        return out_file, -100, insts, common, target, None, None
+
+
+
 
 
 

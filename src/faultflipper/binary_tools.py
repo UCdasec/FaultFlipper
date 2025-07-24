@@ -1,4 +1,5 @@
 from datetime import datetime
+import angr
 import subprocess
 from enum import Enum
 import lief
@@ -17,6 +18,24 @@ class Target(Enum):
     ARM_64 = 3
     ARM_32 = 4
     RISCV_32 = 5
+
+def get_return_reg(target: Target)-> str| None:
+    """
+    Get the return register for the target
+    """
+
+    # Get the register
+    if target == Target.ARM_32:
+        return 'r0'
+    elif target == Target.X86_64:
+        return 'rax'
+    else:
+        return None
+            
+
+
+
+
 
 
 class Nop(Enum):
@@ -96,6 +115,7 @@ def in_place_patch(
     with the bytes in 'patch_data', writing to 'out_file' in place.
     Does NOT remove any debug sections, because it avoids a full rebuild.
     """
+    #print(f"   | File: {out_file} inplace at {patch_addr}")
 
     # Parse the original ELF with LIEF
     binary = lief.parse(in_file)
@@ -427,8 +447,6 @@ def generate_bit_mutated_file(
 
 
 
-
-
 def generate_nops_mutated_bin(binary:Path, target, instructions:list, output:Path) -> Path:
     """
     Geneate a single mutated binary
@@ -438,12 +456,14 @@ def generate_nops_mutated_bin(binary:Path, target, instructions:list, output:Pat
     #    common.program_file.name + f"_{hex(instructions[0].address)}"
     #)
 
+    #print(f"Output: {output} will have addrs: {[hex(inst.address) for inst in instructions]}")
     shutil.copy(binary, output)
 
     # Run many patches - patching in place so they all get applied
     for inst in instructions:
         nop_patch = gen_nop_patch(inst, target=target)
-        in_place_patch(binary, output, inst.address, bytes(nop_patch))
+        in_place_patch(output, output, inst.address, bytes(nop_patch))
+
     output.chmod(0o755)
 
     return output
@@ -771,5 +791,129 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
         case _:
             raise Exception(f"Unsupported target {target}")
     return
+
+
+
+def sim_binary_w_input(bin: Path, inp:str):
+    """
+    Simulate the binary with ANGR
+    """
+
+    proj = angr.Project(bin, load_options={'auto_load_libs': False})
+    pwd = inp.encode()
+    cfg = proj.analyses.CFGFast()
+
+    stdin_sf = angr.SimFile("stdin", content=pwd)
+
+    state = proj.factory.full_init_state(stdin=stdin_sf)
+
+    funcs = [v.name for _,v in cfg.functions.items()] 
+
+    addr_list = [x.addr for _,x in cfg.functions.items()]
+    addr_list.sort()
+    addr_set = list(set(addr_list))
+    addr_set.sort()
+
+    if len(addr_list) != len(addr_set):
+        print(addr_list)
+        print(addr_set)
+        raise ValueError 
+
+    if addr_list != addr_set:
+        print(f"Addr list: \n{addr_list}")
+        print(f"Addr set: \n{addr_set}")
+        raise ValueError 
+    
+    captured = {}
+    
+    #def after_ret(s):
+    #    if s.callstack.func_addr not in [x.addr for x in funcs]:
+    #        return
+    #
+    #    cur_regs = {}
+    #    for name in s.arch.registers.keys():
+    #        bv = getattr(s.regs, name)
+    #        cur_regs[name] = s.solver.eval(bv, cast_to=int)
+
+    #    key =  addr_to_name[s.callstack.func_addr]
+
+    #    if key not in captured.keys():
+    #        captured[key] = []
+
+    #    #captured[addr_to_name[s.callstack.func_addr]] = cur_regs
+    #    captured[key].append(cur_regs)
+
+    def ret_hook(fn_name):
+
+        def _after_ret(s):
+            cur_regs = {}
+            for name in s.arch.registers.keys():
+                bv = getattr(s.regs, name)
+                cur_regs[name] = s.solver.eval(bv, cast_to=int)
+
+            if fn_name not in captured.keys():
+                captured[fn_name] = []
+            captured[fn_name].append(cur_regs)
+        return _after_ret 
+
+    #for func in funcs:
+    #    if func.is_plt:
+    #        continue
+    #    # For every return site in the chosen function
+    #    for r in func.ret_sites:
+    #        state.inspect.b(
+    #            'instruction',
+    #            #when=angr.BP_BEFORE,
+    #            when=angr.BP_AFTER,
+    #            instruction=r.addr,
+    #            action=ret_hook(func.name),
+    #        )
+
+    for func_name in funcs:
+        cur_func = cfg.functions.function(name=func_name)
+        if cur_func is None:
+            captured[func_name] = []
+            continue
+
+            # For every return site in the chosen function
+        state.inspect.b(
+                    #'instruction',
+                    'return',
+                    #when=angr.BP_AFTER,
+                    when=angr.BP_BEFORE,
+                    #instruction=pwd_clk.addr,
+                    function_address=cur_func.addr,
+                    action=ret_hook(func_name)
+                )
+ 
+
+ 
+    simgr = proj.factory.simulation_manager(state).run()
+
+    dead = simgr.deadended[0]
+    stdout = dead.posix.dumps(1).decode()
+    ret = get_program_rc(dead)
+
+    return ret, stdout, captured
+
+
+def get_program_rc(s):
+    """
+    Handle for the concrete exit status of a whole program
+    """
+    if hasattr(s, "exit_code"):                       # modern angr
+        return s.solver.eval(s.exit_code)
+
+    if "exit_code" in s.globals:                      # older angr
+        return s.solver.eval(s.globals["exit_code"])
+
+    # fallback: grab the arch's conventional return register
+    #ret_reg  = s.arch.register_names[s.arch.ret_offset // s.arch.byte_width]
+    ret_reg  = s.arch.register_names.get(s.arch.ret_offset) 
+    return s.solver.eval(getattr(s.regs, ret_reg))
+
+
+
+
 
 

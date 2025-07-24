@@ -1,6 +1,8 @@
 import lief
+import json
+import claripy as cp
 import matplotlib.patches as mpatches
-from typing import List, Tuple, Annotated, Optional
+from typing import  Tuple, Annotated, Optional
 import matplotlib.pyplot as plt
 from report_utils import list_tuple_table, generate_pdf_report
 from sklearn.model_selection import train_test_split
@@ -21,11 +23,11 @@ import pandas as pd
 from enums import LinuxExitCodes
 from alive_progress import alive_it
 from logger_utils import setup_logger
-from cli_utils import CommandParameters, show_results, calc_freqs, BitFlipExperimentResult, NopExperimentResult, smol_show_results
+from cli_utils import CommandParameters, show_results, calc_freqs, BitFlipExperimentResult, NopExperimentResult, smol_show_results, RegNopExperimentResult
 
-from binary_tools import Target, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, is_valid_instruction, run_binary_w_calltime_input, timed_run_binary_w_input, generate_run_cmd, disassemble_text_section
+from binary_tools import Target, get_return_reg, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, is_valid_instruction, run_binary_w_calltime_input, timed_run_binary_w_input, generate_run_cmd, disassemble_text_section, sim_binary_w_input
 
-from parallel_runner import  bit_para_run_helper, double_bit_para_run_helper, double_nop_para_run_helper, nop_para_run_helper
+from parallel_runner import  bit_para_run_helper, double_bit_para_run_helper, double_nop_para_run_helper, nop_para_run_helper, x_nop_para_run_helper, x_nop_angr_helper
 
 
 console = Console()
@@ -34,6 +36,8 @@ app = App()
 DEFAULT_LOGS = Path("faultsim_log")
 if not DEFAULT_LOGS.exists():
     DEFAULT_LOGS.mkdir()
+
+
 
 
 other_returncodes = [
@@ -184,7 +188,7 @@ def disasm(
             if x.address >= start_addr and x.address <= end_addr
         ]
         if len(filter_disasm) == 0:
-            raise Exception
+            raise Exception("Diasm length is zero")
 
         # Max len of just the bytes
         max_len = max(
@@ -197,7 +201,6 @@ def disasm(
         GRUVBOX_GRAY = "\033[38;2;146;131;116m"  # #928374
         GRUVBOX_ORANGE = "\033[38;2;254;128;25m"  # #fe8019
         GRUVBOX_YELLOW = "\033[38;2;250;189;47m"  # #fabd2f
-        RESET = "\033[0m"
 
         bin_pretty_insns = []
         # Iterate over the instructions in the range of the addrs
@@ -220,6 +223,7 @@ def disasm(
         pretty_insns.append(bin_pretty_insns)
 
     if len(pretty_insns) == 2:
+        logger.debug('Beginning Compare')
         total = compare_disassembly(
             pretty_insns[0],
             pretty_insns[1],
@@ -425,8 +429,8 @@ def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
 def bit_no_comp_inout(
     common: CommandParameters, 
     source_code: Optional[Path] = None, 
-    ins: List[str] | None = None, 
-    outs: List[str] | None = None,
+    ins: list[str] | None = None, 
+    outs: list[str] | None = None,
     expected_correct: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -466,7 +470,6 @@ def bit_no_comp_inout(
         logger.debug(f"Detected Target: {target}")
 
         results: list[BitFlipExperimentResult] = []
-        
 
         # Iterate over single instructions
         for inst in alive_it(disasm):
@@ -629,8 +632,8 @@ def bit_no_comp_inout(
 def nop_no_comp_inout(
     common: CommandParameters, 
     source_code: Optional[Path] = None, 
-    ins: List[str] | None = None, 
-    outs: List[str] | None = None,
+    ins: list[str] | None = None, 
+    outs: list[str] | None = None,
     expected_correct: int | None = None,
 ) -> pd.DataFrame:
     """
@@ -902,7 +905,6 @@ def compare_disassembly(
     lines_b,
     name1,
     name2,
-    column_width=100,
     text: bool = False,
     verbose: bool = False,
 ) -> str:
@@ -929,6 +931,8 @@ def compare_disassembly(
     short_max_left = max(len(x) for x in white_a)
     short_max_right = max(len(x) for x in white_b)
 
+    logger.debug(f"[COMPARE] max_lines: {max_lines}")
+
     i_pad = len(str(max_lines))
 
     if not text:
@@ -937,6 +941,7 @@ def compare_disassembly(
         GRUVBOX_YELLOW = ""
 
     if not text or verbose:
+        logger.debug("Using pretty lines")
         print(
             f"{GRUVBOX_YELLOW}{'-':<{i_pad}}|{GRUVBOX_YELLOW} {name1:<{short_max_left - 1}}|{GRUVBOX_YELLOW} {name2:<{short_max_right - 1}}{GRUVBOX_YELLOW}|"
         )
@@ -1914,6 +1919,362 @@ def seq_nop(common: CommandParameters, target: Target):
 
 
 
+def collect_all_reg_calls(capt_info, reg_name, func_name):
+    return [x[reg_name] for x in capt_info[func_name]]
+
+
+@app.command()
+def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_names: str, num_nops: int=1):
+    """
+    The register version of the nop x command. 
+
+    This will use ANGR to run the mutated binary 
+    """
+
+    func_names = func_names.split(',')
+
+    print(f"The func names are: {func_names}")
+
+    max_workers = max(1, num_cpus // 2)
+
+    # Make the dir
+    common.out_dir.mkdir(exist_ok=True, parents=True)
+    program_context = common.program_file.parent.joinpath(
+        common.program_file.name.replace(".c", ".toml")
+    )
+    base_out = common.out_dir
+
+    # Copy the source cdoe to the experiement
+    source_code = common.program_file
+    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+
+    bin_out = common.out_dir.joinpath(
+        common.program_file.name.replace(".c", ".o")
+    )
+
+    common.save_results = common.out_dir.joinpath("results.csv")
+    common.out_dir = common.out_dir.joinpath("mutated_bins")
+    common.out_dir.mkdir(exist_ok=True)
+
+    # Compile the binary for the target
+    common.program_file = compile_program(source_code, bin_out, target)
+
+    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+
+    original_bin = common.program_file
+
+    disasm = disassemble_text_section(common.program_file)
+    num_instructions = len(disasm)
+
+    if not common.yes:
+        cont = str(
+            input(
+                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
+
+    target = detect_target(common.program_file)
+
+    futures = []
+    results: list[RegNopExperimentResult] = []
+
+    start_time = datetime.now()
+
+    # Run the binary to get the golden register values
+
+    golden_ret, golden_stdout, golden_register_info = sim_binary_w_input(common.program_file, common.program_input)
+    #print(golden_register_info)
+    #exit()
+
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Run the threads
+        #1 nop : len(diasm)     = len(disasm) - 1nop + 1
+        #2 nop : len(diasm) - 1
+        # ...
+        for i in range(len(disasm)-(num_nops)+1):
+
+
+            # Keet x instructions to overwrite with nop
+            insts = [disasm[i+x] for x in range(num_nops)]
+            #future = executor.submit(x_nop_para_run_helper, common, insts, target)
+            future = executor.submit(x_nop_angr_helper, common, insts, target)
+            futures.append(future)
+
+        total_tasks = len(futures)
+
+        with alive_bar(total_tasks, title="Processing tasks") as bar:
+            for future in as_completed(futures):
+
+                # Check the status codes
+                out_file, returncode, insts, common, target, stdout, captured = (
+                    future.result()
+                )
+
+                result = RegNopExperimentResult(
+                    source_file=source_code,
+                    unmutated_binary=original_bin,
+                    binary_path=out_file,
+                    nopped_addr=insts[0].address,
+                    program_input=common.program_input,
+                    return_code=returncode,
+                    program_stdout=stdout,
+                    target=target,
+                    expected_returncode=common.expected_returncode,
+                    expected_stdout=common.expected_stdout,
+                    custom_returncodes=other_returncodes,
+                    #TODO:
+                    reg_info=captured,
+                )
+                results.append(result)
+                bar()
+
+    runtime = datetime.now() - start_time
+
+    #TODO - Better implement the register version
+    df = dataclass_to_dataframe(results)
+
+    save_df(df, common.save_results)
+    #show_results(common, df, other_returncodes)
+
+    # Lastly save the experiment parameters
+    params = common.to_dict()
+    params["target"] = target.value
+
+    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+        json.dump(params, f, indent=4)
+
+    num_bits = (
+        len(lief.parse(common.program_file).get_section(".text").content) * 8
+    )
+
+    report_path = common.save_results.parent.joinpath("report.md")
+    print(f"Analyzing {len(results)} results")
+
+    # Counter for no reg info. This will be the error count
+    error_count = 0
+
+    bad_results = [] 
+
+    # For all results
+    for i, result in enumerate(results):
+
+        # Check for info 
+        mutant_reg_info = result.reg_info
+        if mutant_reg_info is None:
+            error_count += 0
+            continue
+
+        # For all func names
+        all_func_match = True
+        for func_name in func_names:
+            reg_name = get_return_reg(target)
+            gold_reg_ret = collect_all_reg_calls(golden_register_info, reg_name, func_name)
+
+            try:
+                mut_reg_ret = collect_all_reg_calls(result.reg_info, reg_name, func_name)
+            except:
+                mut_reg_ret = []
+
+            if mut_reg_ret is None or mut_reg_ret == []:
+                all_func_match = False
+            elif gold_reg_ret[-1] != mut_reg_ret[-1]:
+                all_func_match = False
+
+        if not all_func_match:
+            # Save the total result blob and the filters func results
+            bad_results.append(result )
+
+    save_reg_report(
+        report_path,
+        common,
+        df,
+        runtime,
+        results,
+        num_instructions,
+        num_bits,
+        compile_cmd,
+        bad_results,
+        source_code,
+        program_context,
+    )
+    print(f"Report saved to {report_path}")
+
+
+
+
+
+    bad_res = []
+    # Look at the bad reults 
+    for result  in bad_results:
+        print("======================")
+        print(f'Stdout: {result.program_stdout}')
+        #print(f'Total res: {func_results}')
+
+        for name in func_names:
+            if name in result.reg_info.keys():
+
+                # Get a liust of all the r0 values across all calls to func name
+                gold_r0_ret = collect_all_reg_calls(golden_register_info, 'r0', name)
+                #gold_r0_ret = gold_r0_ret[-1]
+
+                mut_r0_ret = collect_all_reg_calls(result.reg_info, 'r0', name)
+                #mut_r0_ret = mut_r0_ret[-1]
+
+                is_correct = gold_r0_ret[-1] == mut_r0_ret[-1]
+                bad_res.append(result)
+
+                print(f"({name}:r0)  golden: {gold_r0_ret} | mut: {mut_r0_ret} same?: {is_correct}")
+            else:
+                print(f"({name}): Missing func")
+
+    print(f"Had {len(bad_res)} bad results")
+
+    #print(f"The golden output for main is: {golden_register_info['main']['r0']}")
+    #Jkk:print(f"The golden output for password check is: {golden_register_info['password_check']['r0']}")
+
+        #Jkkfor name, info in golden_register_info.items():
+        #Jkk    mut_info = mut_capt[name]
+
+        #Jkk    for reg, val in info.items():
+        #Jkk        if val != mut_info[reg]:
+        #Jkk            print(f"DIFF in ({name}|{reg}): Vanilla: {val} Mut: {mut_info[reg]}")
+
+
+    return
+
+
+
+
+@app.command()
+def x_nop(common: CommandParameters, target: Target, num_cpus: int, num_nops: int=1):
+    """
+    Take c source code as input, compile it, mutate it, and test
+    """
+
+    max_workers = max(1, num_cpus // 2)
+
+    # Make the dir
+    common.out_dir.mkdir(exist_ok=True, parents=True)
+    program_context = common.program_file.parent.joinpath(
+        common.program_file.name.replace(".c", ".toml")
+    )
+    base_out = common.out_dir
+
+    # Copy the source cdoe to the experiement
+    source_code = common.program_file
+    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+
+    bin_out = common.out_dir.joinpath(
+        common.program_file.name.replace(".c", ".o")
+    )
+
+    common.save_results = common.out_dir.joinpath("results.csv")
+    common.out_dir = common.out_dir.joinpath("mutated_bins")
+    common.out_dir.mkdir(exist_ok=True)
+
+    # Compile the binary for the target
+    common.program_file = compile_program(source_code, bin_out, target)
+
+    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+
+    original_bin = common.program_file
+
+    disasm = disassemble_text_section(common.program_file)
+    num_instructions = len(disasm)
+    if not common.yes:
+        cont = str(
+            input(
+                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
+
+    target = detect_target(common.program_file)
+
+    futures = []
+    results: list[NopExperimentResult] = []
+
+    start_time = datetime.now()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Run the threads
+        #1 nop : len(diasm)     = len(disasm) - 1nop + 1
+        #2 nop : len(diasm) - 1
+        # ...
+        for i in range(len(disasm)-(num_nops)+1):
+            # Keet x instructions to overwrite with nop
+            insts = [disasm[i+x] for x in range(num_nops)]
+            future = executor.submit(x_nop_para_run_helper, common, insts, target)
+            futures.append(future)
+
+        total_tasks = len(futures)
+
+        with alive_bar(total_tasks, title="Processing tasks") as bar:
+            for future in as_completed(futures):
+
+                # Check the status codes
+                out_file, returncode, insts, common, target, stdout, stderr = (
+                    future.result()
+                )
+
+                result = NopExperimentResult(
+                    source_file=source_code,
+                    unmutated_binary=original_bin,
+                    binary_path=out_file,
+                    nopped_addr=insts[0].address,
+                    program_input=common.program_input,
+                    return_code=returncode,
+                    program_stdout=stdout,
+                    target=target,
+                    expected_returncode=common.expected_returncode,
+                    expected_stdout=common.expected_stdout,
+                    custom_returncodes=other_returncodes,
+                )
+                results.append(result)
+                bar()  # increment the progress bar by 1
+
+    runtime = datetime.now() - start_time
+
+    df = dataclass_to_dataframe(results)
+    save_df(df, common.save_results)
+    show_results(common, df, other_returncodes)
+
+    # Lastly save the experiment parameters
+    params = common.to_dict()
+    params["target"] = target.value
+
+    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+        json.dump(params, f, indent=4)
+
+    num_bits = (
+        len(lief.parse(common.program_file).get_section(".text").content) * 8
+    )
+
+    report_path = common.save_results.parent.joinpath("report.md")
+    save_report(
+        report_path,
+        common,
+        df,
+        runtime,
+        results,
+        num_instructions,
+        num_bits,
+        compile_cmd,
+        source_code,
+        program_context,
+    )
+    print(f"Report saved to {report_path}")
+
+    return
+
+
+
+
+
 @app.command()
 def para_double_nop(common: CommandParameters, target: Target, num_cpus: int):
     """
@@ -2157,6 +2518,191 @@ def nop(common: CommandParameters, target: Target, num_cpus: int):
 
     return
 
+def save_reg_report(
+    report_path: Path,
+    common: CommandParameters,
+    df: pd.DataFrame,
+    runtime,
+    results,
+    num_instructions,
+    num_bits,
+    compile_cmd,
+    bad_reg_info,
+    source_code: Path,
+    program_context: Path,
+    is_bit=False,
+) -> None:
+    """
+    Generate a report including:
+    1. Experiment Settings
+    2. Histrogram of exit codes
+    3. list of files that ran critical code
+    4. Disassmeblys of the files that ran critical codes
+    5. Validation of correct mutations
+    6. Whole dataframe
+    """
+
+    # . The title
+    title = f"# Experiment {results[0].mutation.upper()} on {common.program_file.name} with target {results[0].target}\n"
+
+    # 1. the settings
+    settings = common.to_dict()
+
+    settings_bullets = "## Settings \n"
+
+    for k, v in settings.items():
+        if k in ["program_input", "expected_stdout"]:
+            settings_bullets = (
+                settings_bullets + f"- **{k}**:" + f"`{list(v)}`" + "\n"
+            )
+            continue
+        settings_bullets += f"- **{k}**: {v}\n"
+
+    # 1.a - Program context
+    if program_context.is_file():
+        logger.debug(f"Opening context file: {program_context}")
+        settings_bullets += "\n"
+        settings_bullets += "```toml"
+        with open(program_context, "r") as f:
+            for line in f.readlines():
+                settings_bullets += f"{line}\n"
+        settings_bullets += "```"
+
+    # 1.1 Binary information
+
+    match results[0].target:
+        case Target.X86_64:
+            nop = Nop.X86_64
+        case Target.RISCV:
+            nop = Nop.RISCV_COMPACT
+        case Target.ARM_64:
+            nop = Nop.ARM_64
+        case Target.ARM_32:
+            nop = Nop.ARM_32
+        case _:
+            raise Exception("No support for nops")
+
+    binary_info = "#### Binary information + Running the binary information\n"
+    binary_info += f"- Contains **{num_instructions}** instructions\n"
+    binary_info += f"- Contains **{num_bits}** bits in the .text section\n"
+    if is_bit:
+        binary_info += f"- Therefore, FaultSim attempted to make **{num_bits}** mutations\n"
+        binary_info += f"- Of the **{num_bits}** attempted mutations, **{len(df)}** valid mutated binaries were generated\n"
+    else:
+        binary_info += f"- Therefore, FaultSim attempted to make **{num_instructions}** mutations\n"
+        binary_info += f"- Of the **{num_instructions}** attempted mutations, **{len(df)}** valid mutated binaries were generated\n"
+    binary_info += f"- The target arch was {results[0].target}\n"
+    binary_info += f"- The compile command was: `{' '.join(compile_cmd)}`\n"
+    binary_info += "- The optimization level was: O0\n"
+    run_cmd = generate_run_cmd(common.program_file, results[0].target)
+    run_cmd = ["timeout", f"{common.timeout}s"] + run_cmd
+    run_cmd = " ".join(run_cmd)
+    binary_info += f"- An example run command: `{run_cmd}`\n"
+    binary_info += (
+        f"- The NOP for this target is: `{nop}` with values: {nop.value}\n"
+    )
+    binary_info += (
+        f"- The runtime to generate and run all binaries was: {runtime}\n"
+    )
+
+
+    freqs = calc_freqs(df, common.expected_stdout, other_returncodes)
+    table = "## Return Code Frequencies \n"
+    table_str = list_tuple_table(["Exit code", "Frequency"], freqs)
+    table += table_str
+
+    # 3. list of programs that ran critical code
+    list_of_progs = "## Programs that ran critical code \n"
+
+    info = df[
+        df["program_stdout"].str.contains(common.expected_stdout, na=False)
+    ]
+    names = [Path(x).name for x in list(info["binary_path"])]
+
+    list_of_progs += f"**{len(names)}** programs ran the critical code out of **{len(df)}** mutated binaries. The binaires were:\n"
+
+    names_str = ""
+    for name in names:
+        names_str += f"- {name}\n"
+
+    list_of_progs += names_str
+    list_of_progs +='\n'
+
+    # 3.1 list of programs that ran cirtical code according to the reg info 
+    list_of_progs += f"**REG INFO {len(bad_reg_info)}** programs ran critical code according to reg info. These were:\n"
+    for res in bad_reg_info:
+        list_of_progs += f"- {res.binary_path}\n"
+
+    # 4. Disassembly of the files that ran critical code
+    # 10 bytes on either side will be included
+    pad = 10
+    bins = [Path(x) for x in list(info["binary_path"])]
+
+    disassems = ""
+    for i, bin in enumerate(bins):
+        if is_bit:
+            mut_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            mut_addr = mut_addr.split("_")[0]
+            mut_addr = int(mut_addr, 16)
+        else:
+            mut_addr = int(
+                bin.name.replace(f"{common.program_file.name}_", ""), 16
+            )
+
+        start_addr = mut_addr - pad
+        end_addr = mut_addr + pad
+
+        ret = disasm(
+            [common.program_file.absolute(), bin],
+            start_addr,
+            end_addr,
+            text=True,
+            verbose=False,
+        )
+
+        disassems += f"#### Program {i} {bin.name} diassemebly vs vanilla\n\n"
+        disassems += "```\n"
+        disassems += ret
+        disassems += "```\n"
+        disassems += "\n\n"
+
+    lines = "## Source Code Lines\n"
+    lines += "```c\n"
+
+    # Program file source code:
+    with open(source_code, "r") as f:
+        for v in f.readlines():
+            lines = lines + v
+
+    lines += "```\n"
+
+    with open(report_path, "w") as f:
+        f.write(title)
+        f.write("\n\n")
+        f.write(settings_bullets)
+        f.write("\n\n")
+        f.write(binary_info)
+        f.write("\n\n")
+        f.write(table)
+        f.write("\n\n")
+        f.write(list_of_progs)
+        f.write("\n\n")
+        f.write(disassems)
+        f.write("\n\n")
+        f.write(lines)
+
+    # Generate the pdf version
+    generate_pdf_report(
+        report_path.absolute(),
+        report_path.parent.joinpath(
+            report_path.name.replace(".md", ".pdf")
+        ).absolute(),
+    )
+
+    return
+
+
+
 
 def save_report(
     report_path: Path,
@@ -2175,7 +2721,7 @@ def save_report(
     Generate a report including:
     1. Experiment Settings
     2. Histrogram of exit codes
-    3. List of files that ran critical code
+    3. list of files that ran critical code
     4. Disassmeblys of the files that ran critical codes
     5. Validation of correct mutations
     6. Whole dataframe
@@ -2348,6 +2894,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
 
         commands = {
             "nop": nop,
+            "x_nop": x_nop,
             "para_double_nop": para_double_nop,
             "para_bit": para_bit,
             "para_double_bit": para_double_bit,
@@ -2375,13 +2922,25 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 formated["target"] = Target[formated["target"].upper()]
 
             if command_name in ["nop", "para_bit", "para_double_nop", "para_double_bit"]:
-                print("Launching exp")
+                #print("Launching exp")
+                # Get the other required params
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
                 params = CommandParameters(**formated)
-
-                # Get the other required params
                 cmd_func(params, target=target, num_cpus=num_cpus)
+
+            elif command_name in ["x_nop"]:
+                target = formated.pop("target")
+                num_cpus = formated.pop("num_cpus")
+                num_nops = formated.get("num_nops", None)
+                if num_nops:
+                    formated.pop("num_nops")
+                    params = CommandParameters(**formated)
+                    cmd_func(params, target=target, num_cpus=num_cpus, num_nops=num_nops)
+                else:
+                    params = CommandParameters(**formated)
+                    cmd_func(params, target=target, num_cpus=num_cpus)
+
             elif command_name in ["nop_no_comp_inout", "bit_no_comp_inout"]:
                 ins = formated.pop('ins')
                 outs = formated.pop('outs')
@@ -2865,8 +3424,167 @@ def compare_plot(nop_list, bit_list, static_list, segfaults, num_instructions, o
     return plt
 
 
+@app.command()
+def compare_regs(inp:Path, mut:Path, stdin: str|None = None, func_names:list[str]=[], quiet: bool = True):
+    """
+    Temp function to get the registers of all functions
+    """
+
+
+
+    ret, stdout, capt = sim_binary_w_input(inp, stdin)
+    mut_ret, mut_stdout, mut_capt= sim_binary_w_input(mut, stdin)
+
+
+    # See the difference in registers 
+
+    # start with RAX if X86, R0 if arm
+    print(capt)
+    print(mut_capt)
+
+    func_name = "password_check"
+
+    tmp = capt[func_name]
+    print("=====================================")
+    print(tmp)
+    norm_rax = capt[func_name][0]['r0']
+    mut_rax = mut_capt[func_name][0]['r0']
+
+    for name, info in capt.items():
+        mut_info = mut_capt[name]
+
+        for reg, val in info.items():
+            if val != mut_info[reg]:
+                print(f"DIFF in ({name}|{reg}): Vanilla: {val} Mut: {mut_info[reg]}")
+
+
+    print(f"Retunr addrs of password_check: {norm_rax}")
+    print(f"Mut Retunr addrs of password_check: {mut_rax}")
+
+
+    func_name = "main"
+    norm_rax = capt[func_name]['r0']
+    mut_rax = mut_capt[func_name]['r0']
+    print(f"Retunr addrs of password_check: {norm_rax}")
+    print(f"Mut Retunr addrs of password_check: {mut_rax}")
+
+    print(stdout)
+    print(mut_stdout)
+
+    return 
+
+
+
+@app.command()
+def get_regs(inp:Path, stdin: str|None = None, func_names:list[str]=[], quiet: bool = True):
+    """
+    Temp function to get the registers of all functions
+    """
+
+
+    capt, stdout, ret = sim_binary_w_input(inp, stdin)
+
+    print(capt)
+    print(stdout)
+    print(ret)
+
+
+    #proj = angr.Project(inp, load_options={'auto_load_libs': False})
+    #cfg  = proj.analyses.CFGFast()
+
+
+    #if stdin:
+    #    inp_len = len(stdin)
+    #    sym_inp = cp.BVS("wrong", inp_len*8)
+
+    #    adj_stdin = angr.SimFile("stdin",
+    #                         content=sym_inp.concat(cp.BVV(b"\n")),
+    #                         has_end=True)
+
+    #if func_names != []:
+    #    funcs = [v for _,v in cfg.functions.items() if v.name in func_names]
+    #else:
+    #    funcs = [v for _,v in cfg.functions.items()] 
+
+    #if funcs == []:
+    #    if not quiet:
+    #        print(cfg.functions)
+    #        print(type(cfg.functions))
+    #        print(f"No functions by names {func_names}. Possible function names are {[x.name for x in cfg.functions.values()]}")
+    #    return
+    #else:
+    #    if not quiet:
+    #        console.print(f"Recording for target funcs: {func_names}")
+
+    #addr_to_name = {x.addr : x.name for x in funcs}
+
+    #state = proj.factory.full_init_state(
+    #    add_options={
+    #        angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS,
+    #        angr.options.ZERO_FILL_UNCONSTRAINED_MEMORY,
+    #    }
+    #)
+    #
+    #captured = {}
+    #
+    #def after_ret(s):
+    #    if s.callstack.func_addr not in [x.addr for x in funcs]:
+    #        return
+    #
+    #    cur_regs = {}
+    #    for name in s.arch.registers.keys():
+    #        bv = getattr(s.regs, name)
+    #        cur_regs[name] = s.solver.eval(bv, cast_to=int)
+    #
+    #    #captured.update(cur_regs)
+    #    captured[s.callstack.func_addr] = cur_regs
+    #
+    #for func in funcs:
+
+    #    # For every return site in the chosen function
+    #    for r in func.ret_sites:
+    #        state.inspect.b(
+    #            'instruction',
+    #            when=angr.BP_AFTER,
+    #            instruction=r.addr,
+    #            action=after_ret,
+    #        )
+    #
+    #proj.factory.simulation_manager(state).run()
+
+    #for func, info in captured.items():
+    #    console.print(f"On functions {addr_to_name[func]}")
+    #    if not quiet:
+    #        for name, val in info.items():
+    #            print(f" {name:>4} = 0x{val:08x} = {val}")
+
+    ## The return is a dictionary of 
+    ## ret = { 
+    ##       func_addr1: {
+    ##           reg1_name: val
+    ##           reg2_name: val2
+    ##       }   
+    ##       func_addr2: {
+    ##           reg1_name: val
+    ##           reg2_name: val2
+    ##       }   
+    ##       ...
+    ## }
+    #return captured
+
+
 
 if __name__ == "__main__":
+    #setup_logger(console_level="DEBUG")
     setup_logger(console_level="DEBUG")
     logger = logging.getLogger(__name__)   # module-level logger
+
+    for name in ("angr", "cle", "pyvex", "claripy"):
+        logging.getLogger(name).setLevel(logging.ERROR)
+    import angr
+
     app()
+    #       func_addr: {
+    #           reg1_name: val
+    #           reg2_name: val2
+    #       }   

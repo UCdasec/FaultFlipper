@@ -1,4 +1,6 @@
 from dataclasses import dataclass 
+import json
+from collections import defaultdict
 from cyclopts import App, Parameter
 from pathlib import Path
 from typing import Union
@@ -340,6 +342,14 @@ class NopExperimentResult(MutationExperiment):
     nopped_addr: int
     mutation: str = "nop"
     source_code: Optional[Path] = None
+
+@dataclass
+class RegNopExperimentResult(MutationExperiment):
+    nopped_addr: int
+    mutation: str = "nop"
+    source_code: Optional[Path] = None
+    reg_info: Optional[dict] = None
+
 
 
 
