@@ -347,8 +347,17 @@ class NopExperimentResult(MutationExperiment):
 class RegNopExperimentResult(MutationExperiment):
     nopped_addr: int
     mutation: str = "nop"
-    source_code: Optional[Path] = None
-    reg_info: Optional[dict] = None
+    source_code: Path | None = None
+    reg_info: dict | None = None
+
+
+@dataclass
+class RegBitFlipExperimentResult(MutationExperiment):
+    flipped_addr: int
+    flipped_index: int
+    mutation: str = "single_bit"
+    source_code: Path | None = None
+    reg_info: dict | None = None
 
 
 

@@ -373,6 +373,53 @@ def get_target_nop(target):
 
 
 
+def generate_x_bits_mutated_file(
+    i, inst_bits, target, inst, common, num_bits
+) -> None| Path:
+    binary = lief.parse(common.program_file)
+
+    original_bits = [x for x in inst_bits]
+
+    for x in range(num_bits):
+        if original_bits[i+x] == "0":
+            original_bits[i+x] = 1
+        else:
+            original_bits[i+x] = 0
+
+    bit_flipped_inst = "".join([str(x) for x in original_bits])
+
+    # Turn the bits back to an instruction for the patch
+    patch = bytes(
+        int("".join(bit_flipped_inst[i : i + 8]), 2)
+        for i in range(0, len(bit_flipped_inst), 8)
+    )
+
+    # If the instruction is not valid, go to the next instruction
+    good_inst, new_inst = is_valid_instruction(patch, target)
+
+    if not good_inst:
+        return None
+
+    # Re-adjust the patch so that it is a list of ints
+    patch = [
+        int("".join(bit_flipped_inst[i : i + 8]), 2)
+        for i in range(0, len(bit_flipped_inst), 8)
+    ]
+
+    # If we get here the instruction is good
+
+    binary.patch_address(inst.address, patch)
+
+    out_file = common.out_dir.joinpath(
+        common.program_file.name + f"_{hex(inst.address)}_{i}"
+    )
+    binary.write(str(out_file.resolve()))
+
+    out_file.chmod(0o755)
+    return out_file
+
+
+
 
 
 def generate_double_bit_mutated_file(
