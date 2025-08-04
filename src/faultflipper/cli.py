@@ -3492,102 +3492,102 @@ def compare_regs(inp:Path, mut:Path, stdin: str|None = None, func_names:list[str
 
 
 
-@app.command()
-def get_regs(inp:Path, stdin: str|None = None, func_names:list[str]=[], quiet: bool = True):
-    """
-    Temp function to get the registers of all functions
-    """
-
-
-    capt, stdout, ret = sim_binary_w_input(inp, stdin, func_names)
-
-    print(capt)
-    print(stdout)
-    print(ret)
-
-
-    #proj = angr.Project(inp, load_options={'auto_load_libs': False})
-    #cfg  = proj.analyses.CFGFast()
-
-
-    #if stdin:
-    #    inp_len = len(stdin)
-    #    sym_inp = cp.BVS("wrong", inp_len*8)
-
-    #    adj_stdin = angr.SimFile("stdin",
-    #                         content=sym_inp.concat(cp.BVV(b"\n")),
-    #                         has_end=True)
-
-    #if func_names != []:
-    #    funcs = [v for _,v in cfg.functions.items() if v.name in func_names]
-    #else:
-    #    funcs = [v for _,v in cfg.functions.items()] 
-
-    #if funcs == []:
-    #    if not quiet:
-    #        print(cfg.functions)
-    #        print(type(cfg.functions))
-    #        print(f"No functions by names {func_names}. Possible function names are {[x.name for x in cfg.functions.values()]}")
-    #    return
-    #else:
-    #    if not quiet:
-    #        console.print(f"Recording for target funcs: {func_names}")
-
-    #addr_to_name = {x.addr : x.name for x in funcs}
-
-    #state = proj.factory.full_init_state(
-    #    add_options={
-    #        angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS,
-    #        angr.options.ZERO_FILL_UNCONSTRAINED_MEMORY,
-    #    }
-    #)
-    #
-    #captured = {}
-    #
-    #def after_ret(s):
-    #    if s.callstack.func_addr not in [x.addr for x in funcs]:
-    #        return
-    #
-    #    cur_regs = {}
-    #    for name in s.arch.registers.keys():
-    #        bv = getattr(s.regs, name)
-    #        cur_regs[name] = s.solver.eval(bv, cast_to=int)
-    #
-    #    #captured.update(cur_regs)
-    #    captured[s.callstack.func_addr] = cur_regs
-    #
-    #for func in funcs:
-
-    #    # For every return site in the chosen function
-    #    for r in func.ret_sites:
-    #        state.inspect.b(
-    #            'instruction',
-    #            when=angr.BP_AFTER,
-    #            instruction=r.addr,
-    #            action=after_ret,
-    #        )
-    #
-    #proj.factory.simulation_manager(state).run()
-
-    #for func, info in captured.items():
-    #    console.print(f"On functions {addr_to_name[func]}")
-    #    if not quiet:
-    #        for name, val in info.items():
-    #            print(f" {name:>4} = 0x{val:08x} = {val}")
-
-    ## The return is a dictionary of 
-    ## ret = { 
-    ##       func_addr1: {
-    ##           reg1_name: val
-    ##           reg2_name: val2
-    ##       }   
-    ##       func_addr2: {
-    ##           reg1_name: val
-    ##           reg2_name: val2
-    ##       }   
-    ##       ...
-    ## }
-    #return captured
+#@app.command()
+#def get_regs(inp:Path, stdin: str|None = None, func_names:list[str]=[], quiet: bool = True):
+#    """
+#    Temp function to get the registers of all functions
+#    """
+#
+#
+#    #capt, stdout, ret = sim_binary_w_input(inp, stdin, func_names)
+#
+#    print(capt)
+#    print(stdout)
+#    print(ret)
+#
+#
+#    #proj = angr.Project(inp, load_options={'auto_load_libs': False})
+#    #cfg  = proj.analyses.CFGFast()
+#
+#
+#    #if stdin:
+#    #    inp_len = len(stdin)
+#    #    sym_inp = cp.BVS("wrong", inp_len*8)
+#
+#    #    adj_stdin = angr.SimFile("stdin",
+#    #                         content=sym_inp.concat(cp.BVV(b"\n")),
+#    #                         has_end=True)
+#
+#    #if func_names != []:
+#    #    funcs = [v for _,v in cfg.functions.items() if v.name in func_names]
+#    #else:
+#    #    funcs = [v for _,v in cfg.functions.items()] 
+#
+#    #if funcs == []:
+#    #    if not quiet:
+#    #        print(cfg.functions)
+#    #        print(type(cfg.functions))
+#    #        print(f"No functions by names {func_names}. Possible function names are {[x.name for x in cfg.functions.values()]}")
+#    #    return
+#    #else:
+#    #    if not quiet:
+#    #        console.print(f"Recording for target funcs: {func_names}")
+#
+#    #addr_to_name = {x.addr : x.name for x in funcs}
+#
+#    #state = proj.factory.full_init_state(
+#    #    add_options={
+#    #        angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS,
+#    #        angr.options.ZERO_FILL_UNCONSTRAINED_MEMORY,
+#    #    }
+#    #)
+#    #
+#    #captured = {}
+#    #
+#    #def after_ret(s):
+#    #    if s.callstack.func_addr not in [x.addr for x in funcs]:
+#    #        return
+#    #
+#    #    cur_regs = {}
+#    #    for name in s.arch.registers.keys():
+#    #        bv = getattr(s.regs, name)
+#    #        cur_regs[name] = s.solver.eval(bv, cast_to=int)
+#    #
+#    #    #captured.update(cur_regs)
+#    #    captured[s.callstack.func_addr] = cur_regs
+#    #
+#    #for func in funcs:
+#
+#    #    # For every return site in the chosen function
+#    #    for r in func.ret_sites:
+#    #        state.inspect.b(
+#    #            'instruction',
+#    #            when=angr.BP_AFTER,
+#    #            instruction=r.addr,
+#    #            action=after_ret,
+#    #        )
+#    #
+#    #proj.factory.simulation_manager(state).run()
+#
+#    #for func, info in captured.items():
+#    #    console.print(f"On functions {addr_to_name[func]}")
+#    #    if not quiet:
+#    #        for name, val in info.items():
+#    #            print(f" {name:>4} = 0x{val:08x} = {val}")
+#
+#    ## The return is a dictionary of 
+#    ## ret = { 
+#    ##       func_addr1: {
+#    ##           reg1_name: val
+#    ##           reg2_name: val2
+#    ##       }   
+#    ##       func_addr2: {
+#    ##           reg1_name: val
+#    ##           reg2_name: val2
+#    ##       }   
+#    ##       ...
+#    ## }
+#    #return captured
 
 
 

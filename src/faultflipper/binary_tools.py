@@ -13,6 +13,29 @@ import capstone
 
 from capstone import Cs
 
+import psutil, os, angr
+
+class MemLimiter(angr.exploration_techniques.ExplorationTechnique):
+    def __init__(self, max_gb:int, stash='out_of_memory'):
+        super().__init__()
+        self.proc = psutil.Process(os.getpid())
+        self.limit = max_gb * (1<<30)
+        self.cap = max_gb
+        self.triggered = False
+        self.stash = stash
+
+    def _over(self):
+        return self.proc.memory_info().rss > self.limit
+
+    def step(self, simgr, stash="active", **kwargs):
+        if self._over():
+            self.triggered = True
+        #if self.proc.memory_info().rss > self.cap * (1<<30):
+            simgr.move(from_stash=stash, to_stash=self.stash)
+            return simgr
+        return simgr.step(stash=stash, **kwargs)
+
+
 
 class Target(Enum):
     X86_64 = 0
@@ -990,14 +1013,10 @@ def fast_sim_binary_w_input(bin: Path, inp:str, func_names:str):
 
 
 
-def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout):
+def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout, max_gb:int = 24):
     """
     Simulate the binary with ANGR
     """
-
-    #proj = angr.Project(bin, load_options={'auto_load_libs': False})
-
-    #proj = angr.Project(bin, load_options={'auto_load_libs': False}, add_options=angr.options.unicorn | {angr.options.LAZY_SOLVES})
 
     proj = angr.Project(bin, load_options={'auto_load_libs': False})
 
@@ -1059,7 +1078,10 @@ def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout):
     simgr = proj.factory.simulation_manager(state)
     #.run()
 
-    simgr.use_technique(Timeout(timeout))
+    time_limiter = Timeout(timeout)
+    simgr.use_technique(time_limiter)
+    mem_limiter = MemLimiter(max_gb=max_gb)
+    simgr.use_technique(mem_limiter)
 
     simgr.run()
 
@@ -1068,6 +1090,11 @@ def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout):
     dead = simgr.deadended[0]
     stdout = dead.posix.dumps(1).decode()
     ret = get_program_rc(dead)
+
+    if mem_limiter.triggered:
+        ret = 'mem_limit'
+    elif simgr.stashes.get('timeout'):
+        ret = 'timeout'
 
     return ret, stdout, captured
 
