@@ -181,7 +181,7 @@ def x_nop_para_run_helper(common, insts, target: Target):
 
 
 
-def x_nop_angr_helper(common, insts, target: Target):
+def x_nop_angr_helper(common, insts, target: Target, func_names:list[str], timeout:int):
     """
     Run a binary and capture its output with angr
     """
@@ -202,7 +202,7 @@ def x_nop_angr_helper(common, insts, target: Target):
 
     try:
         returncode, stdout, captured = sim_binary_w_input(
-            out_file, common.program_input,
+            out_file, common.program_input, func_names, timeout
         )
 
         if returncode is not None:

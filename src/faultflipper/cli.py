@@ -25,7 +25,7 @@ from alive_progress import alive_it
 from logger_utils import setup_logger
 from cli_utils import CommandParameters, show_results, calc_freqs, BitFlipExperimentResult, NopExperimentResult, smol_show_results, RegNopExperimentResult
 
-from binary_tools import Target, get_return_reg, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, is_valid_instruction, run_binary_w_calltime_input, timed_run_binary_w_input, generate_run_cmd, disassemble_text_section, sim_binary_w_input
+from binary_tools import Target, get_return_reg, Nop, shift_exit_code, _generate_nop_mutated_bin, generate_nops_mutated_bin, generate_bit_mutated_file, generate_double_bit_mutated_file, detect_target, count_bit_differences, run_binary_w_input, is_valid_instruction, run_binary_w_calltime_input, timed_run_binary_w_input, generate_run_cmd, disassemble_text_section, sim_binary_w_input, fast_sim_binary_w_input
 
 from parallel_runner import  bit_para_run_helper, double_bit_para_run_helper, double_nop_para_run_helper, nop_para_run_helper, x_nop_para_run_helper, x_nop_angr_helper
 
@@ -1924,14 +1924,14 @@ def collect_all_reg_calls(capt_info, reg_name, func_name):
 
 
 @app.command()
-def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_names: str, num_nops: int=1):
+def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_names: str, num_nops: int=1, verbose:bool=False):
     """
     The register version of the nop x command. 
 
     This will use ANGR to run the mutated binary 
     """
 
-    func_names = func_names.split(',')
+    func_names:list[str] = func_names.split(',')
 
     print(f"The func names are: {func_names}")
 
@@ -1984,7 +1984,8 @@ def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_nam
 
     # Run the binary to get the golden register values
 
-    golden_ret, golden_stdout, golden_register_info = sim_binary_w_input(common.program_file, common.program_input)
+    golden_ret, golden_stdout, golden_register_info = sim_binary_w_input(common.program_file, common.program_input, func_names, common.timeout*60)
+    #golden_ret, golden_stdout, golden_register_info = fast_sim_binary_w_input(common.program_file, common.program_input, func_names)
     #print(golden_register_info)
     #exit()
 
@@ -1996,11 +1997,10 @@ def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_nam
         # ...
         for i in range(len(disasm)-(num_nops)+1):
 
-
             # Keet x instructions to overwrite with nop
             insts = [disasm[i+x] for x in range(num_nops)]
             #future = executor.submit(x_nop_para_run_helper, common, insts, target)
-            future = executor.submit(x_nop_angr_helper, common, insts, target)
+            future = executor.submit(x_nop_angr_helper, common, insts, target, func_names, common.timeout*60)
             futures.append(future)
 
         total_tasks = len(futures)
@@ -2031,13 +2031,12 @@ def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_nam
                 results.append(result)
                 bar()
 
+    print(f"done")
     runtime = datetime.now() - start_time
 
     #TODO - Better implement the register version
     df = dataclass_to_dataframe(results)
-
     save_df(df, common.save_results)
-    #show_results(common, df, other_returncodes)
 
     # Lastly save the experiment parameters
     params = common.to_dict()
@@ -2053,39 +2052,49 @@ def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_nam
     report_path = common.save_results.parent.joinpath("report.md")
     print(f"Analyzing {len(results)} results")
 
-    # Counter for no reg info. This will be the error count
-    error_count = 0
+    bad_res = []
+    error_case = []
+    good_res = []
 
-    bad_results = [] 
 
-    # For all results
-    for i, result in enumerate(results):
+    for result  in results:
 
-        # Check for info 
-        mutant_reg_info = result.reg_info
-        if mutant_reg_info is None:
-            error_count += 0
-            continue
+        all_names_good = True 
+        is_error_case = False
 
-        # For all func names
-        all_func_match = True
-        for func_name in func_names:
-            reg_name = get_return_reg(target)
-            gold_reg_ret = collect_all_reg_calls(golden_register_info, reg_name, func_name)
+        for name in func_names:
 
-            try:
-                mut_reg_ret = collect_all_reg_calls(result.reg_info, reg_name, func_name)
-            except:
-                mut_reg_ret = []
+            if result.reg_info is None:
+                is_error_case = False
+                #error_case.append(result)
+                continue
 
-            if mut_reg_ret is None or mut_reg_ret == []:
-                all_func_match = False
-            elif gold_reg_ret[-1] != mut_reg_ret[-1]:
-                all_func_match = False
+            if name in result.reg_info.keys():
 
-        if not all_func_match:
-            # Save the total result blob and the filters func results
-            bad_results.append(result )
+                # Get a liust of all the r0 values across all calls to func name
+                gold_r0_ret = collect_all_reg_calls(golden_register_info, 'r0', name)
+                mut_r0_ret = collect_all_reg_calls(result.reg_info, 'r0', name)
+                #is_correct = gold_r0_ret[-1] == mut_r0_ret[-1]
+
+                if len(mut_r0_ret) != len(gold_r0_ret):
+                    is_error_case = True
+                    continue
+
+                is_correct = gold_r0_ret == mut_r0_ret
+
+
+                if not is_correct:
+                    all_names_good = False
+            else:
+                is_error_case = True
+
+        if is_error_case:
+            error_case.append(result)
+        elif not all_names_good:
+            bad_res.append(result)
+        else:
+            good_res.append(result)
+
 
     save_reg_report(
         report_path,
@@ -2096,52 +2105,38 @@ def x_nop_reg(common: CommandParameters, target: Target, num_cpus: int, func_nam
         num_instructions,
         num_bits,
         compile_cmd,
-        bad_results,
+        bad_res,
         source_code,
         program_context,
     )
-    print(f"Report saved to {report_path}")
 
 
+    if verbose:
+        for result in bad_res:
+            print(f"==== On res {result.binary_path} =====")
+            for name in func_names:
 
+                if result.reg_info is None:
+                    print(f"No reg info")
+                    continue
 
+                if name in result.reg_info.keys():
 
-    bad_res = []
-    # Look at the bad reults 
-    for result  in bad_results:
-        print("======================")
-        print(f'Stdout: {result.program_stdout}')
-        #print(f'Total res: {func_results}')
+                    # Get a liust of all the r0 values across all calls to func name
+                    gold_r0_ret = collect_all_reg_calls(golden_register_info, 'r0', name)
+                    mut_r0_ret = collect_all_reg_calls(result.reg_info, 'r0', name)
+                    is_correct = gold_r0_ret[-1] == mut_r0_ret[-1]
 
-        for name in func_names:
-            if name in result.reg_info.keys():
+                    print(f"({name}:r0)  golden: {gold_r0_ret} | mut: {mut_r0_ret} same?: {is_correct}")
+                    print(f"Program: {result.binary_path}")
+                    print(f'Stdout: {result.program_stdout}')
+                else:
+                    print(f"Missing function: {name}")
+            print(f"==== DONE res {result.binary_path} =====")
 
-                # Get a liust of all the r0 values across all calls to func name
-                gold_r0_ret = collect_all_reg_calls(golden_register_info, 'r0', name)
-                #gold_r0_ret = gold_r0_ret[-1]
-
-                mut_r0_ret = collect_all_reg_calls(result.reg_info, 'r0', name)
-                #mut_r0_ret = mut_r0_ret[-1]
-
-                is_correct = gold_r0_ret[-1] == mut_r0_ret[-1]
-                bad_res.append(result)
-
-                print(f"({name}:r0)  golden: {gold_r0_ret} | mut: {mut_r0_ret} same?: {is_correct}")
-            else:
-                print(f"({name}): Missing func")
-
-    print(f"Had {len(bad_res)} bad results")
-
-    #print(f"The golden output for main is: {golden_register_info['main']['r0']}")
-    #Jkk:print(f"The golden output for password check is: {golden_register_info['password_check']['r0']}")
-
-        #Jkkfor name, info in golden_register_info.items():
-        #Jkk    mut_info = mut_capt[name]
-
-        #Jkk    for reg, val in info.items():
-        #Jkk        if val != mut_info[reg]:
-        #Jkk            print(f"DIFF in ({name}|{reg}): Vanilla: {val} Mut: {mut_info[reg]}")
-
+    print(f"Good results: {len(good_res)} ")
+    print(f"Bad results: {len(bad_res)} ")
+    print(f"Error count: {len(error_case)}")
 
     return
 
@@ -2629,14 +2624,15 @@ def save_reg_report(
     list_of_progs +='\n'
 
     # 3.1 list of programs that ran cirtical code according to the reg info 
-    list_of_progs += f"**REG INFO {len(bad_reg_info)}** programs ran critical code according to reg info. These were:\n"
+    list_of_progs += f"### REG INFO {len(bad_reg_info)}** programs ran critical code according to reg info. These were:\n"
     for res in bad_reg_info:
         list_of_progs += f"- {res.binary_path}\n"
 
     # 4. Disassembly of the files that ran critical code
     # 10 bytes on either side will be included
     pad = 10
-    bins = [Path(x) for x in list(info["binary_path"])]
+    #bins = [Path(x) for x in list(info["binary_path"])]
+    bins = [Path(x.binary_path) for x in bad_reg_info]
 
     disassems = ""
     for i, bin in enumerate(bins):
@@ -2660,7 +2656,7 @@ def save_reg_report(
             verbose=False,
         )
 
-        disassems += f"#### Program {i} {bin.name} diassemebly vs vanilla\n\n"
+        disassems += f"#### Vanilla vs Mutant #{i}: {bin.name} diassemebly\n\n"
         disassems += "```\n"
         disassems += ret
         disassems += "```\n"
@@ -2895,6 +2891,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         commands = {
             "nop": nop,
             "x_nop": x_nop,
+            "x_nop_reg": x_nop_reg,
             "para_double_nop": para_double_nop,
             "para_bit": para_bit,
             "para_double_bit": para_double_bit,
@@ -2933,6 +2930,8 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
                 num_nops = formated.get("num_nops", None)
+                func_names = formated.get("func_names", None)
+
                 if num_nops:
                     formated.pop("num_nops")
                     params = CommandParameters(**formated)
@@ -2940,6 +2939,24 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 else:
                     params = CommandParameters(**formated)
                     cmd_func(params, target=target, num_cpus=num_cpus)
+
+            elif command_name in ["x_nop_reg"]:
+                target = formated.pop("target")
+                num_cpus = formated.pop("num_cpus")
+                num_nops = formated.get("num_nops", None)
+                func_names = formated.get("func_names", None)
+
+                if num_nops and func_names:
+                    formated.pop("num_nops")
+                    formated.pop("func_names")
+                    params = CommandParameters(**formated)
+                    cmd_func(params, target=target, num_cpus=num_cpus, num_nops=num_nops, func_names=func_names)
+                else:
+                    params = CommandParameters(**formated)
+                    cmd_func(params, target=target, num_cpus=num_cpus)
+
+
+
 
             elif command_name in ["nop_no_comp_inout", "bit_no_comp_inout"]:
                 ins = formated.pop('ins')
@@ -3482,7 +3499,7 @@ def get_regs(inp:Path, stdin: str|None = None, func_names:list[str]=[], quiet: b
     """
 
 
-    capt, stdout, ret = sim_binary_w_input(inp, stdin)
+    capt, stdout, ret = sim_binary_w_input(inp, stdin, func_names)
 
     print(capt)
     print(stdout)
@@ -3575,8 +3592,8 @@ def get_regs(inp:Path, stdin: str|None = None, func_names:list[str]=[], quiet: b
 
 
 if __name__ == "__main__":
-    #setup_logger(console_level="DEBUG")
     setup_logger(console_level="DEBUG")
+    #setup_logger(console_level="DEBUG")
     logger = logging.getLogger(__name__)   # module-level logger
 
     for name in ("angr", "cle", "pyvex", "claripy"):

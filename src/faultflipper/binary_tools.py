@@ -6,6 +6,8 @@ import lief
 from pathlib import Path
 from capstone import CsInsn
 import shutil
+import time 
+from angr.exploration_techniques import Timeout
 
 import capstone
 
@@ -794,7 +796,7 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
 
 
 
-def sim_binary_w_input(bin: Path, inp:str):
+def old_sim_binary_w_input(bin: Path, inp:str):
     """
     Simulate the binary with ANGR
     """
@@ -897,6 +899,179 @@ def sim_binary_w_input(bin: Path, inp:str):
     return ret, stdout, captured
 
 
+def fast_sim_binary_w_input(bin: Path, inp:str, func_names:str):
+    """
+    Use a automatic prototype grabbing and execute the 
+    function directly with unicorn
+
+    This requries knownledge aout the function arguments however
+    """
+
+    #proj = angr.Project(bin, load_options={'auto_load_libs': False}, add_options=angr.options.unicorn | {angr.options.LAZY_SOLVES})
+    proj = angr.Project(bin, load_options={'auto_load_libs': False})
+    extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
+
+    cfg = proj.analyses.CFGFast()
+
+    proj.analyses.CompleteCallingConventions(recover_variables=True)
+
+    assert [x in [ y.name for _, y in cfg.functions.items()] for x in func_names]
+
+    # Setup the CFG parser
+
+    # CFGFast only does static lifting... 
+    stdin_sf = angr.SimFile("stdin", content=inp.encode())
+
+    print(f"Init state")
+    # Initialiaitve the sim state
+    state = proj.factory.full_init_state(stdin=stdin_sf, options=extra_options)
+
+    captured = {}
+    
+    # Define a hook to capture register values based on 
+    # function name
+    def ret_hook(fn_name):
+        def _after_ret(s):
+            cur_regs = {}
+
+            # Solve for all register values
+            for name in s.arch.registers.keys():
+                bv = getattr(s.regs, name)
+                cur_regs[name] = s.solver.eval(bv, cast_to=int)
+
+            # Add all register information into captured dict
+            if fn_name not in captured.keys():
+                captured[fn_name] = []
+            captured[fn_name].append(cur_regs)
+        return _after_ret 
+
+    # Iterate over all functions
+    #for _, func in cfg.functions.items():
+    for func in func_names:
+        #cur_func = cfg.functions.function(name=func.name)
+
+        cur_func = cfg.functions.function(name=func)
+
+        if cur_func is None:
+            captured[func] = []
+            continue
+        captured[func] = []
+
+        ret = proj.factory.callable(
+              cur_func.addr,
+              prototype=proto.c_prototype(),
+              concrete_only=True)
+
+        regs = { name : st.solver.eval(getattr(ret.regs, name), cast_to=int)
+         for name in ret.arch.registers }
+
+        captured[func] = [regs]
+
+
+        # For every return site in the chosen function
+        #state.inspect.b(
+        #            'return',
+        #            when=angr.BP_BEFORE,
+        #            function_address=cur_func.addr,
+        #            action=ret_hook(func)
+        #        )
+ 
+    # Run the simulation 
+    simgr = proj.factory.simulation_manager(state).run()
+
+    # Dead is the deadend state of the program
+    dead = simgr.deadended[0]
+    stdout = dead.posix.dumps(1).decode()
+    ret = get_program_rc(dead)
+
+    return ret, stdout, captured
+
+
+
+
+
+def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout):
+    """
+    Simulate the binary with ANGR
+    """
+
+    #proj = angr.Project(bin, load_options={'auto_load_libs': False})
+
+    #proj = angr.Project(bin, load_options={'auto_load_libs': False}, add_options=angr.options.unicorn | {angr.options.LAZY_SOLVES})
+
+    proj = angr.Project(bin, load_options={'auto_load_libs': False})
+
+    #TODO: This caused a segfault but should be possible soon
+    extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
+    cfg = proj.analyses.CFGFast()
+
+    assert [x in [ y.name for _, y in cfg.functions.items()] for x in func_names], "Function names missing!"
+
+    # Setup the CFG parser
+
+    # CFGFast only does static lifting... 
+    stdin_sf = angr.SimFile("stdin", content=inp.encode())
+
+    # Initialiaitve the sim state
+    #state = proj.factory.full_init_state(stdin=stdin_sf, options=extra_options)
+    state = proj.factory.full_init_state(stdin=stdin_sf)
+
+    captured = {}
+    
+    # Define a hook to capture register values based on 
+    # function name
+    def ret_hook(fn_name):
+        def _after_ret(s):
+            cur_regs = {}
+
+            # Solve for all register values
+            for name in s.arch.registers.keys():
+                bv = getattr(s.regs, name)
+                cur_regs[name] = s.solver.eval(bv, cast_to=int)
+
+            # Add all register information into captured dict
+            if fn_name not in captured.keys():
+                captured[fn_name] = []
+            captured[fn_name].append(cur_regs)
+        return _after_ret 
+
+    # Iterate over all functions
+    #for _, func in cfg.functions.items():
+    for func in func_names:
+        #cur_func = cfg.functions.function(name=func.name)
+
+        cur_func = cfg.functions.function(name=func)
+
+        if cur_func is None:
+            captured[func] = []
+            continue
+
+        # For every return site in the chosen function
+        state.inspect.b(
+                    'return',
+                    when=angr.BP_BEFORE,
+                    function_address=cur_func.addr,
+                    action=ret_hook(func)
+                )
+ 
+
+    # Run the simulation 
+    simgr = proj.factory.simulation_manager(state)
+    #.run()
+
+    simgr.use_technique(Timeout(timeout))
+
+    simgr.run()
+
+
+    # Dead is the deadend state of the program
+    dead = simgr.deadended[0]
+    stdout = dead.posix.dumps(1).decode()
+    ret = get_program_rc(dead)
+
+    return ret, stdout, captured
+
+
 def get_program_rc(s):
     """
     Handle for the concrete exit status of a whole program
@@ -911,7 +1086,6 @@ def get_program_rc(s):
     #ret_reg  = s.arch.register_names[s.arch.ret_offset // s.arch.byte_width]
     ret_reg  = s.arch.register_names.get(s.arch.ret_offset) 
     return s.solver.eval(getattr(s.regs, ret_reg))
-
 
 
 
