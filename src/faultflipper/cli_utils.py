@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Union
 import pandas as pd 
 from typing import Optional
+from enum import Enum
 
 from dataclasses import dataclass, fields
 
@@ -21,6 +22,42 @@ from rich.console import Console
 logger = logging.getLogger(__name__)   # module-level logger
 
 console = Console()
+
+class Backends(Enum):
+    ANGR = "ANGR"
+    QEMU = "qemu"
+
+@Parameter(name="*")
+@dataclass
+class RegCommandParameters:
+    program_file: Path
+    out_dir: Path
+    program_input: str
+    list_expected: bool = False
+    timeout: int = 5
+    save_results: Union[Path, None] = None
+    yes: bool = False
+    expected_returncode: int | None = None
+    expected_stdout: int | None = None
+
+    def to_dict(self):
+        if self.save_results is None:
+            self.save_results = Path("")
+
+        return {
+            "program_file": str(self.program_file.absolute()),
+            "out_dir": str(self.out_dir.absolute()),
+            "program_input": self.program_input,
+            "list_expected": self.list_expected,
+            "expected_returncode": self.expected_returncode,
+            "expected_stdout": self.expected_stdout,
+            "timeout": self.timeout,
+            "save_results": str(self.save_results.absolute()),
+            "yes": self.yes,
+        }
+
+
+
 
 @Parameter(name="*")
 @dataclass

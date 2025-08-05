@@ -1060,7 +1060,7 @@ def fast_sim_binary_w_input(bin: Path, inp:str, func_names:str):
 
 
 
-def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout, max_gb:int = 24):
+def sim_binary_w_input(bin: Path, inp:str, func_names:list[str], timeout, max_gb:int = 24):
     """
     Simulate the binary with ANGR
     """
@@ -1133,10 +1133,14 @@ def sim_binary_w_input(bin: Path, inp:str, func_names:str, timeout, max_gb:int =
     simgr.run()
 
 
-    # Dead is the deadend state of the program
-    dead = simgr.deadended[0]
-    stdout = dead.posix.dumps(1).decode()
-    ret = get_program_rc(dead)
+    if len(simgr.deadended) != 0:
+        # Dead is the deadend state of the program
+        dead = simgr.deadended[0]
+        stdout = dead.posix.dumps(1).decode()
+        ret = get_program_rc(dead)
+    else:
+        stdout = ""
+        ret = 'error'
 
     if mem_limiter.triggered:
         ret = 'mem_limit'
