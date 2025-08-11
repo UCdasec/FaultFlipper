@@ -130,6 +130,63 @@ def x_bit_angr_helper(common, inst, target: Target, num_bits:int, func_names, ti
     return results
 
 
+def x_bit_para_run_helper(common, inst, target: Target, num_bits: int):
+    """
+    Run a binary and capture its output - This version will return
+    multiple results
+    """
+
+    if common.program_input[-1:] != "\n":
+        input = common.program_input + "\n"
+    else:
+        input = common.program_input
+
+    inst_bits = list(
+        "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
+    )
+    results = []
+
+
+    inst_bits = list(
+        "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
+    )
+    results = []
+
+    # For every bit see if we get a valid opcode.
+    for i in range(len(inst_bits)-num_bits+1):
+        out_file = generate_x_bits_mutated_file(i, inst_bits, target, inst, common, num_bits)
+
+
+        if out_file is None:
+            continue
+
+        # Sanity check that a single bit has been changed and thats it
+        mutated_text = lief.parse(out_file).get_section(".text")
+        binary = lief.parse(common.program_file)
+        vanilla_text = binary.get_section(".text")
+
+        number_of_different_bits = count_bit_differences(
+            mutated_text.content, vanilla_text.content
+        )
+
+        if number_of_different_bits != num_bits:
+            raise Exception("Mutated wrong")
+
+        try:
+            returncode, stdout, stderr = run_binary_w_input(
+                out_file, input, target, common.timeout
+            )
+            returncode = shift_exit_code(returncode)
+            results.append(
+                (out_file, returncode, inst, common, target, stdout, stderr, i)
+            )
+        except Exception as e:
+            print(e)
+            results.append((out_file, -900, inst, common, target, "", "", i))
+
+    return results
+
+
 
 
 def double_bit_para_run_helper(common, inst, target: Target):

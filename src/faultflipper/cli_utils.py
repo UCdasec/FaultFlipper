@@ -38,7 +38,7 @@ class RegCommandParameters:
     save_results: Union[Path, None] = None
     yes: bool = False
     expected_returncode: int | None = None
-    expected_stdout: int | None = None
+    expected_stdout: str | None = None
 
     def to_dict(self):
         if self.save_results is None:
@@ -173,8 +173,6 @@ def show_results(
                 else:
                     good_names = good_names.intersection(out_names)
 
-            #good_names.append(names)
-
 
         print(f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}")
         print(info[["return_code", "program_stdout", "binary_path"]])
@@ -237,6 +235,7 @@ def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     if isinstance(expected_stdout, list):
         correct_stdouts = []
     else:
+        logger.debug(f"Checking for expected stdout {expected_stdout}")
         correct_stdouts = df[
         df["program_stdout"].str.contains(expected_stdout, na=False)
     ]

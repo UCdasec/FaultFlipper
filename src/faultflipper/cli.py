@@ -1,8 +1,6 @@
 import lief
 import json
-import claripy as cp
 import matplotlib.patches as mpatches
-from typing import Tuple, Annotated, Optional
 import matplotlib.pyplot as plt
 from report_utils import list_tuple_table, generate_pdf_report
 from sklearn.model_selection import train_test_split
@@ -55,6 +53,7 @@ from binary_tools import (
     disassemble_text_section,
     sim_binary_w_input,
     fast_sim_binary_w_input,
+    sim_binary_w_calltime_input,
 )
 
 from parallel_runner import (
@@ -62,6 +61,7 @@ from parallel_runner import (
     double_bit_para_run_helper,
     double_nop_para_run_helper,
     nop_para_run_helper,
+    x_bit_para_run_helper,
     x_nop_para_run_helper,
     x_nop_angr_helper,
     x_bit_angr_helper,
@@ -81,119 +81,6 @@ other_returncodes = [
     ("critical_code_did_not_run", 97),
     ("failed_to_run", -900),
 ]
-
-
-def preserve_debug_sections(orig_binary, patched_binary):
-    debug_sections = []
-    for sec in orig_binary.sections:
-        if sec.name.startswith(".debug"):
-            debug_sections.append(sec)
-
-    # Re-create each debug section in the patched binary
-    for sec in debug_sections:
-        new_sec = lief.ELF.Section(sec.name)
-        new_sec.content = sec.content
-        new_sec.type = sec.type
-        new_sec.flags = sec.flags
-        new_sec.align = sec.align
-        # Possibly set other fields to match original
-        patched_binary.add(new_sec, loaded=False)
-        # 'loaded=False' so it doesn't try to place it in a PT_LOAD segment
-
-
-# TODO: Removed in favor of bit_exp
-# @app.command
-# def bit(
-#    common: CommandParameters, source_code: Optional[Path] = None, quiet: bool = True
-# ) -> pd.DataFrame:
-#    """
-#    Patch all the addrs in the binar , and save bins that
-#    have a succesffuly exist code what running WITH NO FLAGS
-#    """
-#
-#    common.out_dir.mkdir(exist_ok=True)
-#    disasm = disassemble_text_section(common.program_file)
-#
-#    if not common.yes:
-#        cont = str(
-#            input(
-#                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content)} mutated binaries, continue? (Yy/Nn)"
-#            )
-#        )
-#        if cont.lower() != "y":
-#            return
-#
-#    target = detect_target(common.program_file)
-#    results: list[BitFlipExperimentResult] = []
-#
-#    binary = lief.parse(common.program_file)
-#
-#    # For every instructions
-#    for inst in alive_it(disasm):
-#
-#        # Need to pad the left with zeroes
-#        inst_bits = list(
-#            "".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes])
-#        )
-#
-#        # For every bit see if we get a valid opcode.
-#        for i in range(len(inst_bits)):
-#            # Generate the mutated binary - If we did not generate a good one continue
-#            out_file = generate_bit_mutated_file(
-#                i, inst_bits, target, inst, common
-#            )
-#
-#            if out_file is None:
-#                continue
-#
-#            # Sanity check that a single bit has been changed and thats it
-#            mutated_text = lief.parse(out_file).get_section(".text")
-#            vanilla_text = binary.get_section(".text")
-#
-#            number_of_different_bits = count_bit_differences(
-#                mutated_text.content, vanilla_text.content
-#            )
-#
-#            if number_of_different_bits != 1:
-#                raise Exception("Great than 1 difference in bits")
-#            try:
-#                status, stdout, _ = run_binary_w_input(
-#                    out_file,
-#                    common.program_input,
-#                    target=target,
-#                    timeout=common.timeout,
-#                )
-#                status = shift_exit_code(status)
-#            except Exception:
-#                status = -999
-#                stdout = ""
-#
-#            result = BitFlipExperimentResult(
-#                source_file=source_code,
-#                unmutated_binary=common.program_file,
-#                binary_path=out_file,
-#                flipped_addr=inst.address,
-#                flipped_index=i,
-#                return_code=status,
-#                program_input=common.program_input,
-#                program_stdout=stdout,
-#                expected_stdout=common.expected_stdout,
-#                target=target,
-#                expected_returncode=common.expected_returncode,
-#                custom_returncodes=other_returncodes,
-#            )
-#            results.append(result)
-#
-#    # Convert the results to a data frame and save
-#    df = dataclass_to_dataframe(results)
-#    save_df(df, common.save_results)
-#
-#    # Dsiplay result info
-#    if not quiet:
-#        show_results(common, df, other_returncodes)
-#
-#    return df
-
 
 @app.command
 def disasm(
@@ -257,7 +144,6 @@ def disasm(
         pretty_insns.append(bin_pretty_insns)
 
     if len(pretty_insns) == 2:
-        logger.debug("Beginning Compare")
         total = compare_disassembly(
             pretty_insns[0],
             pretty_insns[1],
@@ -266,10 +152,13 @@ def disasm(
             text=text,
             verbose=verbose,
         )
-    else:
+    elif len(pretty_insns) == 1:
         total = []
         for line in pretty_insns[0]:
             print(line)
+    else:
+        total = []
+        print("")
 
     return total
 
@@ -459,7 +348,7 @@ def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
 @app.command
 def bit_no_comp_inout(
     common: CommandParameters,
-    source_code: Optional[Path] = None,
+    source_code: Path | None = None,
     ins: list[str] | None = None,
     outs: list[str] | None = None,
     expected_correct: int | None = None,
@@ -658,11 +547,256 @@ def bit_no_comp_inout(
     return df
 
 
-# TODO: Removing this as a command in favor of nop_exp
+@app.command
+def angr_nop_no_comp_inout(
+    common: CommandParameters,
+    func_names:str,
+    timeout: int = 3,
+    source_code: Path | None = None,
+    ins: list[str] | None = None,
+    outs: list[str] | None = None,
+    expected_correct: int | None = None,
+    debug_max_loop: int | None = None,
+) -> pd.DataFrame:
+    """
+    This version of the experiments takes tuples of:
+    [ (INPUT, EXPECTED_OUTPUT), ....]
+
+    And runs each mutated program on _every tuple_.
+
+    So if we have 4 tuples, and 10 mutated programs, we get
+    40 results in total.
+    """
+
+
+    func_names = func_names.split(',')
+
+    total_normal = 0
+    total_upset = 0
+    total_error = 0
+
+    other_returncodes = [
+        # ("critical_code_ran", 0),
+        # ("critical_code_did_not_run", 97),
+        ("failed_to_run", -999),
+        ("correct_prediction", 0),
+    ]
+
+    gold_data = {}
+
+
+    tot_good_res = []
+    tot_bad_res = [ ]
+    tot_error_res = [ ]
+
+    if common.save_results.exists():
+        # Gather the results
+        df = pd.read_csv(common.save_results)
+        print(f"Loading existing results")
+    else:
+        print(f"Old results: {common.save_results} does not exists")
+        common.out_dir.mkdir(exist_ok=True)
+
+        # Intermeidate results
+        result_out = common.out_dir.joinpath("intermediate_results")
+        result_out.mkdir(exist_ok=True)
+
+        # Adjust the out dir
+        common.out_dir = common.out_dir.joinpath("mutated_bins")
+        common.out_dir.mkdir(exist_ok=True)
+
+        disasm = disassemble_text_section(common.program_file)
+        if not common.yes:
+            cont = str(input(f"Normal for {len(disasm)} instructions? (Yy/Nn)"))
+
+            if cont.lower() != "y":
+                return
+
+        # Load the target type
+        target = detect_target(common.program_file)
+        logger.debug(f"Detected Target: {target}")
+
+        results: list[RegNopExperimentResult] = []
+
+        #disasm = disasm[0:1]
+        tmp = 0
+        debug_max_loop = 2
+
+        # Iterate over single instructions
+        for inst in alive_it(disasm):
+            tmp+=1
+
+            if debug_max_loop and tmp >= debug_max_loop :
+                break
+
+            print(f"Tmp is current: {tmp}")
+
+            # The out file is at out_dir/...
+            # out_file = generate_nop_mutated_bin(common, target, inst)
+
+            insts = [inst]
+            out_path = common.out_dir.joinpath(
+                common.program_file.name + f"_{hex(insts[0].address)}"
+            )
+            out_file = generate_nops_mutated_bin(
+                common.program_file, target, insts, out_path
+            )
+
+            # out_file = generate_nops_mutated_bin(common, target, [inst])
+
+            # Run all the possible inputs and outputs
+            for cur_in, cur_out in zip(ins, outs):
+                cur_in = Path(cur_in)
+
+                # See if the intermediate result exists yet
+                intermediate_out = result_out.joinpath(
+                    out_file.name + f"_{cur_in.name.split('.')[0]}" + ".json"
+                )
+
+                if cur_in not in gold_data.keys():
+                    gold_ret, gold_stdout, gold_reg_info = sim_binary_w_calltime_input(
+                            out_file, str(cur_in.absolute()), func_names, timeout * 60
+                    )
+                    gold_data[cur_in] = (gold_ret, gold_stdout, gold_reg_info)
+
+
+                if intermediate_out.exists():
+                    print(f"Reading existing file {intermediate_out}")
+                    # Load and skip test
+                    with open(intermediate_out, "r") as f:
+                        result = json.load(f)
+                        result = RegNopExperimentResult(**result)
+                else:
+                    # Test the binary
+
+                    ret, stdout, reg_info = sim_binary_w_calltime_input(
+                        out_file, str(cur_in.absolute()), func_names, timeout * 60
+                    )
+                    result = RegNopExperimentResult(
+                        source_file=source_code,
+                        unmutated_binary=common.program_file,
+                        binary_path=out_file,
+                        nopped_addr=inst.address,
+                        program_input=cur_in,
+                        return_code=ret,
+                        program_stdout=stdout,
+                        target=target,
+                        expected_returncode=common.expected_returncode,
+                        expected_stdout=cur_out,
+                        custom_returncodes=other_returncodes,
+                        source_code=source_code,
+                        reg_info = reg_info
+                    )
+                    dicted_result = result.to_dict()
+                    with open(intermediate_out, "w") as f:
+                        json.dump(dicted_result, f)
+
+                results.append(result)
+
+            #print(f"THIRD ARG: {[x[2] for x in gold_data.values()]}")
+            good_res, bad_res, error_case = analyze_reg_results(
+                        results, func_names, gold_data
+                )
+
+            tot_good_res.extend(good_res)
+            tot_bad_res.extend(bad_res)
+            tot_error_res.extend(error_case)
+            print(f"BIN: at {tmp}  had {len(good_res)} norm {len(bad_res)} event_upset, and {len(error_case)} error")
+
+        print(f"BIN:  had {len(good_res)} norm {len(bad_res)} event_upset, and {len(error_case)} error")
+
+        total_normal += len(good_res)
+        total_upset += len(bad_res)
+        total_error += len(error_case)
+
+        #df = dataclass_to_dataframe(results)
+        #save_df(df, common.save_results)
+
+    print(f"Total normal: {total_normal}")
+    print(f"Total upset: {total_upset}")
+    print(f"Total error: {total_error}")
+    with open("RES.txt", 'w') as f:
+        f.write(f"Total normal: {total_normal}")
+        f.write(f"Total upset: {total_upset}")
+        f.write(f"Total error: {total_error}")
+    return
+
+    # Doing the analyiss.............................
+
+    print(f"Return code value counts...")
+    print(df["return_code"].value_counts())
+
+    # Add a column to see if there was a match
+
+    df["correct"] = df.apply(
+        lambda row: str(row["expected_stdout"]) in str(row["program_stdout"]), axis=1
+    )
+
+    df["failed"] = df["return_code"] == -999
+
+    # Use this to get the number of mutated bines that
+    # got 0 correct BUT still ran correctly
+    addrs_with_failed = df.loc[df["return_code"] == -999, "nopped_addr"].unique()
+    df_no_fail = df[~df["nopped_addr"].isin(addrs_with_failed)]
+
+    # nopped addrs that have one failed ANY
+
+    # Grop by the addr and record the failed and correct
+    agg_df = (
+        df.groupby("nopped_addr")
+        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
+        .reset_index()
+    )
+
+    agg_df_no_fail = (
+        df_no_fail.groupby("nopped_addr")
+        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
+        .reset_index()
+    )
+
+    print(f"We have {agg_df.shape} shaped agg df")
+    print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
+
+    # This is the count of number of corrects. Notice, that
+    # if the number of correct predictions is 0 it may
+    # or may not be a case where the model ran correctly
+    # and outputed zero.
+    print(f"Counts of corrects:\n {agg_df['total_correct'].value_counts()}")
+    print(f"Counts of failed:\n {agg_df['total_failed'].value_counts()}")
+
+    print(
+        f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}"
+    )
+
+    # Overlapp of correct and failed
+    mask = (agg_df["total_failed"] != 0) & (agg_df["total_correct"] != 0)
+    print(
+        f"Number of nonzero failed and nonzero correct:\n {agg_df[mask].value_counts()}"
+    )
+
+    # See how many counts of correct == expected cont
+    print(
+        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] == expected_correct).sum()} had the same number of correct predictions"
+    )
+    print(
+        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] < expected_correct).sum()} had less than the correct predictions"
+    )
+    print(
+        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_failed'] >= 1).sum()} had atleast one sample that caused a failed experiment"
+    )
+
+    show_results(common, df, other_returncodes)
+
+    return df
+
+
+
+
+
 @app.command
 def nop_no_comp_inout(
     common: CommandParameters,
-    source_code: Optional[Path] = None,
+    source_code: Path | None = None,
     ins: list[str] | None = None,
     outs: list[str] | None = None,
     expected_correct: int | None = None,
@@ -855,7 +989,7 @@ def nop_no_comp_inout(
 # TODO: Removing this as a command in favor of nop_exp
 @app.command
 def nop_no_comp(
-    common: CommandParameters, source_code: Optional[Path] = None
+    common: CommandParameters, source_code: Path | None = None
 ) -> pd.DataFrame:
     """
     Patch all the addrs in the binar , and save bins that
@@ -974,7 +1108,6 @@ def compare_disassembly(
     short_max_left = max(len(x) for x in white_a)
     short_max_right = max(len(x) for x in white_b)
 
-    logger.debug(f"[COMPARE] max_lines: {max_lines}")
 
     i_pad = len(str(max_lines))
 
@@ -1026,39 +1159,39 @@ def compare_disassembly(
     return total
 
 
-@app.command
-def find_faulted(results: Path, padding: int):
-    """
-    From the results file find the binaries that had the exptected STDOUT
-    then print the dissassembly comparison between all those programs and the
-    base program
-    """
-
-    if not results.exists():
-        print(f"File {results} does not exist")
-        return
-
-    # Load the result and get those that have the epxeted STDOUT in them
-    df = pd.read_csv(results)
-
-    expected_stdout = str(list(df["expected_stdout"])[0])
-    filtered_df = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
-
-    # Get the mutated paths that have the expected stdouts
-    mutated_binaries = [Path(x) for x in filtered_df["binary_path"]]
-
-    # Get the vanilla binary
-    vanilla_binary = Path(str(list(filtered_df["unmutated_binary"])[0]))
-    assert vanilla_binary.exists()
-
-    for mbin in mutated_binaries:
-        # Get the mutated address
-        addr = int(mbin.name.replace(vanilla_binary.name + "_", ""), 16)
-
-        # Run the disassmebly
-        disasm([vanilla_binary, mbin], addr - padding, addr + padding)
-
-    return
+# @app.command
+# def find_faulted(results: Path, padding: int):
+#    """
+#    From the results file find the binaries that had the exptected STDOUT
+#    then print the dissassembly comparison between all those programs and the
+#    base program
+#    """
+#
+#    if not results.exists():
+#        print(f"File {results} does not exist")
+#        return
+#
+#    # Load the result and get those that have the epxeted STDOUT in them
+#    df = pd.read_csv(results)
+#
+#    expected_stdout = str(list(df["expected_stdout"])[0])
+#    filtered_df = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
+#
+#    # Get the mutated paths that have the expected stdouts
+#    mutated_binaries = [Path(x) for x in filtered_df["binary_path"]]
+#
+#    # Get the vanilla binary
+#    vanilla_binary = Path(str(list(filtered_df["unmutated_binary"])[0]))
+#    assert vanilla_binary.exists()
+#
+#    for mbin in mutated_binaries:
+#        # Get the mutated address
+#        addr = int(mbin.name.replace(vanilla_binary.name + "_", ""), 16)
+#
+#        # Run the disassmebly
+#        disasm([vanilla_binary, mbin], addr - padding, addr + padding)
+#
+#    return
 
 
 @app.command
@@ -1411,7 +1544,7 @@ def compile_program(inp: Path, out: Path, target: Target) -> Path:
 #    return
 
 
-@app.command()
+# @app.command()
 def x_bit_reg_seq(
     common: CommandParameters,
     target: Target,
@@ -1537,7 +1670,9 @@ def x_bit_reg_seq(
         common.program_file, common.program_input, func_names, common.timeout * 60
     )
 
-    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
+    good_res, bad_res, error_case = analyze_reg_results(
+        results, func_names, golden_register_info
+    )
 
     save_reg_report(
         report_path,
@@ -1555,7 +1690,6 @@ def x_bit_reg_seq(
         program_context,
     )
 
-
     if verbose:
         verbose_output(results, func_names, golden_register_info)
 
@@ -1566,6 +1700,87 @@ def x_bit_reg_seq(
     return
 
 
+def smol_analyze_reg_results(reg_infos, func_names, golden_register_info, bin:Path):
+    """
+    Anaylze the register results
+    """
+    event_upset_res = []
+    error_case = []
+    normal_case = []
+
+    target = detect_target(bin)
+    register = get_return_reg(target)
+
+    for (cur_bin, reg_info) in reg_infos:
+        # See if any of the func names are missing register information
+
+        # If we are missing the reg_info this is an error case
+        # or if the func name is missing from reg info
+        if reg_info is None or not all(
+            [name in reg_info.keys() for name in func_names]
+        ):
+            error_case.append(cur_bin)
+            continue
+
+        # See if the two match for all functions
+        all_golden_rets = [
+            collect_all_reg_calls(golden_register_info, register, name)
+            for name in func_names
+        ]
+        all_mut_rets = [
+            collect_all_reg_calls(reg_info, register, name)
+            for name in func_names
+        ]
+        is_correct = all_golden_rets == all_mut_rets
+
+        if is_correct:
+            normal_case.append(cur_bin)
+        # These are the error conditions
+        elif not all(
+            [
+                len(all_golden_rets[i]) == len(all_mut_rets[i])
+                for i in range(len(all_golden_rets))
+            ]
+        ):
+            error_case.append(cur_bin)
+        else:
+            # Event upset is when the two programs disagree and the mutatnt one runs without error
+            event_upset_res.append(cur_bin)
+
+    assert len(normal_case) + len(event_upset_res) + len(error_case) == len(reg_infos)
+
+    return normal_case, event_upset_res, error_case
+
+
+def norm_v_upset_v_error(all_golden_rets, all_mut_rets):
+
+    normal_case = False
+    error_case = False
+    event_upset_res = False
+
+    is_correct = all_golden_rets == all_mut_rets
+
+    if is_correct:
+        normal_case = True
+    # These are the error conditions
+    elif not all(
+        [
+            len(all_golden_rets[i]) == len(all_mut_rets[i])
+            for i in range(len(all_golden_rets))
+        ]
+    ):
+        error_case = True
+    else:
+        # Event upset is when the two programs disagree and the mutatnt one runs without error
+        event_upset_res = True
+
+
+    return normal_case, event_upset_res, error_case
+
+
+
+
+
 def analyze_reg_results(results, func_names, golden_register_info):
     """
     Anaylze the register results
@@ -1574,12 +1789,15 @@ def analyze_reg_results(results, func_names, golden_register_info):
     error_case = []
     normal_case = []
 
+    target = detect_target(results[0].binary_path)
+    register = get_return_reg(target)
+
     for result in results:
         # See if any of the func names are missing register information
 
         # If we are missing the reg_info this is an error case
         # or if the func name is missing from reg info
-        if result.reg_info is None or not all(
+        if result.reg_info is None or not isinstance(result.reg_info, dict) or not all(
             [name in result.reg_info.keys() for name in func_names]
         ):
             error_case.append(result)
@@ -1587,11 +1805,12 @@ def analyze_reg_results(results, func_names, golden_register_info):
 
         # See if the two match for all functions
         all_golden_rets = [
-            collect_all_reg_calls(golden_register_info, "r0", name)
+            collect_all_reg_calls(golden_register_info, register, name)
             for name in func_names
         ]
         all_mut_rets = [
-            collect_all_reg_calls(result.reg_info, "r0", name) for name in func_names
+            collect_all_reg_calls(result.reg_info, register, name)
+            for name in func_names
         ]
         is_correct = all_golden_rets == all_mut_rets
 
@@ -1614,7 +1833,7 @@ def analyze_reg_results(results, func_names, golden_register_info):
     return normal_case, event_upset_res, error_case
 
 
-@app.command()
+# @app.command()
 def x_bit_reg_parallel(
     common: RegCommandParameters,
     target: Target,
@@ -1759,13 +1978,13 @@ def x_bit_reg_parallel(
 
     print(f"Analyzing {len(results)} results")
 
-
     golden_ret, golden_stdout, golden_register_info = sim_binary_w_input(
         common.program_file, common.program_input, func_names, common.timeout * 60
     )
 
-
-    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
+    good_res, bad_res, error_case = analyze_reg_results(
+        results, func_names, golden_register_info
+    )
 
     save_reg_report(
         report_path,
@@ -1922,132 +2141,133 @@ def x_bit_reg_parallel(
 #    return
 #
 #
-# @app.command()
-# def para_double_bit(common: CommandParameters, target: Target, num_cpus: int):
-#    """
-#    Parallelize the bit
-#    """
-#
-#    max_workers = max(1, num_cpus // 2)  # avoid 0 in case cpu_count() returns None
-#
-#    # Make the dir
-#    common.out_dir.mkdir(exist_ok=True, parents=True)
-#    base_out = common.out_dir
-#
-#    # Copy the source cdoe to the experiement
-#    source_code = common.program_file
-#    program_context = common.program_file.parent.joinpath(
-#        common.program_file.name.replace(".c", ".toml")
-#    )
-#
-#    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-#    if program_context.exists():
-#        shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
-#
-#    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-#    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
-#
-#    common.save_results = common.out_dir.joinpath("results.csv")
-#    common.out_dir = common.out_dir.joinpath("mutated_bins")
-#    common.out_dir.mkdir(exist_ok=True)
-#
-#    # Compile the binary for the target
-#    common.program_file = compile_program(source_code, bin_out, target)
-#
-#    if not common.yes:
-#        cont = str(
-#            input(
-#                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content)} mutated binaries, continue? (Yy/Nn)"
-#            )
-#        )
-#        if cont.lower() != "y":
-#            return
-#
-#    disasm = disassemble_text_section(common.program_file)
-#
-#    futures = []
-#    results: list[BitFlipExperimentResult] = []
-#
-#    start = datetime.now()
-#
-#    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-#        # Run the threads
-#        for inst in disasm:
-#            future = executor.submit(bit_para_run_helper, common, inst, target)
-#            futures.append(future)
-#
-#        total_tasks = len(futures)
-#
-#        # for _, future in enumerate(futures):
-#        with alive_bar(total_tasks, title="Processing tasks") as bar:
-#            for future in as_completed(futures):
-#                # Check the status codes
-#                result = future.result()
-#
-#                # Results = [out_file, returncode, inst, common, target, stdout, stderr, i]
-#                for (
-#                    out_file,
-#                    returncode,
-#                    inst,
-#                    common,
-#                    target,
-#                    stdout,
-#                    stderr,
-#                    i,
-#                ) in result:
-#                    cur_res = BitFlipExperimentResult(
-#                        source_file=source_code,
-#                        unmutated_binary=common.program_file,
-#                        binary_path=out_file,
-#                        flipped_addr=inst.address,
-#                        flipped_index=i,
-#                        program_input=common.program_input,
-#                        return_code=returncode,
-#                        program_stdout=stdout,
-#                        target=target,
-#                        expected_returncode=common.expected_returncode,
-#                        expected_stdout=common.expected_stdout,
-#                        custom_returncodes=other_returncodes,
-#                    )
-#                    results.append(cur_res)
-#
-#                bar()  # increment the progress bar by 1
-#
-#    runtime = datetime.now() - start
-#
-#    num_instructions = len(disasm)
-#
-#    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
-#
-#    df = dataclass_to_dataframe(results)
-#
-#    save_df(df, common.save_results)
-#
-#    show_results(common, df, other_returncodes)
-#
-#    # Lastly save the experiment parameters
-#    params = common.to_dict()
-#    params["target"] = target.value
-#
-#    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
-#        json.dump(params, f, indent=4)
-#
-#    report_path = common.save_results.parent.joinpath("report.md")
-#    save_report(
-#        report_path,
-#        common,
-#        df,
-#        runtime,
-#        results,
-#        num_instructions,
-#        num_bits,
-#        compile_cmd,
-#        source_code,
-#        program_context,
-#        is_bit=True,
-#    )
-#
-#    return
+
+@app.command()
+def x_bit_qemu_parallel(common: CommandParameters, target: Target, num_cpus: int, num_bits: int):
+    """
+    Run the x bit mutation scheme with a qemu backend 
+    """
+
+    max_workers = max(1, num_cpus // 2)  # avoid 0 in case cpu_count() returns None
+
+    # Make the dir
+    common.out_dir.mkdir(exist_ok=True, parents=True)
+    base_out = common.out_dir
+
+    # Copy the source cdoe to the experiement
+    source_code = common.program_file
+    program_context = common.program_file.parent.joinpath(
+        common.program_file.name.replace(".c", ".toml")
+    )
+
+    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+    if program_context.exists():
+        shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
+
+    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
+    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+
+    common.save_results = common.out_dir.joinpath("results.csv")
+    common.out_dir = common.out_dir.joinpath("mutated_bins")
+    common.out_dir.mkdir(exist_ok=True)
+
+    # Compile the binary for the target
+    common.program_file = compile_program(source_code, bin_out, target)
+
+    if not common.yes:
+        cont = str(
+            input(
+                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content)} mutated binaries, continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
+
+    disasm = disassemble_text_section(common.program_file)
+
+    futures = []
+    results: list[BitFlipExperimentResult] = []
+
+    start = datetime.now()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # Run the threads
+        for inst in disasm:
+            future = executor.submit(x_bit_para_run_helper, common, inst, target, num_bits)
+            futures.append(future)
+
+        total_tasks = len(futures)
+
+        # for _, future in enumerate(futures):
+        with alive_bar(total_tasks, title="Processing tasks") as bar:
+            for future in as_completed(futures):
+                # Check the status codes
+                result = future.result()
+
+                # Results = [out_file, returncode, inst, common, target, stdout, stderr, i]
+                for (
+                    out_file,
+                    returncode,
+                    inst,
+                    common,
+                    target,
+                    stdout,
+                    stderr,
+                    i,
+                ) in result:
+                    cur_res = BitFlipExperimentResult(
+                        source_file=source_code,
+                        unmutated_binary=common.program_file,
+                        binary_path=out_file,
+                        flipped_addr=inst.address,
+                        flipped_index=i,
+                        program_input=common.program_input,
+                        return_code=returncode,
+                        program_stdout=stdout,
+                        target=target,
+                        expected_returncode=common.expected_returncode,
+                        expected_stdout=common.expected_stdout,
+                        custom_returncodes=other_returncodes,
+                    )
+                    results.append(cur_res)
+
+                bar()  # increment the progress bar by 1
+
+    runtime = datetime.now() - start
+
+    num_instructions = len(disasm)
+
+    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
+
+    df = dataclass_to_dataframe(results)
+
+    save_df(df, common.save_results)
+
+    show_results(common, df, other_returncodes)
+
+    # Lastly save the experiment parameters
+    params = common.to_dict()
+    params["target"] = target.value
+
+    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+        json.dump(params, f, indent=4)
+
+    report_path = common.save_results.parent.joinpath("report.md")
+    save_report(
+        report_path,
+        common,
+        df,
+        runtime,
+        results,
+        num_instructions,
+        num_bits,
+        compile_cmd,
+        source_code,
+        program_context,
+        is_bit=True,
+    )
+
+    return
 #
 #
 # @app.command()
@@ -2170,139 +2390,139 @@ def x_bit_reg_parallel(
 
 
 # @app.command()
-def seq_nop(common: CommandParameters, target: Target):
-    """
-    Take c source code as input, compile it, mutate it, and test
-    """
-
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    program_context = common.program_file.parent.joinpath(
-        common.program_file.name.replace(".c", ".toml")
-    )
-    base_out = common.out_dir
-
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-
-    common.save_results = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-    common.out_dir.mkdir(exist_ok=True)
-
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target)
-
-    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
-
-    original_bin = common.program_file
-
-    disasm = disassemble_text_section(common.program_file)
-    num_instructions = len(disasm)
-    if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
-            )
-        )
-        if cont.lower() != "y":
-            return
-
-    target = detect_target(common.program_file)
-    results: list[NopExperimentResult] = []
-
-    start_time = datetime.now()
-
-    # Run the threads
-    for inst in alive_it(disasm):
-        if common.program_input[-1:] != "\n":
-            common.program_input += "\n"
-
-        # Generate hte mutated binary
-        try:
-            insts = [inst]
-            out_path = common.out_dir.joinpath(
-                common.program_file.name + f"_{hex(insts[0].address)}"
-            )
-            out_file = generate_nops_mutated_bin(
-                common.program_file, target, insts, out_path
-            )
-
-            disasm_mut = disassemble_text_section(out_file)
-            if len(disasm) != len(disasm_mut):
-                print(f"Len new: {len(disasm_mut)} orig: {len(disasm)}")
-                raise Exception("Issue here")
-
-        except Exception as e:
-            print(f"Issue making binary: {e}")
-            return Path(""), -100, inst, common, target, "", ""
-        try:
-            returncode, stdout, stderr = run_binary_w_input(
-                out_file, common.program_input, target, common.timeout
-            )
-
-            if returncode is None and stdout is None and stderr is None:
-                print("Failed to run")
-                return
-
-            if returncode is not None:
-                returncode = shift_exit_code(returncode)
-            # return out_file, returncode, inst, common, target, stdout, stderr
-        except Exception as e:
-            print(f"Failed to run bin with {e}")
-            stdout = ""
-            stderr = ""
-            # return out_file, -100, inst, common, target, "", ""
-
-        print(stdout, stderr)
-
-        result = NopExperimentResult(
-            source_file=source_code,
-            unmutated_binary=original_bin,
-            binary_path=out_file,
-            nopped_addr=inst.address,
-            program_input=common.program_input,
-            return_code=returncode,
-            program_stdout=stdout,
-            target=target,
-            expected_returncode=common.expected_returncode,
-            expected_stdout=common.expected_stdout,
-            custom_returncodes=other_returncodes,
-        )
-        results.append(result)
-
-    runtime = datetime.now() - start_time
-
-    df = dataclass_to_dataframe(results)
-    save_df(df, common.save_results)
-    show_results(common, df, other_returncodes)
-
-    # Lastly save the experiment parameters
-    params = common.to_dict()
-    params["target"] = target.value
-
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
-        json.dump(params, f, indent=4)
-
-    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
-
-    report_path = common.save_results.parent.joinpath("report.md")
-    save_report(
-        report_path,
-        common,
-        df,
-        runtime,
-        results,
-        num_instructions,
-        num_bits,
-        compile_cmd,
-        source_code,
-        program_context,
-    )
-
-    return
+# def seq_nop(common: CommandParameters, target: Target):
+#    """
+#    Take c source code as input, compile it, mutate it, and test
+#    """
+#
+#    # Make the dir
+#    common.out_dir.mkdir(exist_ok=True, parents=True)
+#    program_context = common.program_file.parent.joinpath(
+#        common.program_file.name.replace(".c", ".toml")
+#    )
+#    base_out = common.out_dir
+#
+#    # Copy the source cdoe to the experiement
+#    source_code = common.program_file
+#    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+#
+#    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
+#
+#    common.save_results = common.out_dir.joinpath("results.csv")
+#    common.out_dir = common.out_dir.joinpath("mutated_bins")
+#    common.out_dir.mkdir(exist_ok=True)
+#
+#    # Compile the binary for the target
+#    common.program_file = compile_program(source_code, bin_out, target)
+#
+#    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+#
+#    original_bin = common.program_file
+#
+#    disasm = disassemble_text_section(common.program_file)
+#    num_instructions = len(disasm)
+#    if not common.yes:
+#        cont = str(
+#            input(
+#                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
+#            )
+#        )
+#        if cont.lower() != "y":
+#            return
+#
+#    target = detect_target(common.program_file)
+#    results: list[NopExperimentResult] = []
+#
+#    start_time = datetime.now()
+#
+#    # Run the threads
+#    for inst in alive_it(disasm):
+#        if common.program_input[-1:] != "\n":
+#            common.program_input += "\n"
+#
+#        # Generate hte mutated binary
+#        try:
+#            insts = [inst]
+#            out_path = common.out_dir.joinpath(
+#                common.program_file.name + f"_{hex(insts[0].address)}"
+#            )
+#            out_file = generate_nops_mutated_bin(
+#                common.program_file, target, insts, out_path
+#            )
+#
+#            disasm_mut = disassemble_text_section(out_file)
+#            if len(disasm) != len(disasm_mut):
+#                print(f"Len new: {len(disasm_mut)} orig: {len(disasm)}")
+#                raise Exception("Issue here")
+#
+#        except Exception as e:
+#            print(f"Issue making binary: {e}")
+#            return Path(""), -100, inst, common, target, "", ""
+#        try:
+#            returncode, stdout, stderr = run_binary_w_input(
+#                out_file, common.program_input, target, common.timeout
+#            )
+#
+#            if returncode is None and stdout is None and stderr is None:
+#                print("Failed to run")
+#                return
+#
+#            if returncode is not None:
+#                returncode = shift_exit_code(returncode)
+#            # return out_file, returncode, inst, common, target, stdout, stderr
+#        except Exception as e:
+#            print(f"Failed to run bin with {e}")
+#            stdout = ""
+#            stderr = ""
+#            # return out_file, -100, inst, common, target, "", ""
+#
+#        print(stdout, stderr)
+#
+#        result = NopExperimentResult(
+#            source_file=source_code,
+#            unmutated_binary=original_bin,
+#            binary_path=out_file,
+#            nopped_addr=inst.address,
+#            program_input=common.program_input,
+#            return_code=returncode,
+#            program_stdout=stdout,
+#            target=target,
+#            expected_returncode=common.expected_returncode,
+#            expected_stdout=common.expected_stdout,
+#            custom_returncodes=other_returncodes,
+#        )
+#        results.append(result)
+#
+#    runtime = datetime.now() - start_time
+#
+#    df = dataclass_to_dataframe(results)
+#    save_df(df, common.save_results)
+#    show_results(common, df, other_returncodes)
+#
+#    # Lastly save the experiment parameters
+#    params = common.to_dict()
+#    params["target"] = target.value
+#
+#    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+#        json.dump(params, f, indent=4)
+#
+#    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
+#
+#    report_path = common.save_results.parent.joinpath("report.md")
+#    save_report(
+#        report_path,
+#        common,
+#        df,
+#        runtime,
+#        results,
+#        num_instructions,
+#        num_bits,
+#        compile_cmd,
+#        source_code,
+#        program_context,
+#    )
+#
+#    return
 
 
 def collect_all_reg_calls(capt_info, reg_name, func_name):
@@ -2364,7 +2584,6 @@ def x_nop_reg_seq(
 
     target = detect_target(common.program_file)
 
-    futures = []
     results: list[RegNopExperimentResult] = []
 
     start_time = datetime.now()
@@ -2374,23 +2593,17 @@ def x_nop_reg_seq(
     golden_ret, golden_stdout, golden_register_info = sim_binary_w_input(
         common.program_file, common.program_input, func_names, common.timeout * 60
     )
-    # golden_ret, golden_stdout, golden_register_info = fast_sim_binary_w_input(common.program_file, common.program_input, func_names)
-    # print(golden_register_info)
-    # exit()
 
     for i in alive_it(range(len(disasm) - (num_nops) + 1)):
         # Keet x instructions to overwrite with nop
         insts = [disasm[i + x] for x in range(num_nops)]
-        # future = executor.submit(x_nop_para_run_helper, common, insts, target)
-        out_file, returncode, insts, common, target, stdout, captured = (
-            x_nop_angr_helper(
+        out_file, returncode, insts, common, target, stdout, captured = x_nop_angr_helper(
                 common,
                 insts,
                 target,
                 func_names,
                 common.timeout * 60,
             )
-        )
 
         result = RegNopExperimentResult(
             source_file=source_code,
@@ -2501,7 +2714,7 @@ def x_bit(
     common: RegCommandParameters,  # TODO: Make everything use this version and rename
     target: Target,
     func_names: str,
-    num_nops: int = 1,
+    num_bits: int = 1,
     num_cpus: int = 1,
     verbose: bool = False,
     backend: Backends = Backends.ANGR,
@@ -2519,10 +2732,10 @@ def x_bit(
     if backend == backend.ANGR:
         if num_cpus == 1:
             # Sequantial
-            x_bit_reg_seq(common, target, func_names, num_nops, verbose)
+            x_bit_reg_seq(common, target, func_names, num_bits, verbose)
         else:
             # Parallel
-            x_bit_reg_parallel(common, target, num_cpus, func_names, num_nops, verbose)
+            x_bit_reg_parallel(common, target, num_cpus, func_names, num_bits, verbose)
     elif backend == backend.QEMU:
         # Now assert that we have stdout and expected return code
         if common.expected_stdout is None or common.expected_returncode is None:
@@ -2532,13 +2745,13 @@ def x_bit(
 
         if num_cpus == 1:
             # Sequantial
-            #x_bit_qemu_seq(common, target, num_nops)
+            # x_bit_qemu_seq(common, target, num_nops)
             raise NotImplementedError("Qemu for x_bit not implemented")
         else:
             # Parallel
-            #x_bit_qemu_parallel(common, target, num_cpus, num_nops)
-            #raise NotImplementedError
-            raise NotImplementedError("Qemu for x_bit not implemented")
+            x_bit_qemu_parallel(common, target, num_cpus, num_bits)
+            # raise NotImplementedError
+            #raise NotImplementedError("Qemu for x_bit not implemented")
     return
 
 
@@ -2564,9 +2777,11 @@ def x_nop(
     if backend == backend.ANGR:
         if num_cpus == 1:
             # Sequantial
+            logger.info(f"Staring with backend {backend} sequential")
             x_nop_reg_seq(common, target, func_names, num_nops, verbose)
         else:
             # Parallel
+            logger.info(f"Staring with backend {backend} parallel")
             x_nop_reg_parallel(common, target, num_cpus, func_names, num_nops, verbose)
     elif backend == backend.QEMU:
         # Now assert that we have stdout and expected return code
@@ -2577,9 +2792,11 @@ def x_nop(
 
         if num_cpus == 1:
             # Sequantial
+            logger.info(f"Staring with backend {backend} sequential")
             x_nop_qemu_seq(common, target, num_nops)
         else:
             # Parallel
+            logger.info(f"Staring with backend {backend} parallel")
             x_nop_qemu_parallel(common, target, num_cpus, num_nops)
 
     return
@@ -2722,7 +2939,9 @@ def x_nop_reg_parallel(
     report_path = common.save_results.parent.joinpath("report.md")
     print(f"Analyzing {len(results)} results")
 
-    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
+    good_res, bad_res, error_case = analyze_reg_results(
+        results, func_names, golden_register_info
+    )
 
     save_reg_report(
         report_path,
@@ -2749,45 +2968,70 @@ def x_nop_reg_parallel(
 
     return
 
+
 def verbose_output(results, func_names, golden_register_info):
     """
-    Print to stdout a verbose output of the results 
+    Print to stdout a verbose output of the results
     """
+
+    # Get the register value
+    target = detect_target(results[0].binary_path)
+    register = get_return_reg(target)
+
+    reg_vals = []
+
+    missing_func = []
+    missing_reg_info = []
 
     for result in results:
         print(f"==== On res {result.binary_path} =====")
-        for name in func_names:
-            if result.reg_info is None:
-                print(f"No reg info")
-                continue
 
+        if result.reg_info is None:
+            print(f"No reg info")
+            missing_reg_info.append(result)
+            continue
+
+        for name in func_names:
             if name in result.reg_info.keys():
                 # Get a liust of all the r0 values across all calls to func name
-                gold_r0_ret = collect_all_reg_calls(
-                    golden_register_info, "r0", name
+                gold_register = collect_all_reg_calls(
+                    golden_register_info, register, name
                 )
-                mut_r0_ret = collect_all_reg_calls(result.reg_info, "r0", name)
-                is_correct = gold_r0_ret[-1] == mut_r0_ret[-1]
+                mut_r0_ret = collect_all_reg_calls(result.reg_info, register, name)
+                is_correct = gold_register[-1] == mut_r0_ret[-1]
+                reg_vals.append(mut_r0_ret[-1])
 
                 print(
-                    f"({name}:r0)  golden: {gold_r0_ret} | mut: {mut_r0_ret} same?: {is_correct}"
+                    f"({name}:r0)  golden: {gold_register} | mut: {mut_r0_ret} same?: {is_correct}"
                 )
                 print(f"Program: {result.binary_path}")
                 print(f"Stdout: {result.program_stdout}")
             else:
+                missing_func.append(result.binary_path)
                 print(f"Missing function: {name}")
+
+        print(f"Reg vals set: {set(reg_vals)}")
         print(f"==== DONE res {result.binary_path} =====")
+
+    print(f"Num missing func: {len(set(missing_func))}")
+    print(f"Num missing reg info: {len(missing_reg_info)}")
 
     return
 
 
-
-
 # @app.command()
-def x_nop_qemu_seq(common: RegCommandParameters, target: Target, num_nops: int = 1):
+def x_nop_qemu_seq(
+    common: RegCommandParameters,
+    target: Target,
+    num_nops: int = 1,
+    verbose: bool = True,
+):
     """
     Take c source code as input, compile it, mutate it, and test
     """
+
+    assert common.expected_stdout is not None
+    common.expected_stdout = str(common.expected_stdout)
 
     # Make the dir
     common.out_dir.mkdir(exist_ok=True, parents=True)
@@ -2852,9 +3096,20 @@ def x_nop_qemu_seq(common: RegCommandParameters, target: Target, num_nops: int =
         )
         results.append(result)
 
+
+
+    for res in results:
+        if res.expected_stdout not in res.program_stdout:
+            print(f"Binary: {res.binary_path} printed: {res.program_stdout}")
+
     runtime = datetime.now() - start_time
 
     df = dataclass_to_dataframe(results)
+
+    if verbose:
+        print(f"The counts of stdout: {df['program_stdout'].value_counts()}")
+
+
     save_df(df, common.save_results)
     show_results(common, df, other_returncodes)
 
@@ -3123,123 +3378,123 @@ def x_nop_qemu_parallel(
 #    return
 
 
-@app.command()
-def nop(common: CommandParameters, target: Target, num_cpus: int):
-    """
-    Take c source code as input, compile it, mutate it, and test
-    """
-
-    max_workers = max(1, num_cpus // 2)
-
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    program_context = common.program_file.parent.joinpath(
-        common.program_file.name.replace(".c", ".toml")
-    )
-    base_out = common.out_dir
-
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-
-    common.save_results = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-    common.out_dir.mkdir(exist_ok=True)
-
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target)
-
-    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
-
-    original_bin = common.program_file
-
-    disasm = disassemble_text_section(common.program_file)
-    num_instructions = len(disasm)
-    if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
-            )
-        )
-        if cont.lower() != "y":
-            return
-
-    target = detect_target(common.program_file)
-
-    futures = []
-    results: list[NopExperimentResult] = []
-
-    start_time = datetime.now()
-
-    print("Beging execution...")
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        # Run the threads
-        for inst in disasm:
-            future = executor.submit(nop_para_run_helper, common, inst, target)
-            futures.append(future)
-
-        total_tasks = len(futures)
-
-        # for _, future in enumerate(futures):
-        with alive_bar(total_tasks, title="Processing tasks") as bar:
-            for future in as_completed(futures):
-                # Check the status codes
-                out_file, returncode, inst, common, target, stdout, stderr = (
-                    future.result()
-                )
-
-                # Shift return code
-                if returncode is not None:
-                    returncode = shift_exit_code(returncode)
-
-                result = NopExperimentResult(
-                    source_file=source_code,
-                    unmutated_binary=original_bin,
-                    binary_path=out_file,
-                    nopped_addr=inst.address,
-                    program_input=common.program_input,
-                    return_code=returncode,
-                    program_stdout=stdout,
-                    target=target,
-                    expected_returncode=common.expected_returncode,
-                    expected_stdout=common.expected_stdout,
-                    custom_returncodes=other_returncodes,
-                )
-                results.append(result)
-                bar()  # increment the progress bar by 1
-
-    runtime = datetime.now() - start_time
-
-    df = dataclass_to_dataframe(results)
-    save_df(df, common.save_results)
-    show_results(common, df, other_returncodes)
-
-    # Lastly save the experiment parameters
-    params = common.to_dict()
-    params["target"] = target.value
-
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
-        json.dump(params, f, indent=4)
-
-    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
-
-    report_path = common.save_results.parent.joinpath("report.md")
-    save_report(
-        report_path,
-        common,
-        df,
-        runtime,
-        results,
-        num_instructions,
-        num_bits,
-        compile_cmd,
-        source_code,
-        program_context,
-    )
-
-    return
+# @app.command()
+# def nop(common: CommandParameters, target: Target, num_cpus: int):
+#    """
+#    Take c source code as input, compile it, mutate it, and test
+#    """
+#
+#    max_workers = max(1, num_cpus // 2)
+#
+#    # Make the dir
+#    common.out_dir.mkdir(exist_ok=True, parents=True)
+#    program_context = common.program_file.parent.joinpath(
+#        common.program_file.name.replace(".c", ".toml")
+#    )
+#    base_out = common.out_dir
+#
+#    # Copy the source cdoe to the experiement
+#    source_code = common.program_file
+#    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+#
+#    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
+#
+#    common.save_results = common.out_dir.joinpath("results.csv")
+#    common.out_dir = common.out_dir.joinpath("mutated_bins")
+#    common.out_dir.mkdir(exist_ok=True)
+#
+#    # Compile the binary for the target
+#    common.program_file = compile_program(source_code, bin_out, target)
+#
+#    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+#
+#    original_bin = common.program_file
+#
+#    disasm = disassemble_text_section(common.program_file)
+#    num_instructions = len(disasm)
+#    if not common.yes:
+#        cont = str(
+#            input(
+#                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
+#            )
+#        )
+#        if cont.lower() != "y":
+#            return
+#
+#    target = detect_target(common.program_file)
+#
+#    futures = []
+#    results: list[NopExperimentResult] = []
+#
+#    start_time = datetime.now()
+#
+#    print("Beging execution...")
+#    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+#        # Run the threads
+#        for inst in disasm:
+#            future = executor.submit(nop_para_run_helper, common, inst, target)
+#            futures.append(future)
+#
+#        total_tasks = len(futures)
+#
+#        # for _, future in enumerate(futures):
+#        with alive_bar(total_tasks, title="Processing tasks") as bar:
+#            for future in as_completed(futures):
+#                # Check the status codes
+#                out_file, returncode, inst, common, target, stdout, stderr = (
+#                    future.result()
+#                )
+#
+#                # Shift return code
+#                if returncode is not None:
+#                    returncode = shift_exit_code(returncode)
+#
+#                result = NopExperimentResult(
+#                    source_file=source_code,
+#                    unmutated_binary=original_bin,
+#                    binary_path=out_file,
+#                    nopped_addr=inst.address,
+#                    program_input=common.program_input,
+#                    return_code=returncode,
+#                    program_stdout=stdout,
+#                    target=target,
+#                    expected_returncode=common.expected_returncode,
+#                    expected_stdout=common.expected_stdout,
+#                    custom_returncodes=other_returncodes,
+#                )
+#                results.append(result)
+#                bar()  # increment the progress bar by 1
+#
+#    runtime = datetime.now() - start_time
+#
+#    df = dataclass_to_dataframe(results)
+#    save_df(df, common.save_results)
+#    show_results(common, df, other_returncodes)
+#
+#    # Lastly save the experiment parameters
+#    params = common.to_dict()
+#    params["target"] = target.value
+#
+#    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+#        json.dump(params, f, indent=4)
+#
+#    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
+#
+#    report_path = common.save_results.parent.joinpath("report.md")
+#    save_report(
+#        report_path,
+#        common,
+#        df,
+#        runtime,
+#        results,
+#        num_instructions,
+#        num_bits,
+#        compile_cmd,
+#        source_code,
+#        program_context,
+#    )
+#
+#    return
 
 
 def save_reg_report(
@@ -3607,13 +3862,9 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         experiments = settings.get("experiment", {})
 
         commands = {
-            "nop": nop,
             "x_nop": x_nop,
-            "x_nop_reg": x_nop_reg,
-            "para_double_nop": para_double_nop,
-            "para_bit": para_bit,
-            "para_double_bit": para_double_bit,
             "nop_no_comp_inout": nop_no_comp_inout,
+            "angr_nop_no_comp_inout": angr_nop_no_comp_inout,
             "bit_no_comp_inout": bit_no_comp_inout,
         }
 
@@ -3699,13 +3950,31 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                     params, ins=ins, outs=outs, expected_correct=expected_correct
                 )  # , target=target, num_cpus=num_cpus)
 
+            elif command_name in ["angr_nop_no_comp_inout"]:
+                ins = formated.pop("ins")
+                outs = formated.pop("outs")
+                target = formated.pop("target")
+                nocomp = formated.pop("no_compile")
+                timeout= formated.pop("timeout")
+                func_names= formated.pop("func_names")
+                expected_correct = int(formated.pop("expected_correct"))
+                params = CommandParameters(**formated)
+                
+                cmd_func(
+                    params, ins=ins, outs=outs, expected_correct=expected_correct, timeout=timeout, func_names=func_names
+                )  # , target=target, num_cpus=num_cpus)
+
+
     return
 
 
 @app.command
 def gather_reports(inp: Path, out: Path, force: bool = False, substrs: list[str] = []):
     """
-    Gather the reports in the directory
+    If there are many report.md files in a directory, this will
+    1. Gather them
+    2. Rename
+    3. Save in the output directory
     """
 
     if out.exists():
@@ -3856,6 +4125,124 @@ def predict(bin_path, X, timeout: int, use_arm: bool = False):
     return np.array(y)
 
 
+
+@app.command()
+def angr_new_nn_test(inp: Path, out: Path, test_size: int):
+    """
+    Temp function to run against the new neural net
+    """
+
+    out.mkdir(exist_ok=True)
+
+    disasm = disassemble_text_section(inp)
+
+    # Load the target type
+    target = detect_target(inp)
+    if target == Target.ARM_32:
+        arm = True
+    else:
+        arm = False
+
+    logger.debug(f"Detected Target: {target}")
+
+    mutated_bins = []
+    for inst in alive_it(disasm, title="generating mutations"):
+        # 1. mutate
+        mutated_bins.append(_generate_nop_mutated_bin(inp, target, inst, out))
+
+    timeout = 4
+    #TODO
+    func_names = ['mlp_predict']
+
+    baseline_correct_predictions = []
+
+    captured_to_i_tups = {}
+
+    for i in range(test_size):
+
+        # Run the golen mutation 
+        ret, stdout, register_info = sim_binary_w_calltime_input(
+            inp, i, func_names, timeout * 60
+        )
+
+        captured_to_i_tups[i] = [ret, stdout, register_info]
+
+        #stdout = class_helper(inp, i, 5, arm)
+
+        #print(stdout)
+        #if "CORRECT" in stdout.decode():
+        #    baseline_correct_predictions.append(i)
+
+    # Now, try only those in the mutated model and see what
+    # we get
+    results = []
+
+    atleast_one_mistake = 0
+
+    target = detect_target(inp)
+    reg = get_return_reg(target)
+
+    for bin in alive_it(mutated_bins, title="testing mutations"):
+        bin_results = {
+            "norm": [],
+            "upset": [],
+            "error": [],
+        }
+
+        for i in range(test_size):
+            # Run the mutant 
+            ret, stdout, register_info = sim_binary_w_calltime_input(
+                bin, i, func_names, timeout * 60
+            )
+
+
+            # Compare
+            all_golden_rets = [
+                collect_all_reg_calls(captured_to_i_tups[i], reg, name)
+                for name in func_names
+            ]
+            all_mut_rets = [
+                collect_all_reg_calls(register_info, reg, name)
+                for name in func_names
+            ]
+            is_norm, is_upset, is_error = norm_v_upset_v_error(all_golden_rets, all_mut_rets)
+
+            if is_norm:
+                bin_results['norm'].append(bin)
+            elif is_upset:
+                bin_results['upset'].append(bin)
+            elif is_error:
+                bin_results['error'].append(bin)
+
+        if len(bin_results["upset"]) > 0:
+            atleast_one_mistake += 1
+        if len(bin_results["error"]) > 0:
+            atleast_one_mistake += 1
+
+        results.append((bin, bin_results))
+
+    console.print(
+        f"Baseline correctly labeled {len(baseline_correct_predictions)} inputs"
+    )
+    console.print(
+        f"Of {len(mutated_bins)}, {atleast_one_mistake} mutated bins incorrect labeled an input that baseline correctly labeld"
+    )
+
+    for bin, res in results:
+        if len(res["upset"]) > 0:
+            print(f"{bin.name} | mistakes: {res['wrong']}\n")
+
+    with open("TEMPDELME.txt", "w") as f:
+        for bin, res in results:
+            if len(res["upset"]) > 0:
+                f.write(f"{bin.name} | mistakes: {res['wrong']}\n")
+
+    return
+
+
+
+
+
 @app.command()
 def new_nn_test(inp: Path, out: Path, test_size: int):
     """
@@ -3879,13 +4266,6 @@ def new_nn_test(inp: Path, out: Path, test_size: int):
     for inst in alive_it(disasm, title="generating mutations"):
         # 1. mutate
         mutated_bins.append(_generate_nop_mutated_bin(inp, target, inst, out))
-
-    # Now, for each bin I need to see if, for every input
-    # there is a potential difference.
-    #
-    # There are index 0-449, so, first obtain the correct
-    # predictions from the original model, anything with
-    # "CORRECT" in the stdout
 
     baseline_correct_predictions = []
     for i in range(test_size):
@@ -3944,6 +4324,7 @@ def new_nn_test(inp: Path, out: Path, test_size: int):
                 f.write(f"{bin.name} | mistakes: {res['wrong']}\n")
 
     return
+
 
 
 def class_helper(bin_path: Path, input: int, timeout: int, use_arm: bool):
@@ -4250,106 +4631,8 @@ def compare_regs(
     return
 
 
-# @app.command()
-# def get_regs(inp:Path, stdin: str|None = None, func_names:list[str]=[], quiet: bool = True):
-#    """
-#    Temp function to get the registers of all functions
-#    """
-#
-#
-#    #capt, stdout, ret = sim_binary_w_input(inp, stdin, func_names)
-#
-#    print(capt)
-#    print(stdout)
-#    print(ret)
-#
-#
-#    #proj = angr.Project(inp, load_options={'auto_load_libs': False})
-#    #cfg  = proj.analyses.CFGFast()
-#
-#
-#    #if stdin:
-#    #    inp_len = len(stdin)
-#    #    sym_inp = cp.BVS("wrong", inp_len*8)
-#
-#    #    adj_stdin = angr.SimFile("stdin",
-#    #                         content=sym_inp.concat(cp.BVV(b"\n")),
-#    #                         has_end=True)
-#
-#    #if func_names != []:
-#    #    funcs = [v for _,v in cfg.functions.items() if v.name in func_names]
-#    #else:
-#    #    funcs = [v for _,v in cfg.functions.items()]
-#
-#    #if funcs == []:
-#    #    if not quiet:
-#    #        print(cfg.functions)
-#    #        print(type(cfg.functions))
-#    #        print(f"No functions by names {func_names}. Possible function names are {[x.name for x in cfg.functions.values()]}")
-#    #    return
-#    #else:
-#    #    if not quiet:
-#    #        console.print(f"Recording for target funcs: {func_names}")
-#
-#    #addr_to_name = {x.addr : x.name for x in funcs}
-#
-#    #state = proj.factory.full_init_state(
-#    #    add_options={
-#    #        angr.options.ZERO_FILL_UNCONSTRAINED_REGISTERS,
-#    #        angr.options.ZERO_FILL_UNCONSTRAINED_MEMORY,
-#    #    }
-#    #)
-#    #
-#    #captured = {}
-#    #
-#    #def after_ret(s):
-#    #    if s.callstack.func_addr not in [x.addr for x in funcs]:
-#    #        return
-#    #
-#    #    cur_regs = {}
-#    #    for name in s.arch.registers.keys():
-#    #        bv = getattr(s.regs, name)
-#    #        cur_regs[name] = s.solver.eval(bv, cast_to=int)
-#    #
-#    #    #captured.update(cur_regs)
-#    #    captured[s.callstack.func_addr] = cur_regs
-#    #
-#    #for func in funcs:
-#
-#    #    # For every return site in the chosen function
-#    #    for r in func.ret_sites:
-#    #        state.inspect.b(
-#    #            'instruction',
-#    #            when=angr.BP_AFTER,
-#    #            instruction=r.addr,
-#    #            action=after_ret,
-#    #        )
-#    #
-#    #proj.factory.simulation_manager(state).run()
-#
-#    #for func, info in captured.items():
-#    #    console.print(f"On functions {addr_to_name[func]}")
-#    #    if not quiet:
-#    #        for name, val in info.items():
-#    #            print(f" {name:>4} = 0x{val:08x} = {val}")
-#
-#    ## The return is a dictionary of
-#    ## ret = {
-#    ##       func_addr1: {
-#    ##           reg1_name: val
-#    ##           reg2_name: val2
-#    ##       }
-#    ##       func_addr2: {
-#    ##           reg1_name: val
-#    ##           reg2_name: val2
-#    ##       }
-#    ##       ...
-#    ## }
-#    #return captured
-
-
 if __name__ == "__main__":
-    setup_logger(console_level="DEBUG")
+    setup_logger(console_level="INFO")
     # setup_logger(console_level="DEBUG")
     logger = logging.getLogger(__name__)  # module-level logger
 
