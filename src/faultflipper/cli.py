@@ -1,7 +1,7 @@
 import lief
-import json
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
+from collections import Counter
 from report_utils import list_tuple_table, generate_pdf_report
 from sklearn.model_selection import train_test_split
 import sklearn
@@ -56,10 +56,6 @@ from binary_tools import (
 )
 
 from parallel_runner import (
-    bit_para_run_helper,
-    double_bit_para_run_helper,
-    double_nop_para_run_helper,
-    nop_para_run_helper,
     x_bit_para_run_helper,
     x_nop_para_run_helper,
     x_nop_angr_helper,
@@ -962,39 +958,39 @@ def compare_disassembly(
     return total
 
 
-# @app.command
-# def find_faulted(results: Path, padding: int):
-#    """
-#    From the results file find the binaries that had the exptected STDOUT
-#    then print the dissassembly comparison between all those programs and the
-#    base program
-#    """
-#
-#    if not results.exists():
-#        print(f"File {results} does not exist")
-#        return
-#
-#    # Load the result and get those that have the epxeted STDOUT in them
-#    df = pd.read_csv(results)
-#
-#    expected_stdout = str(list(df["expected_stdout"])[0])
-#    filtered_df = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
-#
-#    # Get the mutated paths that have the expected stdouts
-#    mutated_binaries = [Path(x) for x in filtered_df["binary_path"]]
-#
-#    # Get the vanilla binary
-#    vanilla_binary = Path(str(list(filtered_df["unmutated_binary"])[0]))
-#    assert vanilla_binary.exists()
-#
-#    for mbin in mutated_binaries:
-#        # Get the mutated address
-#        addr = int(mbin.name.replace(vanilla_binary.name + "_", ""), 16)
-#
-#        # Run the disassmebly
-#        disasm([vanilla_binary, mbin], addr - padding, addr + padding)
-#
-#    return
+@app.command
+def find_faulted(results: Path, padding: int):
+   """
+   From the results file find the binaries that had the exptected STDOUT
+   then print the dissassembly comparison between all those programs and the
+   base program
+   """
+
+   if not results.exists():
+       print(f"File {results} does not exist")
+       return
+
+   # Load the result and get those that have the epxeted STDOUT in them
+   df = pd.read_csv(results)
+
+   expected_stdout = str(list(df["expected_stdout"])[0])
+   filtered_df = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
+
+   # Get the mutated paths that have the expected stdouts
+   mutated_binaries = [Path(x) for x in filtered_df["binary_path"]]
+
+   # Get the vanilla binary
+   vanilla_binary = Path(str(list(filtered_df["unmutated_binary"])[0]))
+   assert vanilla_binary.exists()
+
+   for mbin in mutated_binaries:
+       # Get the mutated address
+       addr = int(mbin.name.replace(vanilla_binary.name + "_", ""), 16)
+
+       # Run the disassmebly
+       disasm([vanilla_binary, mbin], addr - padding, addr + padding)
+
+   return
 
 
 @app.command
@@ -1004,36 +1000,59 @@ def read_results(inp: Path):
     if not inp.is_file():
         raise Exception("The input file does not exists")
 
-    df = pd.read_csv(inp)
+    df = pd.read_csv(inp, index_col=False)
 
-    expected_stdout = df["expected_stdout"].to_list()[0]
-    custom_returncodes = df["custom_returncodes"].to_list()[0]
+    expected_stdout = [ str(x) for x in df["expected_stdout"].to_list()]
+    program_stdout =  [ str(x) for x in df["program_stdout"].to_list()]
 
-    ret_codes = ret_codes.split(")")
-    ret_codes = [x.replace("(", "") for x in ret_codes if x != ""]
+    match = 0
+    no_match = 0
+    for expected, real in zip(expected_stdout, program_stdout):
+        if expected in real:
+            match +=1 
+        else:
+            no_match +=1
 
-    codes = []
-    for substr in ret_codes:
-        # This should have two valles
-        splits = [x.strip() for x in substr.split(",") if x.strip() != ""]
-        # print(splits)
-        codes.append((splits[0], int(splits[1])))
+    print(f"Matches: {match}")
+    print(f"No Matche: {no_match}")
 
-    smol_show_results(df, codes, expected_stdout)
+    print(df.columns)
 
-    # Get the number of accepted passwords, this is return code 1
-    # df = df[df["return_code"] == 0]
 
-    ## The result could be a nop experiment or a bit experiment
-    # if "nop" in list(df["experiment_type"]):
-    #    info = df[["return_code", "nopped_addr"]]
-    # elif "bit" in list(df["experiment_type"]):
-    #    info = df[["return_code", "flipped_addr", "flipped_index"]]
+    expected_stdout = str(list(df["expected_stdout"])[0])
+    contains_df: pd.DataFrame = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
+    not_contains_df = df.drop(contains_df.index) 
 
-    # Want the number of exit codes that are 1
-    print(df)
+    contains_hist = instruction_hist(contains_df)
+    not_contains_hist = instruction_hist(not_contains_df)
 
-    return
+    print(f"The histogram for the contains hist: {contains_hist}\n\n")
+    print(f"The histogram for the not contains hist: {not_contains_hist}\n\n")
+    return 
+
+def instruction_hist(df):
+    """Get a histogram of the instructions in the df."""
+
+    # Get the vanilla binary
+    vanilla_binary = Path(str(list(df["unmutated_binary"])[0]))
+    assert vanilla_binary.exists()
+    contains_insts = []
+
+    for _, row in df.iterrows():
+        addr = int(row['nopped_addr'])
+
+        disassembly = disassemble_text_section(vanilla_binary)
+
+        inst = [f"{x.mnemonic} {x.op_str}" for x in disassembly if x.address == addr]
+        if inst == []:
+            raise Exception(f"Missing the matching instruction for addres {addr}")
+
+
+        contains_insts.extend(inst)
+
+    hist = Counter(contains_insts)
+
+    return hist
 
 
 def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
@@ -2024,7 +2043,7 @@ def x_nop_reg_seq(
         )
         results.append(result)
 
-    print(f"done")
+    print("done")
     runtime = datetime.now() - start_time
 
     # TODO - Better implement the register version
@@ -3144,7 +3163,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 ins = formated.pop("ins")
                 outs = formated.pop("outs")
                 target = formated.pop("target")
-                nocomp = formated.pop("no_compile")
+                _ = formated.pop("no_compile")
                 expected_correct = int(formated.pop("expected_correct"))
                 params = CommandParameters(**formated)
                 cmd_func(
@@ -3155,7 +3174,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 ins = formated.pop("ins")
                 outs = formated.pop("outs")
                 target = formated.pop("target")
-                nocomp = formated.pop("no_compile")
+                _ = formated.pop("no_compile")
                 timeout = formated.pop("timeout")
                 func_names = formated.pop("func_names")
                 expected_correct = int(formated.pop("expected_correct"))
