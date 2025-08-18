@@ -176,12 +176,15 @@ def x_bit_para_run_helper(common, inst, target: Target, num_bits: int):
             returncode, stdout, stderr = run_binary_w_input(
                 out_file, input, target, common.timeout
             )
-            returncode = shift_exit_code(returncode)
+
+            if returncode is not None:
+                returncode = shift_exit_code(returncode)
+
             results.append(
                 (out_file, returncode, inst, common, target, stdout, stderr, i)
             )
         except Exception as e:
-            print(e)
+            #print(e)
             results.append((out_file, -900, inst, common, target, "", "", i))
 
     return results

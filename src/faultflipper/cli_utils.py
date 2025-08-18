@@ -95,19 +95,6 @@ def smol_show_results(
     expected_stdout: str,
     quiet: bool = True,
 ):
-    #if print_df:
-    #    console.print(
-    #        df[
-    #            [
-    #                x
-    #                for x in df.columns
-    #                if x not in ["binary_path", "other_returncodes"]
-    #            ]
-    #        ]
-    #    )
-    #    print(f"The binaries with the expected output were: {len(list(good_names))}:\n{good_names}")
-    #    print(info[["return_code", "program_stdout", "binary_path"]])
-
     new_freqs = calc_freqs(df, expected_stdout, other_returncodes)
     print_histogram(new_freqs)
 
@@ -137,7 +124,7 @@ def show_results(
     df: pd.DataFrame,
     other_returncodes: list[tuple[str, int]],
     print_df: bool = False,
-    quiet: bool = True,
+    quiet: bool = False,
 ):
     if print_df:
         console.print(
