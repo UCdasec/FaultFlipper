@@ -16,10 +16,18 @@
 *   A sample program to that has a user enter a password and sees if it's correct
 */
 bool password_check(char input[]) {
-    bool flag = false;
+    bool flag = 0;
     if (strncmp(input, PASSWORD, MAX_LENGTH) == 0) {
-        flag = true;
+        flag = 1;
     }
+
+    // Important decision
+    if (flag == 1)  {
+        printf("Correct\n");
+    } else {
+        printf("Wrong\n");
+    }
+
     return flag;
 }
 
@@ -28,7 +36,7 @@ int main(){
     char input[MAX_LENGTH + 1];  
     printf("Enter the password (max %d characters): ", MAX_LENGTH);
 
-    bool flag = false;
+    bool flag = 0;
 
     // fgets takes arguments: (buffer, buffer_size, input) 
     // this assures that the input is no longer than the size of the buffer
@@ -36,7 +44,7 @@ int main(){
         // If the entered password exceeds the 
         // buffer it's incorrect
         if (strchr(input, '\n') == NULL) {
-            flag = false;
+            flag = 0;
         }
         else {
             // Remove the newling character
@@ -45,17 +53,5 @@ int main(){
         flag = password_check(input);
     };
 
-    // Compare the input with the predefined password
-    if (flag == 1)  {
-        printf("Correct\n");
-        return EXIT_SUCCESS;
-    } else {
-        printf("Wrong\n");
-        return 97;
-    }
-
-    return 84;
-
-
-
+    return 0;
 }

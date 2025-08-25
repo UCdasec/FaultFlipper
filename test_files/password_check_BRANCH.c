@@ -15,13 +15,29 @@
 * int main
 *   A sample program to that has a user enter a password and sees if it's correct
 */
-int main() {
+int password_check(char input[]) {
+    int flag = 0;
 
+    if (strncmp(input, PASSWORD, MAX_LENGTH) == 0) {
+        flag = 0xC35A;
+    }
+
+    // Important decision
+    if (flag == 0xC35A)  {
+        printf("Correct\n");
+    } else {
+        printf("Wrong\n");
+    }
+
+    return flag;
+}
+
+int main(){
     // Buffer to store user input (extra byte for null terminator)
     char input[MAX_LENGTH + 1];  
     printf("Enter the password (max %d characters): ", MAX_LENGTH);
 
-    int password_correct = false;
+    int flag = 0;
 
     // fgets takes arguments: (buffer, buffer_size, input) 
     // this assures that the input is no longer than the size of the buffer
@@ -29,34 +45,15 @@ int main() {
         // If the entered password exceeds the 
         // buffer it's incorrect
         if (strchr(input, '\n') == NULL) {
-            password_correct = false;
+            flag = 0;
         }
         else {
             // Remove the newling character
             input[strcspn(input, "\n")] = '\0';
+        };
+        flag = password_check(input);
+    };
 
-            // NOTICE: fgets and strchr make sure the passowrd
-            //      is the correct length so strcmp is safe :)
-            if (strcmp(input, PASSWORD) == 0) {
-                password_correct = 0xC35A;
-            }
-        }
-    }
-    else {
-        printf("no input");
-    }
-
-
-    // Compare the input with the predefined password
-    if (password_correct == 0xC35A)  {
-        printf("Correct\n");
-        // Exit with 0 when exit is correct!
-        return EXIT_SUCCESS;
-    } else {
-        printf("Wrong\n");
-        return 97;
-    }
-
-    return 84;
+    return 0;
 }
 
