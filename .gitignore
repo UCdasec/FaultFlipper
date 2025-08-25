@@ -6,7 +6,8 @@ pixi.lock
 # results 
 faultsim_log/
 results
-experiments
+experiments/
+.*experiment.*/
 DEP
 ML_RESULTS
 
