@@ -3,85 +3,85 @@
 # NOP
 ########
 
-[experiment.para_nop_pass_x86_64_pass]
-command = "para_nop"
+[experiment.nop_pass_x86_64_pass]
+command = "nop"
 program-file = "test_files/password_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_password_check"
+out-dir = "experiments/nop_x86_64_password_check"
 yes= true
 target = "x86_64"
 num_cpus=8
 
-[experiment.para_nop_x86_64_pass_detect]
-command = "para_nop"
+[experiment.nop_x86_64_pass_detect]
+command = "nop"
 program-file = "test_files/password_check_DETECT.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_password_check_DETECT"
+out-dir = "experiments/nop_x86_64_password_check_DETECT"
 yes= true
 target = "x86_64"
 num_cpus=8
 
 
-[experiment.para_nop_x86_64_pass_branch]
-command = "para_nop"
+[experiment.nop_x86_64_pass_branch]
+command = "nop"
 program-file = "test_files/password_check_BRANCH.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_password_check_BRANCH"
+out-dir = "experiments/nop_x86_64_password_check_BRANCH"
 yes= true
 target = "x86_64"
 num_cpus=8
 
 
-[experiment.para_nop_x86_64_pass_double_check]
-command = "para_nop"
+[experiment.nop_x86_64_pass_double_check]
+command = "nop"
 program-file = "test_files/password_check_DOUBLE_CHECK.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_password_check_DOUBLE_CHECK"
+out-dir = "experiments/nop_x86_64_password_check_DOUBLE_CHECK"
 yes= true
 target = "x86_64"
 num_cpus=8
 
 
-[experiment.para_nop_x86_64_fib]
-command = "para_nop"
+[experiment.nop_x86_64_fib]
+command = "nop"
 program-file = "test_files/fib.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_fib"
+out-dir = "experiments/nop_x86_64_fib"
 yes= true
 target = "x86_64"
 num_cpus=8
 
 
 
-[experiment.para_nop_x86_64_fib_loopcheck]
-command = "para_nop"
+[experiment.nop_x86_64_fib_loopcheck]
+command = "nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_fib_LOOPCHECK"
+out-dir = "experiments/nop_x86_64_fib_LOOPCHECK"
 yes= true
 target = "x86_64"
 num_cpus=8

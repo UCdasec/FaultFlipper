@@ -3,15 +3,15 @@
 # Password check experiment
 ######################################################################
 
-[experiment.para_nop_x86]
-command = "para_nop"
+[experiment.nop_x86]
+command = "nop"
 program-file = "test_files/password_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_password_check"
+out-dir = "experiments/nop_x86_64_password_check"
 yes= true
 target = "x86_64"
 num_cpus=8
@@ -30,15 +30,15 @@ target = "x86_64"
 num_cpus=8
 
 
-[experiment.para_nop_riscv]
-command = "para_nop"
+[experiment.nop_riscv]
+command = "nop"
 program-file = "test_files/password_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_riscv_password_check"
+out-dir = "experiments/nop_riscv_password_check"
 yes= true
 target = "riscv"
 num_cpus=8
@@ -57,15 +57,15 @@ target = "riscv"
 num_cpus=8
 
 
-[experiment.para_nop_arm32]
-command = "para_nop"
+[experiment.nop_arm32]
+command = "nop"
 program-file = "test_files/password_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_arm32_password_check"
+out-dir = "experiments/nop_arm32_password_check"
 yes= true
 target = "arm_32"
 num_cpus=8
@@ -88,15 +88,15 @@ num_cpus=8
 ######################################################################
 # fib experiment
 ######################################################################
-[experiment.para_nop_x86]
-command = "para_nop"
+[experiment.nop_x86]
+command = "nop"
 program-file = "test_files/fib.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_fib"
+out-dir = "experiments/nop_x86_64_fib"
 yes= true
 target = "x86_64"
 num_cpus=8
@@ -115,15 +115,15 @@ target = "x86_64"
 num_cpus=8
 
 
-[experiment.para_nop_riscv]
-command = "para_nop"
+[experiment.nop_riscv]
+command = "nop"
 program-file = "test_files/fib.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_riscv_fib"
+out-dir = "experiments/nop_riscv_fib"
 yes= true
 target = "riscv"
 num_cpus=8
@@ -142,15 +142,15 @@ target = "riscv"
 num_cpus=8
 
 
-[experiment.para_nop_arm32]
-command = "para_nop"
+[experiment.nop_arm32]
+command = "nop"
 program-file = "test_files/fib.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_arm32_fib"
+out-dir = "experiments/nop_arm32_fib"
 yes= true
 target = "arm_32"
 num_cpus=8
@@ -174,15 +174,15 @@ num_cpus=8
 ######################################################################
 # fib_loop_check.c experiment
 ######################################################################
-[experiment.para_nop_x86]
-command = "para_nop"
+[experiment.nop_x86]
+command = "nop"
 program-file = "test_files/fib_loop_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_x86_64_fib_loop_check"
+out-dir = "experiments/nop_x86_64_fib_loop_check"
 yes= true
 target = "x86_64"
 num_cpus=8
@@ -201,15 +201,15 @@ target = "x86_64"
 num_cpus=8
 
 
-[experiment.para_nop_riscv]
-command = "para_nop"
+[experiment.nop_riscv]
+command = "nop"
 program-file = "test_files/fib_loop_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_riscv_fib_loop_check"
+out-dir = "experiments/nop_riscv_fib_loop_check"
 yes= true
 target = "riscv"
 num_cpus=8
@@ -228,15 +228,15 @@ target = "riscv"
 num_cpus=8
 
 
-[experiment.para_nop_arm32]
-command = "para_nop"
+[experiment.nop_arm32]
+command = "nop"
 program-file = "test_files/fib_loop_check.c"
 program-input = "wrong\n"
 expected-returncode = 0 
 expected-stdout = "Correct"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_arm32_fib_loop_check"
+out-dir = "experiments/nop_arm32_fib_loop_check"
 yes= true
 target = "arm_32"
 num_cpus=8

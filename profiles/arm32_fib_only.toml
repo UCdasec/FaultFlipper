@@ -5,30 +5,30 @@
 ########
 
 
-[experiment.para_nop_arm32_fib]
-command = "para_nop"
+[experiment.nop_arm32_fib]
+command = "nop"
 program-file = "test_files/fib.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_arm32_fib"
+out-dir = "experiments/nop_arm32_fib"
 yes= true
 target = "arm_32"
 num_cpus=8
 
 
 
-[experiment.para_nop_arm32_fib_loopcheck]
-command = "para_nop"
+[experiment.nop_arm32_fib_loopcheck]
+command = "nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_nop_arm32_fib_LOOPCHECK"
+out-dir = "experiments/nop_arm32_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
 num_cpus=8

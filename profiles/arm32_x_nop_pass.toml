@@ -1,0 +1,555 @@
+########
+# NOP-1
+########
+[experiment.nop1_pass_arm32_pass]
+command = "x_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=1
+
+[experiment.nop1_arm32_pass_detect]
+command = "x_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check_DETECT"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=1
+
+
+[experiment.nop1_arm32_pass_branch]
+command = "x_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check_BRANCH"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=1
+
+
+[experiment.nop1_arm32_pass_double_check]
+command = "x_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=1
+
+
+[experiment.nop1_arm32_fib]
+command = "x_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=1
+
+
+
+[experiment.nop1_arm32_fib_loopcheck]
+command = "x_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=1
+
+
+
+
+
+########
+# NOP-2
+########
+[experiment.nop2_pass_arm32_pass]
+command = "x_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop2_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=2
+
+[experiment.nop2_arm32_pass_detect]
+command = "x_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop2_arm32_password_check_DETECT"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=2
+
+
+[experiment.nop2_arm32_pass_branch]
+command = "x_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop2_arm32_password_check_BRANCH"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=2
+
+
+[experiment.nop2_arm32_pass_double_check]
+command = "x_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop2_arm32_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=2
+
+
+[experiment.nop2_arm32_fib]
+command = "x_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop2_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=2
+
+
+
+[experiment.nop2_arm32_fib_loopcheck]
+command = "x_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop2_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=2
+
+
+
+########
+# NOP-3
+########
+[experiment.nop3_pass_arm32_pass]
+command = "x_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop3_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=3
+
+[experiment.nop3_arm32_pass_detect]
+command = "x_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop3_arm32_password_check_DETECT"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=3
+
+
+[experiment.nop3_arm32_pass_branch]
+command = "x_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop3_arm32_password_check_BRANCH"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=3
+
+
+[experiment.nop3_arm32_pass_double_check]
+command = "x_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop3_arm32_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=3
+
+
+[experiment.nop3_arm32_fib]
+command = "x_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop3_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=3
+
+
+
+[experiment.nop3_arm32_fib_loopcheck]
+command = "x_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop3_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=3
+
+
+########
+# NOP-4
+########
+[experiment.nop4_pass_arm32_pass]
+command = "x_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop4_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=4
+
+[experiment.nop4_arm32_pass_detect]
+command = "x_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop4_arm32_password_check_DETECT"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=4
+
+
+[experiment.nop4_arm32_pass_branch]
+command = "x_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop4_arm32_password_check_BRANCH"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=4
+
+
+[experiment.nop4_arm32_pass_double_check]
+command = "x_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop4_arm32_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=4
+
+
+[experiment.nop4_arm32_fib]
+command = "x_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop4_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=4
+
+
+
+[experiment.nop4_arm32_fib_loopcheck]
+command = "x_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop4_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=4
+
+########
+# NOP
+########
+[experiment.nop_pass_arm32_pass]
+command = "x_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+[experiment.nop_arm32_pass_detect]
+command = "x_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check_DETECT"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+[experiment.nop_arm32_pass_branch]
+command = "x_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check_BRANCH"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+[experiment.nop_arm32_pass_double_check]
+command = "x_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+[experiment.nop_arm32_fib]
+command = "x_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+[experiment.nop_arm32_fib_loopcheck]
+command = "x_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop1_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+
+
+
+########
+# NOP-8
+########
+[experiment.nop8_pass_arm32_pass]
+command = "x_nop"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop8_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=8
+
+[experiment.nop8_arm32_pass_detect]
+command = "x_nop"
+program-file = "test_files/password_check_DETECT.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop8_arm32_password_check_DETECT"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=8
+
+
+[experiment.nop8_arm32_pass_branch]
+command = "x_nop"
+program-file = "test_files/password_check_BRANCH.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop8_arm32_password_check_BRANCH"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=8
+
+
+[experiment.nop8_arm32_pass_double_check]
+command = "x_nop"
+program-file = "test_files/password_check_DOUBLE_CHECK.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop8_arm32_password_check_DOUBLE_CHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=8
+
+
+[experiment.nop8_arm32_fib]
+command = "x_nop"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop8_arm32_fib"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=8
+
+
+
+[experiment.nop8_arm32_fib_loopcheck]
+command = "x_nop"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "nop_x_experiments/nop8_arm32_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=8
+num_nops=8
+
