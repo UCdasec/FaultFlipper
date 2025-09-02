@@ -28,21 +28,29 @@ scikit-learn = ">=1.6.1,<2"
 pip = ">=25.1.1,<26"
 pillow = ">=11.2.1,<12"
 pytest = ">=8.4.1,<9"
+pycparser = ">=2.22,<3"
 
 [pypi-dependencies]
 lief = ">=0.16.0, <0.17"
 pyqt5 = ">=5.15.11, <6"
 dearpygui = ">=2.0.0, <3"
 alive-progress = ">=3.2.0, <4"
-angr = ">=9.2.65, <10"
 claripy = ">=9.2.65, <10"
 deal = ">=4.24.5, <5"
 emlearn = ">=0.21.2, <0.22"
 faultflipper = { path = ".", editable = true }
+angr = ">=9.2.65, <10"
 
 
 [tasks]
 cli = "python src/faultflipper/cli.py"
+run = "python src/faultflipper/cli.py run"
 test = "pytest tests"
+
+#[feature.default]
+#system-requirements = { apt = ["gcc ", 
+#        "riscv64-linux-gnu-gcc", 
+#        "aarch64-linux-gnu-gcc", 
+#        "arm-linux-gnueabi-gcc"]}
 
 #[tool.pixi.scripts]

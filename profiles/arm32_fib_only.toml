@@ -16,7 +16,7 @@ timeout = 4
 out-dir = "experiments/nop_arm32_fib"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 
@@ -31,7 +31,7 @@ timeout = 4
 out-dir = "experiments/nop_arm32_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 
@@ -50,7 +50,7 @@ timeout = 4
 out-dir = "experiments/para_double_nop_arm32_fib"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 
@@ -65,7 +65,7 @@ timeout = 4
 out-dir = "experiments/para_double_nop_arm32_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 
@@ -85,7 +85,7 @@ timeout = 4
 out-dir = "experiments/para_bit_arm32_fib"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 
@@ -100,7 +100,7 @@ timeout = 4
 out-dir = "experiments/para_bit_arm32_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 ########
@@ -108,7 +108,8 @@ num_cpus=8
 ########
 
 [experiment.para_double_bit_arm32_fib]
-command = "para_double_bit"
+command = "x_bit"
+num_bits=2
 program-file = "test_files/fib.c"
 program-input = ""
 expected-returncode = 0 
@@ -118,12 +119,13 @@ timeout = 4
 out-dir = "experiments/para_double_bit_arm32_fib"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
 
 [experiment.para_double_bit_arm32_fib_loopcheck]
-command = "para_double_bit"
+command = "x_bit"
+num_bits=2
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = ""
 expected-returncode = 0 
@@ -133,6 +135,6 @@ timeout = 4
 out-dir = "experiments/para_double_bit_arm32_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
-num_cpus=8
+num_cpus=24
 
 
