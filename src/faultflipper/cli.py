@@ -22,6 +22,8 @@ from cli_utils import (
     Backends,
     RegCommandParameters,
     show_results,
+    parse_results,
+    str_in_col,
     BitFlipExperimentResult,
     NopExperimentResult,
     RegNopExperimentResult,
@@ -205,9 +207,9 @@ def bit_no_comp_inout(
 ) -> pd.DataFrame:
     """Run a bit experiment on a already compiled binary with (in,out) tups.
 
-    Basically this runs x-bit with many different inputs. 
+    Basically this runs x-bit with many different inputs.
 
-    I.E) For ML, we pass in (input, output) pairs. That is mayeb 40 pairs of 
+    I.E) For ML, we pass in (input, output) pairs. That is mayeb 40 pairs of
     inputs and labels. Then, EACH mutated binary will be checked against ALL
     40 pairs.
     """
@@ -217,19 +219,20 @@ def bit_no_comp_inout(
         ("correct_prediction", 0),
     ]
 
-    res_file = common.out_dir.joinpath('results.csv')
-
+    res_file = common.out_dir.joinpath("results.csv")
 
     if not common.yes:
         num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
         num_bytes = len(lief.parse(common.program_file).get_section(".text").content)
         num_insns = len(disassemble_text_section(common.program_file))
-        cont = str(input(f"Run with {num_bits} bits, {num_bytes} bytes, {num_insns} insns? (Yy/Nn)"))
+        cont = str(
+            input(
+                f"Run with {num_bits} bits, {num_bytes} bytes, {num_insns} insns? (Yy/Nn)"
+            )
+        )
 
         if cont.lower() != "y":
             return
-
-
 
     if res_file.exists():
         # Gather the results
@@ -279,8 +282,7 @@ def bit_no_comp_inout(
         df = dataclass_to_dataframe(results)
         save_df(df, res_file)
 
-
-    # Add a column for whetehr or not the output was correct and if the returncode indicates 
+    # Add a column for whetehr or not the output was correct and if the returncode indicates
     # a binary failed to run.
     df["correct"] = [
         exp in prog
@@ -291,17 +293,19 @@ def bit_no_comp_inout(
     df["failed"] = df["return_code"] == -999
 
     # Build a MultiIndex of the bad (nopped_addr, index) pairs
-    bad_idx = pd.MultiIndex.from_frame(df.loc[df["return_code"] == -999, ["flipped_addr", "flipped_index"]])
+    bad_idx = pd.MultiIndex.from_frame(
+        df.loc[df["return_code"] == -999, ["flipped_addr", "flipped_index"]]
+    )
 
     # Filter out rows whose tuple is in bad_idx
-    df_no_fail = df[~pd.MultiIndex.from_frame(df[["flipped_addr", "flipped_index"]]).isin(bad_idx)]
+    df_no_fail = df[
+        ~pd.MultiIndex.from_frame(df[["flipped_addr", "flipped_index"]]).isin(bad_idx)
+    ]
 
     print(f"The shape of the dataframe that HAS fails is {df.shape}")
     print(f"The shape of the dataframe that dropped fails is {df_no_fail.shape}")
 
-    ROWS_PER_COMBO = (
-        df.groupby(["flipped_addr", "flipped_index"]).size().iloc[0]
-    )
+    ROWS_PER_COMBO = df.groupby(["flipped_addr", "flipped_index"]).size().iloc[0]
 
     # Make a agg group based on fliopped addr and index
     agg_df = (
@@ -310,35 +314,52 @@ def bit_no_comp_inout(
         .reset_index()
     )
 
-    # Make a agg group based on fliopped addr and index and not allowing any 
+    # Make a agg group based on fliopped addr and index and not allowing any
     # groups that have atleast one failed index
     agg_df_no_fail = (
         df_no_fail.groupby(["flipped_addr", "flipped_index"])
-            #.filter(lambda g: not (g["failed"] == -999).any())
+        # .filter(lambda g: not (g["failed"] == -999).any())
         .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
         .reset_index()
     )
 
     agg_df["accuracy"] = agg_df.apply(
-        lambda row: row['total_correct'] / len(outs), axis=1
+        lambda row: row["total_correct"] / len(outs), axis=1
     )
 
     agg_df_no_fail["accuracy"] = agg_df.apply(
-        lambda row: row['total_correct'] / len(outs), axis=1
+        lambda row: row["total_correct"] / len(outs), axis=1
     )
 
-    #agg_df_no_fail_upsests_only["accuracy"] = agg_df.apply(
+    # agg_df_no_fail_upsests_only["accuracy"] = agg_df.apply(
     #    lambda row: row['total_correct'] / len(outs), axis=1
-    #)
+    # )
 
+    # plot_df = agg_df_no_fail[(int(agg_df_no_fail["total_correct"]) != int(expected_correct)) & (agg_df_no_fail['total_correct'] != 0)]
+    plot_df = agg_df_no_fail[
+        int(agg_df_no_fail["total_correct"]) != int(expected_correct)
+    ]
 
-    #plot_df = agg_df_no_fail[(int(agg_df_no_fail["total_correct"]) != int(expected_correct)) & (agg_df_no_fail['total_correct'] != 0)]
-    plot_df = agg_df_no_fail[int(agg_df_no_fail["total_correct"]) != int(expected_correct)]
-    #plot_df = agg_df_no_fail[(agg_df_no_fail["total_correct"] != (expected_correct / len(outs)))]
+    # plot_df = agg_df_no_fail[(agg_df_no_fail["total_correct"] != (expected_correct / len(outs)))]
 
-    plot_desc_accuracy(plot_df, expected_correct / len(outs), common.out_dir.joinpath("bar_plot.png"),is_bit=True)
-    plot_accuracy_ecdf(plot_df, expected_correct / len(outs), common.out_dir.joinpath("ecdf_plot.png"),is_bit=True)
-    plot_accuracy_rank(plot_df, expected_correct / len(outs), common.out_dir.joinpath("rank_plot.png"),is_bit=True)
+    plot_desc_accuracy(
+        plot_df,
+        expected_correct / len(outs),
+        common.out_dir.joinpath("bar_plot.png"),
+        is_bit=True,
+    )
+    plot_accuracy_ecdf(
+        plot_df,
+        expected_correct / len(outs),
+        common.out_dir.joinpath("ecdf_plot.png"),
+        is_bit=True,
+    )
+    plot_accuracy_rank(
+        plot_df,
+        expected_correct / len(outs),
+        common.out_dir.joinpath("rank_plot.png"),
+        is_bit=True,
+    )
 
     print("Histogram of #correct rows per (addr, idx):")
     print(agg_df["total_correct"].value_counts().sort_index())
@@ -355,17 +376,17 @@ def bit_no_comp_inout(
     correct_per_mutated_no_fail = grouped_df_no_fail["correct"].sum()
 
     counts = correct_per_mutated.value_counts()
-    #print(f"GROUPPED WITH FAILS: ")
-    #print(grouped_df)
+    # print(f"GROUPPED WITH FAILS: ")
+    # print(grouped_df)
     print(f"The value counts of correct predictions:")
     print(counts)
 
-    #print(f"GROUPPED WITHOUT FAILS: ")
-    #print(grouped_df_no_fail)
-    #print(f"The value counts of correct predictions (of binaries that NEVER FAILED):")
-    #counts_no_fail = correct_per_mutated_no_fail.count()
-    #print(counts_no_fail)
-    #print(agg_df['total_correct'].sum())
+    # print(f"GROUPPED WITHOUT FAILS: ")
+    # print(grouped_df_no_fail)
+    # print(f"The value counts of correct predictions (of binaries that NEVER FAILED):")
+    # counts_no_fail = correct_per_mutated_no_fail.count()
+    # print(counts_no_fail)
+    # print(agg_df['total_correct'].sum())
 
     show_results(common, df, other_returncodes)
     return df
@@ -411,7 +432,7 @@ def angr_nop_no_comp_inout(
     tot_bad_res = []
     tot_error_res = []
 
-    res_file = common.out_dir.joinpath('results.csv')
+    res_file = common.out_dir.joinpath("results.csv")
 
     if res_file.exists():
         # Gather the results
@@ -662,101 +683,97 @@ def nn_inout_runner(common, inst, result_out, target, ins, outs, source_code):
 
     return results
 
+def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False):
+    d = df.copy()
+    d["accuracy"] = pd.to_numeric(d["accuracy"], errors="coerce").fillna(0)
 
-
-def plot_desc_accuracy(df,  baseline, out:Path, step=1, width=0.6, is_bit=False):
+    # pick x label column
     if is_bit:
-        print("Using bit")
-        # expect flipped_addr, flipped_index
-        #df = (
-        #    df.reset_index(drop=True)
-        #      .assign(lbl=lambda d: d['flipped_addr'].astype(str) + ':' + d['flipped_index'].astype(str))
-        #)
-            # Build unique labels, ensure numeric accuracy, sort
-        df = (df.reset_index(drop=True)
-                .assign(lbl=lambda d: d['flipped_addr'].astype(str) + ':' + d['flipped_index'].astype(str)))
-        df['accuracy'] = pd.to_numeric(df['accuracy'], errors='coerce')
-        df = df.sort_values('accuracy', ascending=False).reset_index(drop=True)
-
-        N = len(df)
-        x = np.arange(N)
-
-        # Make the figure wider for lots of bars
-        fig_w = min(24, max(10, N * 0.12))
-        fig, ax = plt.subplots(figsize=(fig_w, 5), dpi=150)
-
-        # Key: wide-enough bars, no edges, no antialiasing
-        ax.bar(
-            x, df['accuracy'].to_numpy(),
-            width=0.8,            # >= 0.8 helps avoid moiré
-            align='center',
-            linewidth=0,
-            antialiased=False
-        )
-
-        # Keep limits tight to the bars
-        ax.set_xlim(-0.5, N - 0.5)
-        ax.margins(x=0.0)
-        
+        if "lbl" not in d.columns:
+            d["lbl"] = d["flipped_addr"].astype(str) + ":" + d["flipped_index"].astype(str)
+        xkey = "lbl"
     else:
-        df = df.sort_values('accuracy', ascending=False).reset_index(drop=True)
+        xkey = "nopped_addr"
 
-    #x = np.arange(len(df))
-    #fig, ax = plt.subplots(dpi=150)
-    #ax.bar(x, df['accuracy'].to_numpy(), width=width, align='center', linewidth=0)
+    # sort by accuracy DESC
+    d = d.sort_values("accuracy", ascending=False).reset_index(drop=True)
+    nz = d[d["accuracy"] != 0].copy()
+    z  = d[d["accuracy"] == 0].copy()
+    zcount = len(z)
+
+    # final category order: non-zeros, then two condensed zeros
+    x_labels = nz[xkey].astype(str).tolist()
+    y_vals   = nz["accuracy"].to_numpy()
+
+    if not is_bit:
+        x_labels = [hex(int(x)) for x in x_labels]
+
+    x_labels += ["Others 1", f"Others {zcount}"]
+    y_vals    = np.concatenate([y_vals, [0, 0]])
 
 
-    ##ax.set_xlabel(f'Address (every {step}th shown)')
-    #ax.set_ylabel('Accuracy')
-    #ax.set_title('Accuracy vs Mutated Address')
-    #ax.grid(axis='y', alpha=0.25)
-    #fig.tight_layout()
-    #fig.savefig(out)
+    # categorical positions (for stable geometry), but we show your real labels
+    x_pos = np.arange(len(x_labels))
 
-
-        # ----- Plot -----
-    N = len(df)
-    x = np.arange(N)
-
-    # figure width scales with N but is bounded so it doesn't explode
-    fig_w = min(24, max(8, N * 0.12))
+    # ---- plot ----
+    fig_w = min(24, max(8, len(x_labels) * 0.12))
     fig, ax = plt.subplots(figsize=(fig_w, 5), dpi=150)
 
-    ax.axhline(baseline, color='red', linestyle='--', linewidth=1)
-    ax.text(len(df)-1, baseline+0.01, "baseline", color='red', ha='right', va='bottom', fontsize=9)
+    ax.bar(x_pos, y_vals, width=width, linewidth=0, antialiased=False, zorder=2)
 
-    ax.bar(
-        x, df['accuracy'].to_numpy(),
-        width=width,
-        align='center',
-        linewidth=0,          # kill bar borders
-        antialiased=False     # reduces zebra artifacts
-    )
+    # y-limits: keep bottom at 0, give headroom for baseline/bars so plot isn't squished
+    top_needed = max(y_vals.max(), float(baseline))
+    ax.set_ylim(0, top_needed * 1.10 if top_needed > 0 else 1.0)
 
-    # ticks: every `step` bars, aligned with positions
-    #tick_idx = np.arange(0, N, step) if step > 0 else np.arange(N)
-    #ax.set_xticks(tick_idx)
-    #ax.set_xticklabels(df[use_label].iloc[tick_idx].astype(str), rotation=45, ha='right')
+    # draw baseline
+    ax.axhline(baseline, color="red", linestyle="--", linewidth=1, zorder=1)
+    ymin, ymax = ax.get_ylim()
+    ax.text(x_pos[-1], baseline + 0.01*(ymax - ymin), "Original",
+            color="red", ha="right", va="bottom", fontsize=16, fontweight='bold')
 
-    # keep limits tight to the bars
-    ax.set_xlim(-0.5, N - 0.5)
-    ax.margins(x=0.01)
+    # x tick labels (your real values)
+    ax.set_xticks(x_pos)
+    #ax.set_xticklabels(x_labels, rotation=45, ha="right")
 
-    # baseline line + label
-    ax.axhline(baseline, linestyle='--', linewidth=1)
-    ax.text(N - 1, baseline + 0.01, "baseline", ha='right', va='bottom')
+    # optional: thin crowded xticks
+    if step > 1:
+        for i, lab in enumerate(ax.get_xticklabels()):
+            lab.set_visible((i % step) == 0)
 
-    ax.set_ylabel('Accuracy')
-    ax.set_title('Accuracy vs Mutated Address (sorted by accuracy ↓)')
-    ax.grid(axis='y', alpha=0.25)
+    # put the bottom spine on y=0 (so slashes can cross the real axis)
+    ax.spines["bottom"].set_position(("data", 0))
+    ax.spines["bottom"].set_zorder(3)
+
+    # break through the x-axis, centered between the two zero blocks
+    # the two zero blocks are at positions len(nz) and len(nz)+1
+    if zcount:
+        x_break = len(nz) + 0.5          # midpoint between the two condensed zeros
+        yr = ymax - 0
+        dx = 0.12                        # half-width of each slash (x units)
+        dy = 0.045 * yr                  # half-height so it clearly crosses the axis
+
+        ax.plot([x_break - dx, x_break], [-dy, +dy], color="k", lw=1.6, clip_on=False, zorder=4)
+        ax.plot([x_break, x_break + dx], [-dy, +dy], color="k", lw=1.6, clip_on=False, zorder=4)
+
+        #ax.annotate(f"{zcount} zeros condensed",
+        #            xy=(x_break, 0), xytext=(0, -10), textcoords="offset points",
+        #            ha="center", va="top", fontsize=8)
+
+    ax.set_xticklabels(x_labels, rotation=60, ha="right", fontsize=12)
+
+    ax.set_ylabel("Accuracy", fontsize=16, fontweight="bold")
+    ax.grid(axis="y", alpha=0.25, zorder=0)
+
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+        lbl.set_fontweight("bold")
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.0)
+
 
     fig.tight_layout()
-    fig.savefig(out)
-
-
-
+    fig.savefig(out, dpi=1_200)
     return
-
 
 
 @app.command
@@ -784,8 +801,7 @@ def nop_no_comp_inout(
         ("correct_prediction", 0),
     ]
 
-
-    res_file = common.out_dir.joinpath('results.csv')
+    res_file = common.out_dir.joinpath("results.csv")
     if res_file.exists():
         # Gather the results
         df = pd.read_csv(res_file)
@@ -811,10 +827,7 @@ def nop_no_comp_inout(
 
         # Load the target type
         target = detect_target(common.program_file)
-        #logger.debug(f"Detected Target: {target}")
-
         results: list[NopExperimentResult] = []
-
         futures = []
 
         with ThreadPoolExecutor(max_workers=num_cpus) as executor:
@@ -873,18 +886,22 @@ def nop_no_comp_inout(
         .reset_index()
     )
 
-
     agg_df["accuracy"] = agg_df.apply(
-        lambda row: row['total_correct'] / len(outs), axis=1
+        lambda row: row["total_correct"] / len(outs), axis=1
     )
 
     plot_df = agg_df[agg_df["total_correct"] != expected_correct]
-    #plot_desc_accuracy(plot_df, expected_correct / len(outs),common.out_dir.joinpath("bar_plot.png"))
+    # plot_desc_accuracy(plot_df, expected_correct / len(outs),common.out_dir.joinpath("bar_plot.png"))
 
-    plot_desc_accuracy(plot_df, expected_correct / len(outs), common.out_dir.joinpath("bar_plot.png"))
-    plot_accuracy_ecdf(plot_df, expected_correct / len(outs), common.out_dir.joinpath("ecdf_plot.png"))
-    plot_accuracy_rank(plot_df, expected_correct / len(outs), common.out_dir.joinpath("rank_plot.png"))
-
+    plot_desc_accuracy(
+        plot_df, expected_correct / len(outs), common.out_dir.joinpath("bar_plot.png")
+    )
+    plot_accuracy_ecdf(
+        plot_df, expected_correct / len(outs), common.out_dir.joinpath("ecdf_plot.png")
+    )
+    plot_accuracy_rank(
+        plot_df, expected_correct / len(outs), common.out_dir.joinpath("rank_plot.png")
+    )
 
     print(f"We have {agg_df.shape} shaped agg df")
     print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
@@ -1049,8 +1066,7 @@ def x_bit_reg_seq(
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
     compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
 
-
-    res_file = common.out_dir.joinpath('results.csv')
+    res_file = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
 
@@ -1320,7 +1336,7 @@ def x_bit_reg_parallel(
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
     compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
 
-    res_file = common.out_dir.joinpath('results.csv')
+    res_file = common.out_dir.joinpath("results.csv")
     common.out_dir = common.out_dir.joinpath("mutated_bins")
     common.out_dir.mkdir(exist_ok=True)
 
@@ -1452,7 +1468,13 @@ def x_bit_reg_parallel(
     return
 
 
-def x_bit_qemu_seq(common: CommandParameters, target: Target, num_bits: int, log_matching: bool, optimization: OptimizationLevel):
+def x_bit_qemu_seq(
+    common: CommandParameters,
+    target: Target,
+    num_bits: int,
+    log_matching: bool,
+    optimization: OptimizationLevel,
+):
     """Run the x bit mutation scheme with a qemu backend.
 
     Run the X-BIT fault model, with qemu in a sequential fashion.
@@ -1609,11 +1631,6 @@ def x_bit_qemu_parallel(
             return
 
     disasm = disassemble_text_section(common.program_file)
-
-    print(f"Binary had {len(disasm)} ins")
-    print(disasm)
-
-
     futures = []
     results: list[BitFlipExperimentResult] = []
 
@@ -1670,7 +1687,8 @@ def x_bit_qemu_parallel(
 
     save_df(df, res_file)
 
-    show_results(common, df, other_returncodes, log_matching=log_matching)
+    # show_results(common, df, other_returncodes, log_matching=log_matching)
+    show_results(common, df, other_returncodes)
 
     # Lastly save the experiment parameters
     params = common.to_dict()
@@ -1913,7 +1931,9 @@ def x_bit(
             x_bit_reg_seq(common, target, func_names, num_bits, verbose, optimization)
         else:
             # Parallel
-            x_bit_reg_parallel(common, target, num_cpus, func_names, num_bits, verbose, optimization)
+            x_bit_reg_parallel(
+                common, target, num_cpus, func_names, num_bits, verbose, optimization
+            )
     elif backend == backend.QEMU:
         # Now assert that we have stdout and expected return code
         if common.expected_stdout is None or common.expected_returncode is None:
@@ -1926,7 +1946,9 @@ def x_bit(
             x_bit_qemu_seq(common, target, num_bits, log_matching, optimization)
         else:
             # Parallel
-            x_bit_qemu_parallel(common, target, num_cpus, num_bits, log_matching, optimization)
+            x_bit_qemu_parallel(
+                common, target, num_cpus, num_bits, log_matching, optimization
+            )
     return
 
 
@@ -1943,7 +1965,7 @@ def x_nop(
     optimization: OptimizationLevel = OptimizationLevel.O0,
 ):
     """
-    Command to run NOP experiments! 
+    Command to run NOP experiments!
     """
 
     if backend == Backends.ANGR and num_cpus > 1:
@@ -1959,7 +1981,9 @@ def x_nop(
         else:
             # Parallel
             logger.info(f"Staring with backend {backend} parallel")
-            x_nop_reg_parallel(common, target, num_cpus, func_names, num_nops, verbose, optimization)
+            x_nop_reg_parallel(
+                common, target, num_cpus, func_names, num_nops, verbose, optimization
+            )
     elif backend == backend.QEMU:
         # Now assert that we have stdout and expected return code
         if common.expected_stdout is None or common.expected_returncode is None:
@@ -1975,7 +1999,14 @@ def x_nop(
             # Parallel
             logger.info(f"Staring with backend {backend} parallel")
             print(f"Optimization is {optimization}")
-            x_nop_qemu_parallel(common, target, num_cpus, num_nops, log_matching, optimization=optimization)
+            x_nop_qemu_parallel(
+                common,
+                target,
+                num_cpus,
+                num_nops,
+                log_matching,
+                optimization=optimization,
+            )
 
     return
 
@@ -2348,7 +2379,9 @@ def x_nop_qemu_parallel(
         bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
         # Compile the binary for the target
-        common.program_file = compile_program(source_code, bin_out, target, optimization)
+        common.program_file = compile_program(
+            source_code, bin_out, target, optimization
+        )
         compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
     else:
         source_code = ""
@@ -2440,6 +2473,14 @@ def x_nop_qemu_parallel(
     )
     print(f"Report saved to {report_path}")
 
+    upset_on_match = False if "fib" in results[0].source_file.name else True
+    print(f"UPSET ON MATHC: {upset_on_match}")
+    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
+    print(f"Had {normal_df.shape}) normal")
+    print(f"Had {error_df.shape}) error")
+    print(f"Had {fault_df.shape}) fault")
+
     return
 
 
@@ -2511,7 +2552,9 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                     )
                 else:
                     params = CommandParameters(**formated)
-                    cmd_func(params, target=target, num_cpus=num_cpus, func_names=func_names)
+                    cmd_func(
+                        params, target=target, num_cpus=num_cpus, func_names=func_names
+                    )
 
             elif command_name in ["x_bit"]:
                 target = formated.pop("target")
@@ -2523,12 +2566,17 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                     formated.pop("num_bits")
                     params = CommandParameters(**formated)
                     cmd_func(
-                        params, target=target, num_cpus=num_cpus, num_bits=num_bits, func_names=func_names,
+                        params,
+                        target=target,
+                        num_cpus=num_cpus,
+                        num_bits=num_bits,
+                        func_names=func_names,
                     )
                 else:
                     params = CommandParameters(**formated)
-                    cmd_func(params, target=target, num_cpus=num_cpus, func_names=func_names)
-
+                    cmd_func(
+                        params, target=target, num_cpus=num_cpus, func_names=func_names
+                    )
 
             elif command_name in ["x_nop_reg"]:
                 target = formated.pop("target")
@@ -2712,6 +2760,7 @@ def dataset_split_random(
     test = data.loc[test_idx]
 
     return train, val, test
+
 
 @app.command()
 def new_nn_test(inp: Path, out: Path, test_size: int):
@@ -3045,8 +3094,9 @@ def compare_plot(
     return plt
 
 
-
-def _accuracy_series(df: pd.DataFrame, *, is_bit: bool, aggregate: str = "max") -> np.ndarray:
+def _accuracy_series(
+    df: pd.DataFrame, *, is_bit: bool, aggregate: str = "max"
+) -> np.ndarray:
     """
     Return a 1D numpy array of accuracies suitable for plotting.
     - is_bit=True: one row per (flipped_addr, flipped_index) -> use all rows.
@@ -3127,7 +3177,6 @@ def plot_accuracy_rank(
     fig.savefig(out)
 
 
-
 @app.command()
 def compare_regs(
     inp: Path,
@@ -3179,48 +3228,120 @@ def compare_regs(
     return
 
 
+@app.command()
+def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path):
+    """
+    Make the spectrral plot.
+
+    Spectral plot has the address as the x addr and plots
+    which bytes cause a fault and which caused a program error.
+
+    This is done for a single c source code file.
+    """
+
+    # Load the results and get all addrs that caused a successful attack
+
+    # If this is a fib example, successful attack is returncode = 0
+    # and STDOUT != expected
+
+    # If this is a pass ewxample , seccessful attack is returncode= 0
+    # and Correct in STDOUT
+
+    nop_df = pd.read_csv(nop_exp_results)
+    bit_df = pd.read_csv(bit_exp_results)
+
+    all_addrs = set(nop_df["nopped_addr"].tolist())
+
+    bit_all_addrs = set(bit_df["flipped_addr"].tolist())
+
+    print(f"Len nop addrs: {len(all_addrs)}")
+    print(f"Len bit addrs: {len(bit_all_addrs)}")
+    assert bit_all_addrs == all_addrs
+
+    nop_normal, nop_error, nop_fault = parse_results(nop_df)
+    bit_normal, bit_error, bit_fault = parse_results(bit_df)
+
+    nop_list = set(nop_fault["nopped_addr"].tolist())
+    bit_list = set(bit_fault["flipped_addr"].tolist())
+
+    # nop_list = [int(x,16) for x in nop_fault['nopped_addr'].tolist()]
+    # nop_list = [int(x)-min_addr for x in nop_fault['nopped_addr'].tolist()]
+    # bit_list = bit_fault['flipped_addr'].tolist()
+    # bit_list = list(set([int(x,16) for x in bit_fault['flipped_addr'].tolist()]))
+    # bit_list = list(set([int(x)-min_addr_bit for x in bit_fault['flipped_addr'].tolist()]))
+    # print(f"The nop list is {nop_list}")
+    # print(f"The bit list is {bit_list}")
+
+    nop_e_list = set(nop_error["nopped_addr"].tolist())
+    bit_e_list = set(bit_error["flipped_addr"].tolist())
+    # nop_e_list = [int(x,16) for x in nop_error['nopped_addr'].tolist()]
+    # nop_e_list = [int(x) for x in nop_error['nopped_addr'].tolist()]
+    # bit_e_list = list(set([int(x,16) for x in bit_error['flipped_addr'].tolist()]))
+    # bit_e_list = list(set([int(x) for x in bit_error['flipped_addr'].tolist()]))
+
+    # Need to map the nopped_addr to the "line"
+    # and flipped_addr to line
+
+    create_plot(
+        nop_list, bit_list, nop_e_list, bit_e_list, nop_df.shape[0], out, all_addrs
+    )
+
+    return
+
+
 def create_plot(
-    nop_list, bit_list, nop_segfaults, bit_segfaults, num_instructions
+    nop_list,
+    bit_list,
+    nop_segfaults,
+    bit_segfaults,
+    num_instructions,
+    out: Path,
+    all_addrs,
 ):
     """Create a spectrum plot.
 
-    Make a spectrum gram plot of the data. 
+    Make a spectrum gram plot of the data.
     """
 
     # Configuration
     dynamic_dtypes = ["NOP     ", "BIT     "]
     colors = {
-        "Both": "#7f2a19",        # blue
-        "SIGSEGV": "#f6b26b",     # orange
+        "Both": "#7f2a19",  # blue
+        "SIGSEGV": "#f6b26b",  # orange
         "Vulnerable": "#e66c2c",  # red
-        "normal": "#e0e0e0",      # gray (default background)
+        "normal": "#e0e0e0",  # gray (default background)
     }
 
-    nops = [ln for _, ln in nop_list]
-    bits = [ln for _, ln in bit_list]
-
+    # nops = [ln for _, ln in nop_list]
+    # bits = [ln for _, ln in bit_list]
 
     # Rows to in table consisting of sublists
-    dynamic_vulns = [nops, bits]
+    dynamic_vulns = [nop_list, bit_list]
 
     # Plotting
     figa, ax = plt.subplots(figsize=(16, 4))
 
-    plt.rcParams.update(
-        {
-            "font.size": 14,  # Base font size
-            "axes.titlesize": 22,  # Title
-            "axes.labelsize": 14,  # X and Y labels
-        }
-    )
+    #plt.rcParams.update(
+    #    {
+    #        "font.size": 14,  # Base font size
+    #        "axes.titlesize": 22,  # Title
+    #        "axes.labelsize": 14,  # X and Y labels
+    #    }
+    #)
 
-    for i, row in enumerate(dynamic_vulns):
-        for j in range(num_instructions):
-            is_vuln = j in row
+    for i, cur_list in enumerate(dynamic_vulns):
+        # Iter over both lists
+        for j, addr in enumerate(all_addrs):
+            # We iterate over all instrcutoins because some of the insutrctions
+            # wil have both some or none.
+
+            # for j in range(num_instructions):
+            is_vuln = addr in cur_list
+
             if i == 0:
-                is_segfault = j in nop_segfaults
+                is_segfault = addr in nop_segfaults
             else:
-                is_segfault = j in bit_segfaults
+                is_segfault = addr in bit_segfaults
 
             if is_vuln and is_segfault:
                 color = colors["Both"]
@@ -3242,18 +3363,27 @@ def create_plot(
     # Formatting
     ax_y_pos = np.arange(len(dynamic_dtypes))
     ax.set_yticks(ax_y_pos)
-    ax.set_yticklabels([f"{d}" for d in dynamic_dtypes])
+    ax.set_yticklabels([f"{d}" for d in dynamic_dtypes], fontsize=24)
     ax.tick_params(axis="y", labelsize=16)
     ax.invert_yaxis()  # Like in the image
 
     tick_interval = 30
     xticks = list(range(0, num_instructions + 1, tick_interval))
     xtick_labels = [str(i + 1) for i in xticks]
+
+
     ax.set_xticks(xticks)
     ax.set_xticklabels(xtick_labels)
 
-    ax.set_xlabel("Line Number", fontsize=16)
-    ax.set_title("Dynamic Vulnerable Instructions")
+    ax.set_xlabel("Line Number", fontsize=24)
+
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+        lbl.set_fontweight("bold")
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.0)
+
+
 
     ax_legend_handles = [
         mpatches.Patch(color=colors["Both"], label="SIGSEGV + Vuln"),
@@ -3267,8 +3397,9 @@ def create_plot(
         borderaxespad=0,
     )
 
-    figa.savefig("out/dynamic_graph.png", dpi=300, bbox_inches="tight")
-    return plt
+    figa.savefig(out, dpi=1200, bbox_inches="tight")
+
+    return
 
 
 if __name__ == "__main__":

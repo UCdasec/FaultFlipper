@@ -97,6 +97,13 @@ class CommandParameters:
             "yes": self.yes,
         }
 
+def str_in_col(df: pd.DataFrame, inp: str, col: str)->pd.DataFrame:
+    """
+    Filter the df to get a sub-df where inp in string in col.
+    """
+    info = df[df[col].str.contains(inp, na=False)]
+    return info
+
 
 def show_results(
     common: CommandParameters,
@@ -139,6 +146,96 @@ def show_results(
 
     return
 
+def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Returns the split of (Normal, Error, upset).
+
+    Success only occurs when the returncode is 0. In some cases, if the 
+    expected STDOUT is found, this is a successful attack, however in other cases 
+    if it is found, this is a failed attack. 
+    """
+
+    expected = df['expected_stdout'][0]
+
+    # If a program does not return 0, it must be an error case
+    return_is_0 = df[df['return_code'] ==0]
+    error = df[df['return_code'] != 0]
+
+    # Get the expected and not expected 
+    out_is_expected =     return_is_0[ return_is_0["program_stdout"].str.contains(expected, na=False)]
+    out_is_not_expected = return_is_0[~return_is_0["program_stdout"].str.contains(expected, na=False)]
+
+    upset = out_is_expected if upset_on_match else out_is_not_expected
+    normal = out_is_expected if not upset_on_match else out_is_not_expected
+
+    # - Temporary code for debugging 
+    #print(f"[ IN PARSE ] Had {len(return_is_0['program_stdout'])} programs return 0, and {len(out_is_not_expected['return_code'])} programs return 0 and not have exepcte output, and {len(out_is_expected['return_code'])} return 0 and have expected")
+    tmp = error[error["program_stdout"].str.contains(expected, na=False)]
+    #print(f"[ IN PARSE ] Had {len(tmp['program_stdout'])} programs return non 0 and have expected output")
+
+    # - Tempoary code done
+    return normal, error, upset
+
+
+def orig_parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Returns the split of (Normal, Error, upset).
+
+    Success only occurs when the returncode is 0. In some cases, if the 
+    expected STDOUT is found, this is a successful attack, however in other cases 
+    if it is found, this is a failed attack. 
+    """
+
+    expected = df['expected_stdout'][0]
+
+    # Get the expected versus the not expected
+    out_is_expected = df[df["program_stdout"].str.contains(expected, na=False)]
+    out_is_not_expected = df[~df["program_stdout"].str.contains(expected, na=False)]
+
+    # Define the upset df, and the remaining,
+    # reamining will be split into nromal and error
+    if upset_on_match:
+        # If the upset is on a match then the definition is easy...
+        upset = out_is_expected 
+        #remaining = out_is_not_expected
+        normal = out_is_not_expected[out_is_not_expected['return_code'] == 0]
+        error =  out_is_not_expected[out_is_not_expected['return_code'] != 0]
+    else:
+        # If the upset is on a non-match, the definition is harder...
+        # That is we need the program to returncode 0 AND have an 
+        # stdout that is not match.
+        upset = out_is_not_expected[out_is_not_expected['return_code'] == 0]
+        error1 = out_is_not_expected[out_is_not_expected['return_code'] != 0]
+        #upset = out_is_not_expected
+
+        error2 = out_is_expected[out_is_expected['return_code'] != 0]
+        normal = out_is_expected[out_is_expected['return_code'] == 0]
+
+        error = pd.concat([error1, error2],axis=1)
+    return normal, error, upset
+
+    #out_is_expected = returncode_is_0[returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+    #out_is_not_expected = returncode_is_0[~returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+
+    #if upset_on_match:
+        
+
+        #TODO: This contradicts with the paper.
+    #upset = out_is_expected if upset_on_match else out_is_not_expected
+    #remaining= out_is_expected if not upset_on_match else out_is_not_expected
+
+    #normal = remaining[remaining['return_code'] == 0]
+    #error = remaining[remaining['return_code'] != 0]
+
+    #return normal, error, upset
+
+    #out_is_expected = returncode_is_0[returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+    #out_is_not_expected = returncode_is_0[~returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+
+    #if upset_on_match:
+    #    return out_is_not_expected, returncode_means_error, out_is_expected
+
+    #return  returncode_means_error, out_is_not_expected, out_is_expected
+
+
 def print_histogram(results):
     """
     results: dict[str, int]
@@ -175,12 +272,16 @@ def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     """
 
     freqs = df["return_code"].value_counts().to_dict()
+
     if isinstance(expected_stdout, list):
         correct_stdouts = []
     else:
-        correct_stdouts = df[
-            df["program_stdout"].str.contains(expected_stdout, na=False)
+        ret_is_0 = df[df['return_code'] == 0]
+        correct_stdouts = ret_is_0[
+            ret_is_0["program_stdout"].str.contains(expected_stdout, na=False)
         ]
+
+    print(f"[ IN CALC ] had {len(correct_stdouts)} correct stdout but {freqs[0]} programs return 0" )
 
     new_freqs = {}
     weird_codes = {}
@@ -200,9 +301,9 @@ def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
             if k == value:
                 return_code_name = name + f" ({value})"
 
-        # Split the return code of 1 into two groups:
-        # 1. Returncode 1 + Good stdout
-        # 2. Returncode 1 + bad stdout
+        # Split the return code of 0 into two groups:
+        # 1. Returncode 0 + Good stdout
+        # 2. Returncode 0 + bad stdout
         if k == 0:
             new_freqs[return_code_name] = len(correct_stdouts)
             if v - len(correct_stdouts) > 0:
