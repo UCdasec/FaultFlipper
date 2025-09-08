@@ -683,6 +683,7 @@ def nn_inout_runner(common, inst, result_out, target, ins, outs, source_code):
 
     return results
 
+
 def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False):
     d = df.copy()
     d["accuracy"] = pd.to_numeric(d["accuracy"], errors="coerce").fillna(0)
@@ -690,7 +691,9 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     # pick x label column
     if is_bit:
         if "lbl" not in d.columns:
-            d["lbl"] = d["flipped_addr"].astype(str) + ":" + d["flipped_index"].astype(str)
+            d["lbl"] = (
+                d["flipped_addr"].astype(str) + ":" + d["flipped_index"].astype(str)
+            )
         xkey = "lbl"
     else:
         xkey = "nopped_addr"
@@ -698,19 +701,18 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     # sort by accuracy DESC
     d = d.sort_values("accuracy", ascending=False).reset_index(drop=True)
     nz = d[d["accuracy"] != 0].copy()
-    z  = d[d["accuracy"] == 0].copy()
+    z = d[d["accuracy"] == 0].copy()
     zcount = len(z)
 
     # final category order: non-zeros, then two condensed zeros
     x_labels = nz[xkey].astype(str).tolist()
-    y_vals   = nz["accuracy"].to_numpy()
+    y_vals = nz["accuracy"].to_numpy()
 
     if not is_bit:
         x_labels = [hex(int(x)) for x in x_labels]
 
     x_labels += ["Others 1", f"Others {zcount}"]
-    y_vals    = np.concatenate([y_vals, [0, 0]])
-
+    y_vals = np.concatenate([y_vals, [0, 0]])
 
     # categorical positions (for stable geometry), but we show your real labels
     x_pos = np.arange(len(x_labels))
@@ -728,12 +730,20 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     # draw baseline
     ax.axhline(baseline, color="red", linestyle="--", linewidth=1, zorder=1)
     ymin, ymax = ax.get_ylim()
-    ax.text(x_pos[-1], baseline + 0.01*(ymax - ymin), "Original",
-            color="red", ha="right", va="bottom", fontsize=16, fontweight='bold')
+    ax.text(
+        x_pos[-1],
+        baseline + 0.01 * (ymax - ymin),
+        "Original",
+        color="red",
+        ha="right",
+        va="bottom",
+        fontsize=16,
+        fontweight="bold",
+    )
 
     # x tick labels (your real values)
     ax.set_xticks(x_pos)
-    #ax.set_xticklabels(x_labels, rotation=45, ha="right")
+    # ax.set_xticklabels(x_labels, rotation=45, ha="right")
 
     # optional: thin crowded xticks
     if step > 1:
@@ -747,15 +757,29 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     # break through the x-axis, centered between the two zero blocks
     # the two zero blocks are at positions len(nz) and len(nz)+1
     if zcount:
-        x_break = len(nz) + 0.5          # midpoint between the two condensed zeros
+        x_break = len(nz) + 0.5  # midpoint between the two condensed zeros
         yr = ymax - 0
-        dx = 0.12                        # half-width of each slash (x units)
-        dy = 0.045 * yr                  # half-height so it clearly crosses the axis
+        dx = 0.12  # half-width of each slash (x units)
+        dy = 0.045 * yr  # half-height so it clearly crosses the axis
 
-        ax.plot([x_break - dx, x_break], [-dy, +dy], color="k", lw=1.6, clip_on=False, zorder=4)
-        ax.plot([x_break, x_break + dx], [-dy, +dy], color="k", lw=1.6, clip_on=False, zorder=4)
+        ax.plot(
+            [x_break - dx, x_break],
+            [-dy, +dy],
+            color="k",
+            lw=1.6,
+            clip_on=False,
+            zorder=4,
+        )
+        ax.plot(
+            [x_break, x_break + dx],
+            [-dy, +dy],
+            color="k",
+            lw=1.6,
+            clip_on=False,
+            zorder=4,
+        )
 
-        #ax.annotate(f"{zcount} zeros condensed",
+        # ax.annotate(f"{zcount} zeros condensed",
         #            xy=(x_break, 0), xytext=(0, -10), textcoords="offset points",
         #            ha="center", va="top", fontsize=8)
 
@@ -769,7 +793,6 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
 
     for spine in ax.spines.values():
         spine.set_linewidth(2.0)
-
 
     fig.tight_layout()
     fig.savefig(out, dpi=1_200)
@@ -1595,7 +1618,7 @@ def x_bit_qemu_parallel(
     Run the X-BIT fault model with multiprocessed QEMU.
     """
 
-    max_workers = max(1, num_cpus // 2)  # avoid 0 in case cpu_count() returns None
+    max_workers = max(1, num_cpus // 2)
 
     # Make the dir
     common.out_dir.mkdir(exist_ok=True, parents=True)
@@ -1686,8 +1709,6 @@ def x_bit_qemu_parallel(
     df = dataclass_to_dataframe(results)
 
     save_df(df, res_file)
-
-    # show_results(common, df, other_returncodes, log_matching=log_matching)
     show_results(common, df, other_returncodes)
 
     # Lastly save the experiment parameters
@@ -1734,8 +1755,6 @@ def x_nop_reg_seq(
     """
 
     func_names: list[str] = func_names.split(",")
-
-    print(f"The func names are: {func_names}")
 
     # Make the dir
     common.out_dir.mkdir(exist_ok=True, parents=True)
@@ -1838,44 +1857,6 @@ def x_nop_reg_seq(
     good_res, bad_res, error_case = analyze_reg_results(
         results, func_names, golden_register_info
     )
-
-    # bad_res = []
-    # error_case = []
-    # good_res = []
-
-    # for result in results:
-    #    all_names_good = True
-    #    is_error_case = False
-
-    #    for name in func_names:
-    #        if result.reg_info is None:
-    #            is_error_case = True
-    #            # error_case.append(result)
-    #            continue
-
-    #        if name in result.reg_info.keys():
-    #            # Get a liust of all the r0 values across all calls to func name
-    #            gold_r0_ret = collect_all_reg_calls(golden_register_info, "r0", name)
-    #            mut_r0_ret = collect_all_reg_calls(result.reg_info, "r0", name)
-    #            # is_correct = gold_r0_ret[-1] == mut_r0_ret[-1]
-
-    #            if len(mut_r0_ret) != len(gold_r0_ret):
-    #                is_error_case = True
-    #                continue
-
-    #            is_correct = gold_r0_ret == mut_r0_ret
-
-    #            if not is_correct:
-    #                all_names_good = False
-    #        else:
-    #            is_error_case = True
-
-    #    if is_error_case:
-    #        error_case.append(result)
-    #    elif not all_names_good:
-    #        bad_res.append(result)
-    #    else:
-    #        good_res.append(result)
 
     save_reg_report(
         report_path,
@@ -1998,7 +1979,6 @@ def x_nop(
         else:
             # Parallel
             logger.info(f"Staring with backend {backend} parallel")
-            print(f"Optimization is {optimization}")
             x_nop_qemu_parallel(
                 common,
                 target,
@@ -2397,6 +2377,7 @@ def x_nop_qemu_parallel(
 
     disasm = disassemble_text_section(common.program_file)
     num_instructions = len(disasm)
+
     if not common.yes:
         cont = str(
             input(
@@ -2525,20 +2506,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             if "target" in formated.keys():
                 formated["target"] = Target[formated["target"].upper()]
 
-            if command_name in [
-                "nop",
-                "para_bit",
-                "para_double_nop",
-                "para_double_bit",
-            ]:
-                # print("Launching exp")
-                # Get the other required params
-                target = formated.pop("target")
-                num_cpus = formated.pop("num_cpus")
-                params = CommandParameters(**formated)
-                cmd_func(params, target=target, num_cpus=num_cpus)
-
-            elif command_name in ["x_nop"]:
+            if command_name in ["x_nop"]:
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
                 num_nops = formated.get("num_nops", None)
@@ -2605,11 +2573,12 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 ins = formated.pop("ins")
                 outs = formated.pop("outs")
                 target = formated.pop("target")
+                num_cpus = formated.pop("num_cpus")
                 _ = formated.pop("no_compile")
                 expected_correct = int(formated.pop("expected_correct"))
                 params = CommandParameters(**formated)
                 cmd_func(
-                    params, ins=ins, outs=outs, expected_correct=expected_correct
+                    params, ins=ins, outs=outs, expected_correct=expected_correct, num_cpus=num_cpus
                 )  # , target=target, num_cpus=num_cpus)
 
             elif command_name in ["angr_nop_no_comp_inout"]:
@@ -3321,13 +3290,13 @@ def create_plot(
     # Plotting
     figa, ax = plt.subplots(figsize=(16, 4))
 
-    #plt.rcParams.update(
+    # plt.rcParams.update(
     #    {
     #        "font.size": 14,  # Base font size
     #        "axes.titlesize": 22,  # Title
     #        "axes.labelsize": 14,  # X and Y labels
     #    }
-    #)
+    # )
 
     for i, cur_list in enumerate(dynamic_vulns):
         # Iter over both lists
@@ -3371,7 +3340,6 @@ def create_plot(
     xticks = list(range(0, num_instructions + 1, tick_interval))
     xtick_labels = [str(i + 1) for i in xticks]
 
-
     ax.set_xticks(xticks)
     ax.set_xticklabels(xtick_labels)
 
@@ -3382,8 +3350,6 @@ def create_plot(
 
     for spine in ax.spines.values():
         spine.set_linewidth(2.0)
-
-
 
     ax_legend_handles = [
         mpatches.Patch(color=colors["Both"], label="SIGSEGV + Vuln"),

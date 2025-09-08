@@ -78,6 +78,8 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
             compiler = "gcc -g"
         case Target.RISCV:
             compiler = "riscv64-linux-gnu-gcc"
+        case Target.RISCV_32:
+            compiler = "riscv32-unknown-linux-gnu-gcc"
         case Target.ARM_64:
             compiler = "aarch64-linux-gnu-gcc"
         case Target.ARM_32:
@@ -105,9 +107,11 @@ class Nop(Enum):
     RISCV_32_COMPACT = [0x01, 0x00]
 
 
-def disassemble_text_section(binary_path):
-    """
-    Disassemble the .text section of the binary and output instructions.
+def disassemble_text_section(binary_path: Path):
+    """Disassemble the .text section of the binary and output instructions.
+
+    Use lief to get the bytes from the .text section, then use capstone 
+    to disassemble the bytes. 
     """
 
     if not binary_path.exists():
@@ -129,8 +133,9 @@ def disassemble_text_section(binary_path):
         case Target.X86_32:
             md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
         case Target.RISCV:
-            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV64)
-
+            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC )
+        case Target.RISCV_32:
+            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC )
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
@@ -142,16 +147,28 @@ def disassemble_text_section(binary_path):
             msg = f"Target {target} is currently not support by the disassembler"
             raise Exception(msg)
 
+    # The below code ensures that we are only mutating the instructions that 
+    # are _going to be run at startup_....
+    # 
+    # Meaning, sometimes theres nops, trampolines, or code in the .text 
+    # that is not used. The trampolines specifically may have been causing 
+    # issues in the riscv decompilation. Therefore, we focus on starting 
+    # at the entrypoint offset if possible, otherwise just start at index 0 !
+    #if not target == Target.RISCV_32:
     start_va = max(binary.entrypoint, text_section.virtual_address)
     start_off = start_va - text_section.virtual_address
+    #else:
+    #    start_va =  text_section.virtual_address
+    #    start_off = start_va - text_section.virtual_address
 
     code = bytes(text_section.content)
     if 0 <= start_off < len(code):
         insns = list(md.disasm(code[start_off:], start_va))
     else:
         insns = list(md.disasm(code, text_section.virtual_address))
+
     return insns
-    return list(md.disasm(bytes(text_section.content), text_section.virtual_address))
+
 
 
 def shift_exit_code(x: int) -> int:
@@ -866,9 +883,11 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
 
         case Target.RISCV:
             return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
+                " ")
+        case Target.RISCV_32:
+            return f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
                 " "
             )
-
         # TODO: Static bins don't need the linker
         case Target.ARM_32:
             return [
@@ -884,14 +903,6 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
                 "/usr/aarch64-linux-gnu",
                 f"{inp.expanduser().absolute()}",
             ]
-        case Target.RISCV_32:
-            return [
-                    "/usr/bin/qemu-riscv32-static",
-                    "-L",
-                    "/usr/riscv32-linux-gnu",
-                    f"{inp.expanduser().absolute()}",
-                ]
-
         case _:
             raise Exception(f"Unsupported target {target}")
     return
@@ -1295,6 +1306,8 @@ def compile_program(
             compiler = "gcc -m32 -g"
         case Target.RISCV:
             compiler = "riscv64-linux-gnu-gcc -g"
+        case Target.RISCV_32:
+            compiler = "riscv32-unknown-linux-gnu-gcc -g"
         case Target.ARM_64:
             compiler = "aarch64-linux-gnu-gcc -g"
         case Target.ARM_32:

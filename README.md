@@ -27,12 +27,17 @@ system. For example, below is a list of command that worked on ubuntu 22.04 and 
 a handful of compilers and emulators.
 
 ```bash
+# Compiler installs: 
 sudo apt install gcc-riscv64-linux-gnu
 sudo apt-get install libc6-riscv64-cross
 sudo apt-get install gcc-arm-linux-gnueabi
-sudo apt install qemu-arm-static
-sudo apt install qemu-aarch64-static
 sudo apt install aarch64-linux-gnu-gcc
+
+# If you want to use riscv32... warning this will take awhile
+sudo ./build_riscv32_toolchain.sh
+
+# QEMU install ...
+sudo apt install qemu-user-static
 
 # For generating PDF reports:
 sudo apt install pandoc
@@ -52,7 +57,7 @@ An example experiment that will (1) compile the binary `test_files/password_chec
 (2) Generate ***mutated*** binaries with the NOP mutation (3) Run the files 
 and record the run results:
 ```sh 
-pixi run cli x-nop test_files/password_check.c --program-input wrong --expected-returncode 0 --expected-stdout Correct --list-expected --timeout 2 --out-dir results/1nop_x86 --target x86_64 --num-cpus 24 --optimization O0
+pixi run cli x-nop test_files/password_check.c --program-input wrong --expected-returncode 0 --expected-stdout Correct --list-expected --timeout 2 --out-dir results/1nop_x86 --target x86_64 --num-cpus 24 --optimization O0 -num-nops 1
 ```
 
 To make running the CLI easier you can use the `run` command and provide an 
