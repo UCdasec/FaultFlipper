@@ -1,0 +1,103 @@
+########
+# NOP-1
+########
+[experiment.bit1_pass_arm32_pass]
+command = "x_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit1_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=1
+
+
+########
+# NOP-2
+########
+[experiment.bit2_pass_arm32_pass]
+command = "x_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit2_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=2
+
+########
+# NOP-3
+########
+[experiment.bit3_pass_arm32_pass]
+command = "x_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit3_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=3
+
+
+########
+# NOP-4
+########
+[experiment.bit4_pass_arm32_pass]
+command = "x_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit4_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=4
+
+########
+# NOP-1
+########
+[experiment.bit_pass_arm32_pass]
+command = "x_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit1_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=24
+
+########
+# NOP-8
+########
+[experiment.bit8_pass_arm32_pass]
+command = "x_bit"
+program-file = "test_files/password_check.c"
+program-input = "wrong\n"
+expected-returncode = 0 
+expected-stdout = "Correct"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit8_arm32_password_check"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=8
+

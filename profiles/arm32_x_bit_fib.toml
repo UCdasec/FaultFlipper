@@ -1,0 +1,138 @@
+####################
+# 4-BIT 
+####################
+
+[experiment.bit4_arm32_opt0_fib]
+command = "x_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit4_arm32_opt0_fib"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=4
+
+
+
+[experiment.bit4_arm32_opt0_fib_loopcheck]
+command = "x_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit4_arm32_opt0_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=4
+
+########
+# 1-BIT
+########
+[experiment.bit1_arm32_opt0_fib]
+command = "x_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit1_arm32_opt0_fib"
+yes= true
+target = "arm_32"
+num_cpus=24
+
+
+
+[experiment.bit1_arm32_opt0_fib_loopcheck]
+command = "x_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit1_arm32_opt0_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=24
+
+
+
+########
+# BIT-8
+########
+
+[experiment.bit8_arm32_opt0_fib]
+command = "x_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit8_arm32_opt0_fib"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=8
+
+
+
+[experiment.bit8_arm32_opt0_fib_loopcheck]
+command = "x_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit8_arm32_opt0_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=8
+
+
+########
+# 2-BIT
+########
+
+[experiment.bit_arm32_opt0_fib]
+command = "x_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit2_arm32_opt0_fib"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=2
+
+
+
+[experiment.bit_arm32_opt0_fib_loopcheck]
+command = "x_bit"
+program-file = "test_files/fib_LOOPCHECK.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/bit2_arm32_opt0_fib_LOOPCHECK"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=2
+
+
+
