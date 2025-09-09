@@ -342,6 +342,10 @@ target = "arm_32"
 num_cpus=8
 num_nops=4
 
+####################
+# FIB
+####################
+
 
 [experiment.nop4_arm32_fib]
 command = "x_nop"

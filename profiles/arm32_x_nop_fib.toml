@@ -1,140 +1,138 @@
+####################
+# 4-NOP 
+####################
 
-
-########
-# NOP
-########
-
-
-[experiment.nop_arm32_fib]
-command = "nop"
+[experiment.nop4_arm32_opt0_fib]
+command = "x_nop"
 program-file = "test_files/fib.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/nop_arm32_fib"
+out-dir = "experiments/nop4_arm32_opt0_fib"
 yes= true
 target = "arm_32"
 num_cpus=24
+num_nops=4
 
 
 
-[experiment.nop_arm32_fib_loopcheck]
-command = "nop"
+[experiment.nop4_arm32_opt0_fib_loopcheck]
+command = "x_nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/nop_arm32_fib_LOOPCHECK"
+out-dir = "experiments/nop4_arm32_opt0_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
 num_cpus=24
-
-
+num_nops=4
 
 ########
-# DOUBLE NOP
+# 1-NOP
 ########
-
-[experiment.para_double_nop_arm32_fib]
-command = "para_double_nop"
+[experiment.nop1_arm32_opt0_fib]
+command = "x_nop"
 program-file = "test_files/fib.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_double_nop_arm32_fib"
+out-dir = "experiments/nop1_arm32_opt0_fib"
 yes= true
 target = "arm_32"
 num_cpus=24
 
 
 
-[experiment.para_double_nop_arm32_fib_loopcheck]
-command = "para_double_nop"
+[experiment.nop1_arm32_opt0_fib_loopcheck]
+command = "x_nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_double_nop_arm32_fib_LOOPCHECK"
+out-dir = "experiments/nop1_arm32_opt0_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
 num_cpus=24
 
 
 
-
 ########
-# BIT
+# NOP-8
 ########
 
-[experiment.para_bit_arm32_fib]
-command = "para_bit"
+[experiment.nop8_arm32_opt0_fib]
+command = "x_nop"
 program-file = "test_files/fib.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_bit_arm32_fib"
+out-dir = "experiments/nop8_arm32_opt0_fib"
 yes= true
 target = "arm_32"
 num_cpus=24
+num_nops=8
 
 
 
-[experiment.para_bit_arm32_fib_loopcheck]
-command = "para_bit"
+[experiment.nop8_arm32_opt0_fib_loopcheck]
+command = "x_nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_bit_arm32_fib_LOOPCHECK"
+out-dir = "experiments/nop8_arm32_opt0_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
 num_cpus=24
+num_nops=8
 
 
 ########
-# DOUBLE BIT
+# 2-NOP
 ########
 
-[experiment.para_double_bit_arm32_fib]
-command = "x_bit"
-num_bits=2
+[experiment.nop_arm32_opt0_fib]
+command = "x_nop"
 program-file = "test_files/fib.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_double_bit_arm32_fib"
+out-dir = "experiments/nop2_arm32_opt0_fib"
 yes= true
 target = "arm_32"
 num_cpus=24
+num_nops=2
 
 
 
-[experiment.para_double_bit_arm32_fib_loopcheck]
-command = "x_bit"
-num_bits=2
+[experiment.nop_arm32_opt0_fib_loopcheck]
+command = "x_nop"
 program-file = "test_files/fib_LOOPCHECK.c"
 program-input = ""
 expected-returncode = 0 
 expected-stdout = "6765"
 list-expected = false 
 timeout = 4 
-out-dir = "experiments/para_double_bit_arm32_fib_LOOPCHECK"
+out-dir = "experiments/nop2_arm32_opt0_fib_LOOPCHECK"
 yes= true
 target = "arm_32"
 num_cpus=24
+num_nops=2
+
 
 

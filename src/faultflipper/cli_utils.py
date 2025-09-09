@@ -391,6 +391,9 @@ def save_report(
     report_path: Path,
     common: CommandParameters,
     df: pd.DataFrame,
+    normal_df: pd.DataFrame,
+    error_df: pd.DataFrame,
+    upset_df: pd.DataFrame,
     runtime,
     results,
     num_instructions,
@@ -453,6 +456,8 @@ def save_report(
             nop = Nop.X86_32
         case Target.RISCV:
             nop = Nop.RISCV_COMPACT
+        case Target.RISCV_32:
+            nop = Nop.RISCV_32_COMPACT
         case Target.ARM_64:
             nop = Nop.ARM_64
         case Target.ARM_32:
@@ -486,21 +491,28 @@ def save_report(
     table_str = list_tuple_table(["Exit code", "Frequency"], freqs)
     table += table_str
 
+
+    # 2.9 - TLDR of results 
+    tldr = "## Results at a Glance\n"
+    tldr += f"- **Normal:** {normal_df.shape[0]}\n"
+    tldr += f"- **Error:** {error_df.shape[0]}\n"
+    tldr += f"- **Upset:** {upset_df.shape[0]}\n"
+
     # 3. List of programs that had the expected stdout
-    list_of_progs = "## Programs that ran critical code \n"
+    list_of_progs = "## List of Event Upset Mutations:\n"
 
-    matching_info = df[
-        df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    ]
-    non_matching_info = df[
-        ~df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    ]
+    #matching_info = df[
+    #    df["program_stdout"].str.contains(common.expected_stdout, na=False)
+    #]
+    #non_matching_info = df[
+    #    ~df["program_stdout"].str.contains(common.expected_stdout, na=False)
+    #]
 
-    match_names = [Path(x).name for x in list(matching_info["binary_path"])]
-    non_match_names = [Path(x).name for x in list(non_matching_info["binary_path"])]
+    upset_names = [Path(x).name for x in list(upset_df["binary_path"])]
+    #non_match_names = [Path(x).name for x in list(non_matching_info["binary_path"])]
 
-    list_of_progs += f"**{len(match_names)}** programs had the expected STDOUT **{len(df)}** mutated binaries\n\n"
-    list_of_progs += f"**{len(non_match_names)}** programs did not have the expected STDOUT **{len(df)}** mutated binaries\n"
+    #list_of_progs += f"**{len(match_names)}** programs had the expected STDOUT **{len(df)}** mutated binaries\n\n"
+    #list_of_progs += f"**{len(non_match_names)}** programs did not have the expected STDOUT **{len(df)}** mutated binaries\n"
 
     list_of_progs += "\n"
     if log_matching:
@@ -509,7 +521,7 @@ def save_report(
         list_of_progs += "The binaries **without** the expected STDOUT were:\n"
 
     names_str = ""
-    for name in match_names if log_matching else non_match_names:
+    for name in upset_names: #match_names if log_matching else non_match_names:
         names_str += f"- {name} \n"
 
     list_of_progs += names_str
@@ -517,10 +529,12 @@ def save_report(
     # 4. Disassembly of the files that ran critical code
     # 10 bytes on either side will be included
     pad = 10
-    if log_matching:
-        bins = [Path(x) for x in list(matching_info["binary_path"])]
-    else:
-        bins = [Path(x) for x in list(non_matching_info["binary_path"])]
+    #if log_matching:
+
+    bins = [Path(x) for x in list(upset_df["binary_path"])]
+
+    #else:
+    #    bins = [Path(x) for x in list(non_matching_info["binary_path"])]
 
     disassems = ""
     for i, bin in enumerate(bins):
@@ -564,6 +578,8 @@ def save_report(
         f.write(settings_bullets)
         f.write("\n\n")
         f.write(binary_info)
+        f.write("\n\n")
+        f.write(tldr)
         f.write("\n\n")
         f.write(table)
         f.write("\n\n")

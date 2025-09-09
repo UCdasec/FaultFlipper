@@ -23,7 +23,6 @@ from cli_utils import (
     RegCommandParameters,
     show_results,
     parse_results,
-    str_in_col,
     BitFlipExperimentResult,
     NopExperimentResult,
     RegNopExperimentResult,
@@ -1588,10 +1587,17 @@ def x_bit_qemu_seq(
 
     res_file = common.out_dir.joinpath("results.csv")
     report_path = common.our_dir.parent.joinpath("report.md")
+
+    upset_on_match = False if "fib" in results[0].source_file.name else True
+    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
     save_report(
         report_path,
         common,
         df,
+        normal_df,
+        error_df,
+        fault_df,
         runtime,
         results,
         num_instructions,
@@ -1719,10 +1725,16 @@ def x_bit_qemu_parallel(
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
+    upset_on_match = False if "fib" in results[0].source_file.name else True
+    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
     save_report(
         report_path,
         common,
         df,
+        normal_df,
+        error_df,
+        fault_df,
         runtime,
         results,
         num_instructions,
@@ -1732,6 +1744,12 @@ def x_bit_qemu_parallel(
         program_context,
         is_bit=True,
     )
+
+
+    print(f"UPSET ON MATCH: {upset_on_match}")
+    print(f"Had {normal_df.shape}) normal")
+    print(f"Had {error_df.shape}) error")
+    print(f"Had {fault_df.shape}) fault")
 
     return
 
@@ -2308,10 +2326,18 @@ def x_nop_qemu_seq(
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     report_path = common.out_dir.parent.joinpath("report.md")
+
+
+    upset_on_match = False if "fib" in results[0].source_file.name else True
+    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
     save_report(
         report_path,
         common,
         df,
+        normal_df,
+        error_df,
+        fault_df,
         runtime,
         results,
         num_instructions,
@@ -2439,10 +2465,17 @@ def x_nop_qemu_parallel(
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
 
     report_path = common.out_dir.parent.joinpath("report.md")
+
+    upset_on_match = False if "fib" in results[0].source_file.name else True
+    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
     save_report(
         report_path,
         common,
         df,
+        normal_df,
+        error_df,
+        fault_df,
         runtime,
         results,
         num_instructions,
@@ -2454,10 +2487,8 @@ def x_nop_qemu_parallel(
     )
     print(f"Report saved to {report_path}")
 
-    upset_on_match = False if "fib" in results[0].source_file.name else True
-    print(f"UPSET ON MATHC: {upset_on_match}")
-    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
+    print(f"UPSET ON MATCH: {upset_on_match}")
     print(f"Had {normal_df.shape}) normal")
     print(f"Had {error_df.shape}) error")
     print(f"Had {fault_df.shape}) fault")
@@ -3251,11 +3282,113 @@ def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path):
     # Need to map the nopped_addr to the "line"
     # and flipped_addr to line
 
-    create_plot(
-        nop_list, bit_list, nop_e_list, bit_e_list, nop_df.shape[0], out, all_addrs
+    #create_plot(
+    #    nop_list, bit_list, nop_e_list, bit_e_list, nop_df.shape[0], out, all_addrs
+    #)
+    out.mkdir(exist_ok=True)
+
+    create_single_plot(
+        nop_list, nop_e_list, "NOP", nop_df.shape[0], out.joinpath("NOP.jpeg"), all_addrs
     )
 
+    create_single_plot(
+        bit_list,  bit_e_list, "BIT", nop_df.shape[0], out.joinpath("BIT.jpeg"), all_addrs
+    )
+
+
+
     return
+
+
+def create_single_plot(
+    upsets: list,
+    errors: list,
+    x_axis: str,
+    num_instructions,
+    out: Path,
+    all_addrs,
+):
+    """Create a spectrum plot.
+
+    Make a spectrum gram plot of the data.
+    """
+
+    # Configuration
+    colors = {
+        "Both": "#7f2a19",  # blue
+        "SIGSEGV": "#f6b26b",  # orange
+        "Vulnerable": "#e66c2c",  # red
+        "normal": "#e0e0e0",  # gray (default background)
+    }
+
+    # Plotting
+    figa, ax = plt.subplots(figsize=(16, 4))
+
+    # Iter over both lists
+    for j, addr in enumerate(all_addrs):
+        # We iterate over all instrcutoins because some of the insutrctions
+        # wil have both some or none.
+
+        # for j in range(num_instructions):
+        is_upset = addr in upsets
+        is_segfault = addr in errors
+
+        if is_upset and is_segfault:
+            color = colors["Both"]
+        elif is_upset:
+            color = colors["Vulnerable"]
+        elif is_segfault:
+            color = colors["SIGSEGV"]
+        else:
+            color = colors["normal"]
+
+        ax.barh(
+            0,
+            1,
+            left=j,
+            color=color,
+            edgecolor="none",
+        )
+
+    # Formatting
+    ax.set_yticks([])
+    #ax.set_ylabel(x_axis, fontsize=24, fontweight='bold')
+    ax.tick_params(axis="y", labelsize=20)
+    ax.invert_yaxis()
+
+    tick_interval = 30
+    xticks = list(range(0, num_instructions + 1, tick_interval))
+    xtick_labels = [str(i + 1) for i in xticks]
+
+    ax.set_xticks(xticks)
+    ax.set_xticklabels(xtick_labels, fontsize=28)
+
+    ax.set_xlabel("Line Number", fontsize=28, fontweight='bold')
+
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+        lbl.set_fontweight("bold")
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.0)
+
+    ax_legend_handles = [
+        mpatches.Patch(color=colors["Both"], label="SIGSEGV + Vuln"),
+        mpatches.Patch(color=colors["Vulnerable"], label="Vulnerable"),
+        mpatches.Patch(color=colors["SIGSEGV"], label="SIGSEGV"),
+    ]
+    ax.legend(
+        handles=ax_legend_handles,
+        #loc="center left",
+        #bbox_to_anchor=(1.01, 0.5),
+        #borderaxespad=0,
+        fontsize=18,
+    )
+
+    figa.savefig(out, dpi=800, bbox_inches="tight")
+
+    return
+
+
 
 
 def create_plot(
@@ -3289,14 +3422,6 @@ def create_plot(
 
     # Plotting
     figa, ax = plt.subplots(figsize=(16, 4))
-
-    # plt.rcParams.update(
-    #    {
-    #        "font.size": 14,  # Base font size
-    #        "axes.titlesize": 22,  # Title
-    #        "axes.labelsize": 14,  # X and Y labels
-    #    }
-    # )
 
     for i, cur_list in enumerate(dynamic_vulns):
         # Iter over both lists

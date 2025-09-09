@@ -135,7 +135,10 @@ def disassemble_text_section(binary_path: Path):
         case Target.RISCV:
             md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC )
         case Target.RISCV_32:
-            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC )
+            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC | capstone.CS_MODE_LITTLE_ENDIAN)
+            try:
+                md.skipdata = True
+            except Exception: pass
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
@@ -387,6 +390,8 @@ def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
             nop = Nop.X86_32
         case Target.RISCV:
             nop = Nop.RISCV_COMPACT
+        case Target.RISCV_32:
+            nop = Nop.RISCV_32_COMPACT
         case Target.ARM_64:
             nop = Nop.ARM_64
         case Target.ARM_32:
@@ -642,6 +647,8 @@ def detect_target(bin: Path) -> Target:
     # parsed = lief.parse(bin)
     lief_arch = get_lief_arch(bin)
 
+    binary = lief.parse(bin)
+
     match lief_arch:
         case lief.ELF.ARCH.X86_64:
             return Target.X86_64
@@ -650,7 +657,9 @@ def detect_target(bin: Path) -> Target:
             return Target.X86_32
 
         case lief.ELF.ARCH.RISCV:
-            return Target.RISCV
+            is_64 = (binary.header.identity_class == lief.ELF.Header.CLASS.ELF64)
+            return Target.RISCV if is_64 else Target.RISCV_32
+            #return Target.RISCV
 
         # case lief.ELF.ARCH.RISC:
         #    return Target.RISCV_32
@@ -829,6 +838,10 @@ def is_valid_instruction(opcode_bytes, target):
                 capstone.CS_ARCH_RISCV,
                 capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC,
             )
+        case Target.RISCV_32:
+            md = Cs(
+                capstone.CS_ARCH_RISCV,
+                capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC)
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
