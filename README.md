@@ -82,6 +82,11 @@ To run the profile use the command
 python src/cli.py run profiles/x86_64_nop_password_check.toml
 ```
 
+To obtain a trace that maps all asm address to source lines, here is an example:
+```bash
+python tracer_source/simple_mapper.py --binary experiments/1nop_arm32_opt0_password_check/password_check.o --source test_files/password_check.c --arch arm32
+```
+
 ## Author
 
 👤 **UcDasec Lab**
@@ -100,3 +105,4 @@ Give a ⭐️ if you think this project is interesting!
 
 ***
 _This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
+
