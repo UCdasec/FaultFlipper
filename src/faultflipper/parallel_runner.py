@@ -125,11 +125,18 @@ def x_nop_para_run_helper(common, insts, target: Target):
 
     # Generate hte mutated binary
     try:
-        out_path = common.out_dir.joinpath(
-            common.program_file.name + f"_{hex(insts[0].address)}"
-        )
+        if len(insts) < 2:
+            out_path = common.out_dir.joinpath(
+                common.program_file.name + f"_{hex(insts[0].address)}"
+            )
+        else:
+            address_name = ""
+            for i in range(len(insts)):
+                address_name += "_" + hex(insts[i].address)
+            out_path = common.out_dir.joinpath(
+                common.program_file.name + f"{address_name}"
+            )
         out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
-
     except Exception as e:
         print(f"Issue making binary: {e}")
         return Path(""), -100, insts, common, target, "", ""

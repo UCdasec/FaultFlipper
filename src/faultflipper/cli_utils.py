@@ -541,24 +541,28 @@ def save_report(
         if is_bit:
             mut_addr = bin.name.replace(f"{common.program_file.name}_", "")
             mut_addr = mut_addr.split("_")[0]
-            mut_addr = int(mut_addr, 16)
+            addresses = [mut_addr]
         else:
-            mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+            addresses = bin.name.replace(f"{common.program_file.name}_", "").split("_")
+                # mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+        rets = []
+        for address in addresses:
+            mut_addr = int(address, 16)
+            
+            start_addr = mut_addr - pad
+            end_addr = mut_addr + pad
 
-        start_addr = mut_addr - pad
-        end_addr = mut_addr + pad
-
-        ret = disasm(
-            [common.program_file.absolute(), bin],
-            start_addr,
-            end_addr,
-            text=True,
-            verbose=False,
-        )
-
+            ret = disasm(
+                [common.program_file.absolute(), bin],
+                start_addr,
+                end_addr,
+                text=True,
+                verbose=False,
+            )
+            rets.append(ret)
         disassems += f"#### Original Program vs Program {i} {bin.name} diassemebly\n\n"
         disassems += "```\n"
-        disassems += ret
+        disassems += "\n".join(str(x+ "\n") for x in rets)
         disassems += "```\n"
         disassems += "\n\n"
 
