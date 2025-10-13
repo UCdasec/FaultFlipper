@@ -12,7 +12,7 @@ from report_utils import list_tuple_table, generate_pdf_report
 from dataclasses import dataclass, fields
 
 from enums import LinuxExitCodes
-from binary_tools import Target, generate_run_cmd, Nop, disasm
+from binary_tools import Target, generate_run_cmd, Nop, disasm, map_asm_to_c
 
 from rich.table import Table
 from rich.console import Console
@@ -80,6 +80,7 @@ class CommandParameters:
     timeout: int = 5
     save_results: Union[Path, None] = None
     yes: bool = False
+    program_source_code: Path | None = None
 
     def to_dict(self):
         if self.save_results is None:
@@ -95,6 +96,7 @@ class CommandParameters:
             "timeout": self.timeout,
             "save_results": str(self.save_results.absolute()),
             "yes": self.yes,
+            "program_source_code": str(self.program_source_code.absolute()) if self.program_source_code else "",
         }
 
 def str_in_col(df: pd.DataFrame, inp: str, col: str)->pd.DataFrame:
@@ -160,16 +162,19 @@ def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataF
     return_is_0 = df[df['return_code'] ==0]
     error = df[df['return_code'] != 0]
 
+    print(f"The expected out is {expected}")
+    #print(f"out is epctped; {return_is_0["program_stdout"].str.contains(str(expected))}")
+
     # Get the expected and not expected 
-    out_is_expected =     return_is_0[ return_is_0["program_stdout"].str.contains(expected, na=False)]
-    out_is_not_expected = return_is_0[~return_is_0["program_stdout"].str.contains(expected, na=False)]
+    out_is_expected =     return_is_0[ return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)]
+    out_is_not_expected = return_is_0[~return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)]
 
     upset = out_is_expected if upset_on_match else out_is_not_expected
     normal = out_is_expected if not upset_on_match else out_is_not_expected
 
     # - Temporary code for debugging 
     #print(f"[ IN PARSE ] Had {len(return_is_0['program_stdout'])} programs return 0, and {len(out_is_not_expected['return_code'])} programs return 0 and not have exepcte output, and {len(out_is_expected['return_code'])} return 0 and have expected")
-    tmp = error[error["program_stdout"].str.contains(expected, na=False)]
+    #tmp = error[error["program_stdout"].str.contains(expected, na=False)]
     #print(f"[ IN PARSE ] Had {len(tmp['program_stdout'])} programs return non 0 and have expected output")
 
     # - Tempoary code done
@@ -423,6 +428,9 @@ def save_report(
     STDOUT was no observed.
     """
 
+    #TODO: This is bad code but fixes for exps:
+    log_matching = True if "pass" in common.program_file.name else False
+
     # . The title
     title = f"# Experiment {results[0].mutation.upper()} on {common.program_file.name} with target {results[0].target}\n"
 
@@ -516,15 +524,55 @@ def save_report(
 
     list_of_progs += "\n"
     if log_matching:
-        list_of_progs += "The binaries **with** the expected STDOUT were:\n"
+        list_of_progs += "The binaries **with** the expected STDOUT were:\n\n"
     else:
-        list_of_progs += "The binaries **without** the expected STDOUT were:\n"
+        list_of_progs += "The binaries **without** the expected STDOUT were:\n\n"
 
     names_str = ""
     for name in upset_names: #match_names if log_matching else non_match_names:
-        names_str += f"- {name} \n"
+        names_str += f"- {name} \n\n"
 
     list_of_progs += names_str
+
+
+    # Pre 4: Root Cause Analysis
+    root_cause = "## Root Cause Analysis\n"
+    root_cause += "ASM Addr | Correspond C line\n"
+    root_cause += "--------|--------------------\n"
+
+    address_to_lines = map_asm_to_c(common.program_file, common.program_source_code)
+
+    for name in upset_names:
+        if is_bit:
+            mut_addr = name.replace(f"{common.program_file.name}_", "")
+            mut_addr = mut_addr.split("_")[0]
+            mut_addr = int(mut_addr, 16)
+        else:
+            mut_addr = int(name.replace(f"{common.program_file.name}_", ""), 16)
+
+        if mut_addr in address_to_lines.keys():
+            root_cause += f"| {hex(mut_addr)} | {address_to_lines[mut_addr]}|\n"
+        else:
+            # Find the Next smallest addr that is a key.
+            last_key = None
+            for addr, v in address_to_lines.items():
+                if mut_addr > addr:
+                    last_key = addr 
+                else:
+                    break
+
+            try:
+                # Now last key will be the last address tha
+                root_cause += f"| {hex(mut_addr)} | {address_to_lines[last_key]}|\n"
+            except Exception:
+                pass
+
+
+    #for addr, line in address_to_lines.items():
+    #    if str(hex(addr)) in list_of_progs:
+    #        root_cause += f"| {hex(addr)} | {line}|\n"
+    #    else 
+
 
     # 4. Disassembly of the files that ran critical code
     # 10 bytes on either side will be included
@@ -584,6 +632,8 @@ def save_report(
         f.write(table)
         f.write("\n\n")
         f.write(list_of_progs)
+        f.write("\n\n")
+        f.write(root_cause)
         f.write("\n\n")
         f.write(disassems)
         f.write("\n\n")

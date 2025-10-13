@@ -38,7 +38,7 @@ from binary_tools import (
     compile_program,
     get_return_reg,
     shift_exit_code,
-    _generate_nop_mutated_bin,
+    #_generate_nop_mutated_bin,
     generate_nops_mutated_bin,
     generate_bit_mutated_file,
     detect_target,
@@ -55,6 +55,7 @@ from parallel_runner import (
     x_nop_para_run_helper,
     x_nop_angr_helper,
     x_bit_angr_helper,
+    x_data_para_run_helper,
 )
 
 
@@ -336,35 +337,42 @@ def bit_no_comp_inout(
 
     # plot_df = agg_df_no_fail[(int(agg_df_no_fail["total_correct"]) != int(expected_correct)) & (agg_df_no_fail['total_correct'] != 0)]
     plot_df = agg_df_no_fail[
-        int(agg_df_no_fail["total_correct"]) != int(expected_correct)
+        agg_df_no_fail["total_correct"] != int(expected_correct)
     ]
 
     # plot_df = agg_df_no_fail[(agg_df_no_fail["total_correct"] != (expected_correct / len(outs)))]
 
+    console.print("Generating Plots")
     plot_desc_accuracy(
         plot_df,
         expected_correct / len(outs),
-        common.out_dir.joinpath("bar_plot.png"),
+        common.out_dir.joinpath("bar_plot.jpg"),
         is_bit=True,
     )
     plot_accuracy_ecdf(
         plot_df,
         expected_correct / len(outs),
-        common.out_dir.joinpath("ecdf_plot.png"),
+        common.out_dir.joinpath("ecdf_plot.jpg"),
         is_bit=True,
     )
     plot_accuracy_rank(
         plot_df,
         expected_correct / len(outs),
-        common.out_dir.joinpath("rank_plot.png"),
+        common.out_dir.joinpath("rank_plot.jpg"),
         is_bit=True,
     )
 
+    print("############# TOTOAL DF########################")
     print("Histogram of #correct rows per (addr, idx):")
     print(agg_df["total_correct"].value_counts().sort_index())
 
     print("Histogram of #failed rows per (addr, idx):")
     print(agg_df["total_failed"].value_counts().sort_index())
+
+    print("############# NO FAILT TOTOAL DF########################")
+    print("Histogram of #correct rows per (addr, idx):")
+    print(agg_df_no_fail["total_correct"].value_counts().sort_index())
+
 
     # Per (flipped addr, flipped index), get the number of correct predictions
     grouped_df = df.groupby(["flipped_addr", "flipped_index"])
@@ -710,8 +718,10 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     if not is_bit:
         x_labels = [hex(int(x)) for x in x_labels]
 
-    x_labels += ["Others 1", f"Others {zcount}"]
-    y_vals = np.concatenate([y_vals, [0, 0]])
+    x_labels = [f"M_{x}" for x in x_labels]
+
+    x_labels += ["Others"]
+    y_vals = np.concatenate([y_vals, [0]])
 
     # categorical positions (for stable geometry), but we show your real labels
     x_pos = np.arange(len(x_labels))
@@ -720,19 +730,27 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     fig_w = min(24, max(8, len(x_labels) * 0.12))
     fig, ax = plt.subplots(figsize=(fig_w, 5), dpi=150)
 
-    ax.bar(x_pos, y_vals, width=width, linewidth=0, antialiased=False, zorder=2)
+    bars = ax.bar(x_pos, y_vals, width=width, linewidth=0, antialiased=False, zorder=2)
+    for bar in bars:
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2,  # x position (center of bar)
+            height,                             # y position (top of bar)
+            f"{height}",                        # text (value)
+            ha="center", va="bottom",           # alignment
+            fontsize=12, fontweight="bold"      # styling
+        )
 
-    # y-limits: keep bottom at 0, give headroom for baseline/bars so plot isn't squished
-    top_needed = max(y_vals.max(), float(baseline))
-    ax.set_ylim(0, top_needed * 1.10 if top_needed > 0 else 1.0)
+    ax.set_ylim(0, 1.0)
 
     # draw baseline
-    ax.axhline(baseline, color="red", linestyle="--", linewidth=1, zorder=1)
+    ax.axhline(baseline, color="red", linestyle="--", linewidth=4, zorder=1)
+
     ymin, ymax = ax.get_ylim()
     ax.text(
         x_pos[-1],
-        baseline + 0.01 * (ymax - ymin),
-        "Original",
+        baseline - 0.10 * (ymax - ymin),
+        "Golden",
         color="red",
         ha="right",
         va="bottom",
@@ -742,7 +760,7 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
 
     # x tick labels (your real values)
     ax.set_xticks(x_pos)
-    # ax.set_xticklabels(x_labels, rotation=45, ha="right")
+    #ax.set_xticklabels(x_labels, rotation=45, ha="right")
 
     # optional: thin crowded xticks
     if step > 1:
@@ -755,36 +773,38 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
 
     # break through the x-axis, centered between the two zero blocks
     # the two zero blocks are at positions len(nz) and len(nz)+1
-    if zcount:
-        x_break = len(nz) + 0.5  # midpoint between the two condensed zeros
-        yr = ymax - 0
-        dx = 0.12  # half-width of each slash (x units)
-        dy = 0.045 * yr  # half-height so it clearly crosses the axis
+    #if zcount:
+    #    x_break = len(nz) + 0.5  # midpoint between the two condensed zeros
+    #    yr = ymax - 0
+    #    dx = 0.12  # half-width of each slash (x units)
+    #    dy = 0.045 * yr  # half-height so it clearly crosses the axis
 
-        ax.plot(
-            [x_break - dx, x_break],
-            [-dy, +dy],
-            color="k",
-            lw=1.6,
-            clip_on=False,
-            zorder=4,
-        )
-        ax.plot(
-            [x_break, x_break + dx],
-            [-dy, +dy],
-            color="k",
-            lw=1.6,
-            clip_on=False,
-            zorder=4,
-        )
+    #    ax.plot(
+    #        [x_break - dx, x_break],
+    #        [-dy, +dy],
+    #        color="k",
+    #        lw=1.6,
+    #        clip_on=False,
+    #        zorder=4,
+    #    )
+    #    ax.plot(
+    #        [x_break, x_break + dx],
+    #        [-dy, +dy],
+    #        color="k",
+    #        lw=1.6,
+    #        clip_on=False,
+    #        zorder=4,
+    #    )
 
         # ax.annotate(f"{zcount} zeros condensed",
         #            xy=(x_break, 0), xytext=(0, -10), textcoords="offset points",
         #            ha="center", va="top", fontsize=8)
 
-    ax.set_xticklabels(x_labels, rotation=60, ha="right", fontsize=12)
+    ax.set_xticklabels(x_labels, rotation=60, ha="right", fontsize=10)
 
     ax.set_ylabel("Accuracy", fontsize=16, fontweight="bold")
+    ax.tick_params(axis='y', labelsize=12)
+
     ax.grid(axis="y", alpha=0.25, zorder=0)
 
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
@@ -913,17 +933,18 @@ def nop_no_comp_inout(
     )
 
     plot_df = agg_df[agg_df["total_correct"] != expected_correct]
-    # plot_desc_accuracy(plot_df, expected_correct / len(outs),common.out_dir.joinpath("bar_plot.png"))
+    # plot_desc_accuracy(plot_df, expected_correct / len(outs),common.out_dir.joinpath("bar_plot.jpg"))
 
     plot_desc_accuracy(
-        plot_df, expected_correct / len(outs), common.out_dir.joinpath("bar_plot.png")
+        plot_df, expected_correct / len(outs), common.out_dir.parent.joinpath("bar_plot.jpg")
     )
     plot_accuracy_ecdf(
-        plot_df, expected_correct / len(outs), common.out_dir.joinpath("ecdf_plot.png")
+        plot_df, expected_correct / len(outs), common.out_dir.parent.joinpath("ecdf_plot.jpg")
     )
     plot_accuracy_rank(
-        plot_df, expected_correct / len(outs), common.out_dir.joinpath("rank_plot.png")
+        plot_df, expected_correct / len(outs), common.out_dir.parent.joinpath("rank_plot.jpg")
     )
+    print(f"All plots are now in {common.out_dir}")
 
     print(f"We have {agg_df.shape} shaped agg df")
     print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
@@ -1077,6 +1098,7 @@ def x_bit_reg_seq(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     program_context = common.program_file.parent.joinpath(
         common.program_file.name.replace(".c", ".toml")
     )
@@ -1347,6 +1369,7 @@ def x_bit_reg_parallel(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     program_context = common.program_file.parent.joinpath(
         common.program_file.name.replace(".c", ".toml")
     )
@@ -1508,6 +1531,7 @@ def x_bit_qemu_seq(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     program_context = common.program_file.parent.joinpath(
         common.program_file.name.replace(".c", ".toml")
     )
@@ -1632,6 +1656,7 @@ def x_bit_qemu_parallel(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     program_context = common.program_file.parent.joinpath(
         common.program_file.name.replace(".c", ".toml")
     )
@@ -1749,7 +1774,7 @@ def x_bit_qemu_parallel(
     print(f"UPSET ON MATCH: {upset_on_match}")
     print(f"Had {normal_df.shape}) normal")
     print(f"Had {error_df.shape}) error")
-    print(f"Had {fault_df.shape}) fault")
+    print(f"Had {fault_df.shape}) upset")
 
     return
 
@@ -1783,6 +1808,7 @@ def x_nop_reg_seq(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
@@ -2039,6 +2065,7 @@ def x_nop_reg_parallel(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
@@ -2247,6 +2274,7 @@ def x_nop_qemu_seq(
 
     # Copy the source cdoe to the experiement
     source_code = common.program_file
+    common.program_source_code = source_code
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
     bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
@@ -2352,6 +2380,165 @@ def x_nop_qemu_seq(
     return
 
 
+
+@app.command()
+def x_bit_qemu_parallel_data(
+    common: RegCommandParameters,
+    target: Target,
+    num_cpus: int,
+    log_matching: bool = True,
+    comp: bool = True,
+    optimization: OptimizationLevel = OptimizationLevel.O0,
+    target_section: str = ".data",
+):
+    """Run an experiment that gernerates mutant binaries overriding the target section
+
+    Parameters
+    ----------
+    """
+
+    max_workers = max(1, num_cpus // 2)
+
+    # Make the dir
+    common.out_dir.mkdir(exist_ok=True, parents=True)
+    program_context = common.program_file.parent.joinpath(
+        common.program_file.name.replace(".c", ".toml")
+    )
+    base_out = common.out_dir
+
+    if comp:
+        # Copy the source cdoe to the experiement
+        source_code = common.program_file
+        common.program_source_code = source_code
+        shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+
+        bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
+
+        # Compile the binary for the target
+        common.program_file = compile_program(
+            source_code, bin_out, target, optimization
+        )
+        compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+    else:
+        source_code = ""
+        bin_out = common.program_file
+        compile_cmd = ""
+
+    res_file = common.out_dir.joinpath("results.csv")
+
+    common.out_dir = common.out_dir.joinpath("mutated_bins")
+    common.out_dir.mkdir(exist_ok=True)
+
+    original_bin = common.program_file
+
+    target_section_contents = lief.parse(common.program_file).get_section(target_section).content
+
+    if not common.yes:
+        cont = str(
+            input(
+                f"FaultSim will _attempt_ to generate {len(target_section_contents)*8}. Continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
+
+    target = detect_target(common.program_file)
+
+    futures = []
+    results: list[NopExperimentResult] = []
+
+    start_time = datetime.now()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for i in range(len(target_section_contents)):
+            future = executor.submit( x_data_para_run_helper, common, i, target, target_section)
+            futures.append(future)
+
+        with alive_bar(len(futures), title="Processing tasks") as bar:
+            for future in as_completed(futures):
+                # Check the status codes
+                
+                result = future.result()
+
+                for (
+                    out_file,
+                    returncode,
+                    inst,
+                    common,
+                    target,
+                    stdout,
+                    stderr,
+                    i,
+                ) in result:
+                    cur_res = BitFlipExperimentResult(
+                        source_file=source_code,
+                        unmutated_binary=common.program_file,
+                        binary_path=out_file,
+                        flipped_addr=0,
+                        flipped_index=i,
+                        program_input=common.program_input,
+                        return_code=returncode,
+                        program_stdout=stdout,
+                        target=target,
+                        expected_returncode=common.expected_returncode,
+                        expected_stdout=common.expected_stdout,
+                        custom_returncodes=other_returncodes,
+                    )
+                    results.append(cur_res)
+
+                bar()
+
+    runtime = datetime.now() - start_time
+
+    df = dataclass_to_dataframe(results)
+    save_df(df, res_file)
+
+
+    #show_results(common, df, other_returncodes)
+
+    # Lastly save the experiment parameters
+    params = common.to_dict()
+    params["target"] = target.value
+
+    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+        json.dump(params, f, indent=4)
+
+    num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
+
+    report_path = common.out_dir.parent.joinpath("report.md")
+
+    upset_on_match = False if "fib" in results[0].source_file.name else True
+    normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
+    save_report(
+        report_path,
+        common,
+        df,
+        normal_df,
+        error_df,
+        fault_df,
+        runtime,
+        results,
+        0,
+        num_bits,
+        compile_cmd,
+        source_code,
+        program_context,
+        log_matching=log_matching,
+    )
+    print(f"Report saved to {report_path}")
+
+
+    print(f"UPSET ON MATCH: {upset_on_match}")
+    print(f"Had {normal_df.shape}) normal")
+    print(f"Had {error_df.shape}) error")
+    print(f"Had {fault_df.shape}) upset")
+
+    return
+
+
+
+
 def x_nop_qemu_parallel(
     common: RegCommandParameters,
     target: Target,
@@ -2380,6 +2567,7 @@ def x_nop_qemu_parallel(
     if comp:
         # Copy the source cdoe to the experiement
         source_code = common.program_file
+        common.program_source_code = source_code
         shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
 
         bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
@@ -2491,7 +2679,7 @@ def x_nop_qemu_parallel(
     print(f"UPSET ON MATCH: {upset_on_match}")
     print(f"Had {normal_df.shape}) normal")
     print(f"Had {error_df.shape}) error")
-    print(f"Had {fault_df.shape}) fault")
+    print(f"Had {fault_df.shape}) upset")
 
     return
 
@@ -2762,87 +2950,87 @@ def dataset_split_random(
     return train, val, test
 
 
-@app.command()
-def new_nn_test(inp: Path, out: Path, test_size: int):
-    """
-    Temp function to run against the new neural net
-    """
-
-    out.mkdir(exist_ok=True)
-
-    disasm = disassemble_text_section(inp)
-
-    # Load the target type
-    target = detect_target(inp)
-    if target == Target.ARM_32:
-        arm = True
-    else:
-        arm = False
-
-    logger.debug(f"Detected Target: {target}")
-
-    mutated_bins = []
-    for inst in alive_it(disasm, title="generating mutations"):
-        # 1. mutate
-        mutated_bins.append(_generate_nop_mutated_bin(inp, target, inst, out))
-
-    baseline_correct_predictions = []
-    for i in range(test_size):
-        stdout = class_helper(inp, i, 5, arm)
-        print(stdout)
-        if "CORRECT" in stdout.decode():
-            baseline_correct_predictions.append(i)
-
-    # Now, try only those in the mutated model and see what
-    # we get
-    results = []
-
-    atleast_one_mistake = 0
-
-    for bin in alive_it(mutated_bins, title="testing mutations"):
-        bin_results = {
-            "correct": [],
-            "wrong": [],
-            "failed": [],
-        }
-
-        for i in baseline_correct_predictions:
-            try:
-                stdout = class_helper(bin, i, 1, arm)
-                if "CORRECT" in stdout.decode():
-                    bin_results["correct"].append(bin)
-                elif "WRONG" in stdout.decode():
-                    bin_results["wrong"].append(bin)
-                    print(f"Bin: {bin} wrong on {i}")
-                else:
-                    bin_results["failed"].append(bin)
-            except:
-                bin_results["failed"].append(bin)
-
-        if len(bin_results["wrong"]) > 0:
-            atleast_one_mistake += 1
-        if len(bin_results["failed"]) > 0:
-            atleast_one_mistake += 1
-
-        results.append((bin, bin_results))
-
-    console.print(
-        f"Baseline correctly labeled {len(baseline_correct_predictions)} inputs"
-    )
-    console.print(
-        f"Of {len(mutated_bins)}, {atleast_one_mistake} mutated bins incorrect labeled an input that baseline correctly labeld"
-    )
-
-    for bin, res in results:
-        if len(res["wrong"]) > 0:
-            print(f"{bin.name} | mistakes: {res['wrong']}\n")
-
-    with open("TEMPDELME.txt", "w") as f:
-        for bin, res in results:
-            if len(res["wrong"]) > 0:
-                f.write(f"{bin.name} | mistakes: {res['wrong']}\n")
-
-    return
+#@app.command()
+#def new_nn_test(inp: Path, out: Path, test_size: int):
+#    """
+#    Temp function to run against the new neural net
+#    """
+#
+#    out.mkdir(exist_ok=True)
+#
+#    disasm = disassemble_text_section(inp)
+#
+#    # Load the target type
+#    target = detect_target(inp)
+#    if target == Target.ARM_32:
+#        arm = True
+#    else:
+#        arm = False
+#
+#    logger.debug(f"Detected Target: {target}")
+#
+#    mutated_bins = []
+#    for inst in alive_it(disasm, title="generating mutations"):
+#        # 1. mutate
+#        mutated_bins.append(_generate_nop_mutated_bin(inp, target, inst, out))
+#
+#    baseline_correct_predictions = []
+#    for i in range(test_size):
+#        stdout = class_helper(inp, i, 5, arm)
+#        print(stdout)
+#        if "CORRECT" in stdout.decode():
+#            baseline_correct_predictions.append(i)
+#
+#    # Now, try only those in the mutated model and see what
+#    # we get
+#    results = []
+#
+#    atleast_one_mistake = 0
+#
+#    for bin in alive_it(mutated_bins, title="testing mutations"):
+#        bin_results = {
+#            "correct": [],
+#            "wrong": [],
+#            "failed": [],
+#        }
+#
+#        for i in baseline_correct_predictions:
+#            try:
+#                stdout = class_helper(bin, i, 1, arm)
+#                if "CORRECT" in stdout.decode():
+#                    bin_results["correct"].append(bin)
+#                elif "WRONG" in stdout.decode():
+#                    bin_results["wrong"].append(bin)
+#                    print(f"Bin: {bin} wrong on {i}")
+#                else:
+#                    bin_results["failed"].append(bin)
+#            except:
+#                bin_results["failed"].append(bin)
+#
+#        if len(bin_results["wrong"]) > 0:
+#            atleast_one_mistake += 1
+#        if len(bin_results["failed"]) > 0:
+#            atleast_one_mistake += 1
+#
+#        results.append((bin, bin_results))
+#
+#    console.print(
+#        f"Baseline correctly labeled {len(baseline_correct_predictions)} inputs"
+#    )
+#    console.print(
+#        f"Of {len(mutated_bins)}, {atleast_one_mistake} mutated bins incorrect labeled an input that baseline correctly labeld"
+#    )
+#
+#    for bin, res in results:
+#        if len(res["wrong"]) > 0:
+#            print(f"{bin.name} | mistakes: {res['wrong']}\n")
+#
+#    with open("TEMPDELME.txt", "w") as f:
+#        for bin, res in results:
+#            if len(res["wrong"]) > 0:
+#                f.write(f"{bin.name} | mistakes: {res['wrong']}\n")
+#
+#    return
 
 
 def class_helper(bin_path: Path, input: int, timeout: int, use_arm: bool):
@@ -2937,7 +3125,6 @@ def generate_exp_file(
         "yes= true ",
         f"target = '{target.name}' ",
         f"expected-correct= '{expected_correct}' ",
-        f"no_compile= true ",
     ]
 
     # Make parent out
@@ -2998,9 +3185,9 @@ def compare_plot(
     # Configuration
     dtypes = ["Bypass", "Loop", "Constant", "Branch", "NOP", "BIT"]
     colors = {
-        "Both": "#7f2a19",  # blue
-        "SIGSEGV": "#f6b26b",  # orange
-        "Vulnerable": "#e66c2c",  # red
+        "Upset & Error": "#7f2a19",  # blue
+        "Error": "#f6b26b",  # orange
+        "Upset": "#e66c2c",  # red
         "normal": "#e0e0e0",  # gray (default background)
     }
 
@@ -3036,7 +3223,7 @@ def compare_plot(
                         1,
                         left=j,
                         height=height,
-                        color=colors["Both"],
+                        color=colors["Upset & Error"],
                         edgecolor="none",
                     )
                 else:
@@ -3045,7 +3232,7 @@ def compare_plot(
                         1,
                         left=j,
                         height=height,
-                        color=colors["Vulnerable"],
+                        color=colors["Upset"],
                         edgecolor="none",
                     )
             elif j in segfaults:
@@ -3054,7 +3241,7 @@ def compare_plot(
                     1,
                     left=j,
                     height=height,
-                    color=colors["SIGSEGV"],
+                    color=colors["Error"],
                     edgecolor="none",
                 )
             else:
@@ -3080,13 +3267,21 @@ def compare_plot(
     ax.set_xticklabels(xtick_labels)
 
     ax.set_xlabel("Line Number", fontsize=20)
-    ax.set_title("Vulnerable Instructions")
+    ax.set_title("Upset Instructions")
 
-    legend_handles = [
-        mpatches.Patch(color=colors["Both"], label="SIGSEGV and Vulnerable Output"),
-        mpatches.Patch(color=colors["Vulnerable"], label="Vulnerable Output"),
-        mpatches.Patch(color=colors["SIGSEGV"], label="SIGSEGV"),
-    ]
+    if is_bit:
+        legend_handles = [
+            mpatches.Patch(color=colors["Upset & Error"], label="Upset & Error"),
+            mpatches.Patch(color=colors["Upset"], label="Upset"),
+            mpatches.Patch(color=colors["Error"], label="Error"),
+        ]
+    else:
+        legend_handles = [
+            #mpatches.Patch(color=colors["Upset & Error"], label="Error and Upset Output"),
+            mpatches.Patch(color=colors["Upset"], label="Upset"),
+            mpatches.Patch(color=colors["Error"], label="Error"),
+        ]
+
     ax.legend(handles=legend_handles, loc="lower right")
 
     plt.tight_layout()
@@ -3229,24 +3424,14 @@ def compare_regs(
 
 
 @app.command()
-def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path):
-    """
-    Make the spectrral plot.
+def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path, tick_int: int ):
+    """Make the spectrral plot.
 
     Spectral plot has the address as the x addr and plots
     which bytes cause a fault and which caused a program error.
 
     This is done for a single c source code file.
     """
-
-    # Load the results and get all addrs that caused a successful attack
-
-    # If this is a fib example, successful attack is returncode = 0
-    # and STDOUT != expected
-
-    # If this is a pass ewxample , seccessful attack is returncode= 0
-    # and Correct in STDOUT
-
     nop_df = pd.read_csv(nop_exp_results)
     bit_df = pd.read_csv(bit_exp_results)
 
@@ -3258,47 +3443,28 @@ def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path):
     print(f"Len bit addrs: {len(bit_all_addrs)}")
     assert bit_all_addrs == all_addrs
 
-    nop_normal, nop_error, nop_fault = parse_results(nop_df)
-    bit_normal, bit_error, bit_fault = parse_results(bit_df)
+    _, nop_error, nop_fault = parse_results(nop_df)
+    _, bit_error, bit_fault = parse_results(bit_df)
 
     nop_list = set(nop_fault["nopped_addr"].tolist())
     bit_list = set(bit_fault["flipped_addr"].tolist())
 
-    # nop_list = [int(x,16) for x in nop_fault['nopped_addr'].tolist()]
-    # nop_list = [int(x)-min_addr for x in nop_fault['nopped_addr'].tolist()]
-    # bit_list = bit_fault['flipped_addr'].tolist()
-    # bit_list = list(set([int(x,16) for x in bit_fault['flipped_addr'].tolist()]))
-    # bit_list = list(set([int(x)-min_addr_bit for x in bit_fault['flipped_addr'].tolist()]))
-    # print(f"The nop list is {nop_list}")
-    # print(f"The bit list is {bit_list}")
-
     nop_e_list = set(nop_error["nopped_addr"].tolist())
     bit_e_list = set(bit_error["flipped_addr"].tolist())
-    # nop_e_list = [int(x,16) for x in nop_error['nopped_addr'].tolist()]
-    # nop_e_list = [int(x) for x in nop_error['nopped_addr'].tolist()]
-    # bit_e_list = list(set([int(x,16) for x in bit_error['flipped_addr'].tolist()]))
-    # bit_e_list = list(set([int(x) for x in bit_error['flipped_addr'].tolist()]))
 
-    # Need to map the nopped_addr to the "line"
-    # and flipped_addr to line
-
-    #create_plot(
-    #    nop_list, bit_list, nop_e_list, bit_e_list, nop_df.shape[0], out, all_addrs
-    #)
     out.mkdir(exist_ok=True)
 
     create_single_plot(
-        nop_list, nop_e_list, "NOP", nop_df.shape[0], out.joinpath("NOP.jpeg"), all_addrs
+        nop_list, nop_e_list, "NOP", nop_df.shape[0], out.joinpath("NOP.jpeg"), all_addrs, False, tick_int
     )
 
     create_single_plot(
-        bit_list,  bit_e_list, "BIT", nop_df.shape[0], out.joinpath("BIT.jpeg"), all_addrs
+        bit_list,  bit_e_list, "BIT", nop_df.shape[0], out.joinpath("BIT.jpeg"), all_addrs, True, tick_int
     )
 
 
 
     return
-
 
 def create_single_plot(
     upsets: list,
@@ -3307,63 +3473,65 @@ def create_single_plot(
     num_instructions,
     out: Path,
     all_addrs,
+    is_bit: bool,
+    tick_int: int,
 ):
-    """Create a spectrum plot.
+    """Create a spectrum plot."""
 
-    Make a spectrum gram plot of the data.
-    """
-
-    # Configuration
+    # Colors
     colors = {
-        "Both": "#7f2a19",  # blue
-        "SIGSEGV": "#f6b26b",  # orange
-        "Vulnerable": "#e66c2c",  # red
-        "normal": "#e0e0e0",  # gray (default background)
+        "Upset & Error": "#7f2a19",       # Error + Upset
+        "Error": "#f6b26b",    # Error
+        "Upset": "#e66c2c", # Upset
+        "normal": "#ffffff",     # white (was gray)
     }
 
-    # Plotting
-    figa, ax = plt.subplots(figsize=(16, 4))
+    n = len(all_addrs)
 
-    # Iter over both lists
+    #fig, ax = plt.subplots(figsize=(16, 4))
+    fig, ax = plt.subplots(figsize=(16, 2))
+
+    # Draw one very thin horizontal bar per address position
     for j, addr in enumerate(all_addrs):
-        # We iterate over all instrcutoins because some of the insutrctions
-        # wil have both some or none.
-
-        # for j in range(num_instructions):
         is_upset = addr in upsets
         is_segfault = addr in errors
 
         if is_upset and is_segfault:
-            color = colors["Both"]
+            color = colors["Upset & Error"]
         elif is_upset:
-            color = colors["Vulnerable"]
+            color = colors["Upset"]
         elif is_segfault:
-            color = colors["SIGSEGV"]
+            color = colors["Error"]
         else:
             color = colors["normal"]
 
         ax.barh(
-            0,
-            1,
+            y=0,
+            width=1,
             left=j,
             color=color,
             edgecolor="none",
+            height=0.9,
         )
 
-    # Formatting
+    # --- Formatting ---
     ax.set_yticks([])
-    #ax.set_ylabel(x_axis, fontsize=24, fontweight='bold')
     ax.tick_params(axis="y", labelsize=20)
     ax.invert_yaxis()
 
-    tick_interval = 30
-    xticks = list(range(0, num_instructions + 1, tick_interval))
-    xtick_labels = [str(i + 1) for i in xticks]
+    # Kill the automatic margins that create the right-edge gap
+    ax.set_xlim(0, n)        # exactly span 0..n, no extra pad
+    ax.set_ylim(-0.5, 0.5)   # no extra vertical pad
+    ax.margins(x=0, y=0)
 
+    # X ticks
+    tick_interval = tick_int
+    xticks = list(range(0, n + 1, tick_interval)) #+ [n]
+    xtick_labels = [str(i + 1) for i in xticks]
     ax.set_xticks(xticks)
     ax.set_xticklabels(xtick_labels, fontsize=28)
 
-    ax.set_xlabel("Line Number", fontsize=28, fontweight='bold')
+    ax.set_xlabel("Instruction Index", fontsize=28, fontweight="bold")
 
     for lbl in ax.get_xticklabels() + ax.get_yticklabels():
         lbl.set_fontweight("bold")
@@ -3371,21 +3539,31 @@ def create_single_plot(
     for spine in ax.spines.values():
         spine.set_linewidth(2.0)
 
-    ax_legend_handles = [
-        mpatches.Patch(color=colors["Both"], label="SIGSEGV + Vuln"),
-        mpatches.Patch(color=colors["Vulnerable"], label="Vulnerable"),
-        mpatches.Patch(color=colors["SIGSEGV"], label="SIGSEGV"),
-    ]
+    # Legend (horizontal layout)
+    if is_bit:
+        handles = [
+            mpatches.Patch(color=colors["Upset & Error"], label="Upset & Error"),
+            mpatches.Patch(color=colors["Upset"], label="Upset"),
+            mpatches.Patch(color=colors["Error"], label="Error"),
+        ]
+    else:
+        handles = [
+            mpatches.Patch(color=colors["Upset"], label="Upset"),
+            mpatches.Patch(color=colors["Error"], label="Error"),
+        ]
+
     ax.legend(
-        handles=ax_legend_handles,
-        #loc="center left",
-        #bbox_to_anchor=(1.01, 0.5),
-        #borderaxespad=0,
-        fontsize=18,
+        handles=handles,
+        fontsize=22,
+        ncol=len(handles),          # <-- horizontal
+        #loc="upper center",
+        loc="lower center",
+        #bbox_to_anchor=(0.5, 1.25), # put it above the plot; adjust if you like
+        bbox_to_anchor=(0.5, 1.02), # put it above the plot; adjust if you like
+        frameon=True,
     )
 
-    figa.savefig(out, dpi=800, bbox_inches="tight")
-
+    fig.savefig(out, dpi=800, bbox_inches="tight")
     return
 
 
@@ -3408,9 +3586,9 @@ def create_plot(
     # Configuration
     dynamic_dtypes = ["NOP     ", "BIT     "]
     colors = {
-        "Both": "#7f2a19",  # blue
-        "SIGSEGV": "#f6b26b",  # orange
-        "Vulnerable": "#e66c2c",  # red
+        "Upset & Error": "#7f2a19",  # blue
+        "Error": "#f6b26b",  # orange
+        "Upset": "#e66c2c",  # red
         "normal": "#e0e0e0",  # gray (default background)
     }
 
@@ -3438,11 +3616,11 @@ def create_plot(
                 is_segfault = addr in bit_segfaults
 
             if is_vuln and is_segfault:
-                color = colors["Both"]
+                color = colors["Upset & Error"]
             elif is_vuln:
-                color = colors["Vulnerable"]
+                color = colors["Upset"]
             elif is_segfault:
-                color = colors["SIGSEGV"]
+                color = colors["Error"]
             else:
                 color = colors["normal"]
 
@@ -3477,9 +3655,9 @@ def create_plot(
         spine.set_linewidth(2.0)
 
     ax_legend_handles = [
-        mpatches.Patch(color=colors["Both"], label="SIGSEGV + Vuln"),
-        mpatches.Patch(color=colors["Vulnerable"], label="Vulnerable"),
-        mpatches.Patch(color=colors["SIGSEGV"], label="SIGSEGV"),
+        mpatches.Patch(color=colors["Upset & Error"], label="Upert & Error"),
+        mpatches.Patch(color=colors["Upset"], label="Upset"),
+        mpatches.Patch(color=colors["Error"], label="Error"),
     ]
     ax.legend(
         handles=ax_legend_handles,

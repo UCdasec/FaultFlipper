@@ -10,6 +10,19 @@ from angr.exploration_techniques import Timeout
 import capstone
 from capstone import Cs
 import psutil, os, angr
+from elftools.elf.elffile import ELFFile
+from capstone import (
+    Cs,
+    CS_ARCH_X86,
+    CS_MODE_64,
+    CS_ARCH_ARM,
+    CS_MODE_ARM,
+    CS_ARCH_ARM64,
+    CS_MODE_ARM,
+    CS_ARCH_RISCV,
+    CS_MODE_RISCV64,
+    CS_MODE_32,
+)
 
 
 class OptimizationLevel(Enum):
@@ -21,6 +34,8 @@ class OptimizationLevel(Enum):
 
 
 class MemLimiter(angr.exploration_techniques.ExplorationTechnique):
+    """This is a Limiter for ANGR to put on upper bound on the total memory that it can use."""
+
     def __init__(self, max_gb: int, stash="out_of_memory"):
         super().__init__()
         self.proc = psutil.Process(os.getpid())
@@ -48,6 +63,68 @@ class Target(Enum):
     ARM_32 = 4
     RISCV_32 = 5
     X86_64 = 6
+
+
+def map_asm_to_c(binary_path, source_path):
+    """A simple mapper that uses pyelftools to map ASM lines to C.
+
+    Notice: Sometime early addresses in the .text wont be mapped. This
+    can be due to:
+    1. They are "start up", plt jumps, or "veener" code.
+
+    Those start up lines don't really map to a true line in the C code.
+    """
+    addresses = {}
+
+    target = detect_target(binary_path)
+
+    # Open the ELF binary
+    with open(binary_path, "rb") as bf:
+        elffile = ELFFile(bf)
+
+        if not elffile.has_dwarf_info():
+            raise RuntimeError(
+                "No DWARF debug info found in the binary. Recompile with -g."
+            )
+
+        dwarfinfo = elffile.get_dwarf_info()
+        text_section = elffile.get_section_by_name(".text")
+        if text_section is None:
+            raise RuntimeError("No .text section found in the ELF.")
+
+        text_data = text_section.data()
+        text_vaddr = text_section["sh_addr"]  # The load address of .text
+
+        # Architecture and mode mappings for Capstone
+        arch_mode_map = {
+            Target.X86_64: (CS_ARCH_X86, CS_MODE_64),
+            Target.X86_32: (CS_ARCH_X86, CS_MODE_32),
+            Target.ARM_32: (CS_ARCH_ARM, CS_MODE_ARM),
+            Target.ARM_64: (CS_ARCH_ARM64, CS_MODE_ARM),
+        }
+
+        cs_arch, cs_mode = arch_mode_map[target]
+        md = Cs(cs_arch, cs_mode)
+
+        addr_to_line = {}  # maps instruction address -> line number
+        for cu in dwarfinfo.iter_CUs():
+            line_program = dwarfinfo.line_program_for_CU(cu)
+
+            if not line_program:
+                continue
+
+            for entry in line_program.get_entries():
+                state = entry.state
+                if state is None or state.file == 0 or state.line == 0:
+                    continue
+
+                file_entry = line_program["file_entry"][state.file - 1]
+                file_name = file_entry.name.decode("utf-8", errors="ignore")
+
+                if os.path.basename(file_name) == os.path.basename(source_path):
+                    addr_to_line[state.address] = state.line
+
+    return addr_to_line
 
 
 # TODO: THis is incomplete
@@ -110,8 +187,8 @@ class Nop(Enum):
 def disassemble_text_section(binary_path: Path):
     """Disassemble the .text section of the binary and output instructions.
 
-    Use lief to get the bytes from the .text section, then use capstone 
-    to disassemble the bytes. 
+    Use lief to get the bytes from the .text section, then use capstone
+    to disassemble the bytes.
     """
 
     if not binary_path.exists():
@@ -133,12 +210,21 @@ def disassemble_text_section(binary_path: Path):
         case Target.X86_32:
             md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
         case Target.RISCV:
-            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC )
+            md = Cs(
+                capstone.CS_ARCH_RISCV,
+                capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC,
+            )
         case Target.RISCV_32:
-            md = Cs(capstone.CS_ARCH_RISCV, capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC | capstone.CS_MODE_LITTLE_ENDIAN)
+            md = Cs(
+                capstone.CS_ARCH_RISCV,
+                capstone.CS_MODE_RISCV32
+                | capstone.CS_MODE_RISCVC
+                | capstone.CS_MODE_LITTLE_ENDIAN,
+            )
             try:
                 md.skipdata = True
-            except Exception: pass
+            except Exception:
+                pass
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
@@ -150,17 +236,17 @@ def disassemble_text_section(binary_path: Path):
             msg = f"Target {target} is currently not support by the disassembler"
             raise Exception(msg)
 
-    # The below code ensures that we are only mutating the instructions that 
+    # The below code ensures that we are only mutating the instructions that
     # are _going to be run at startup_....
-    # 
-    # Meaning, sometimes theres nops, trampolines, or code in the .text 
-    # that is not used. The trampolines specifically may have been causing 
-    # issues in the riscv decompilation. Therefore, we focus on starting 
+    #
+    # Meaning, sometimes theres nops, trampolines, or code in the .text
+    # that is not used. The trampolines specifically may have been causing
+    # issues in the riscv decompilation. Therefore, we focus on starting
     # at the entrypoint offset if possible, otherwise just start at index 0 !
-    #if not target == Target.RISCV_32:
+    # if not target == Target.RISCV_32:
     start_va = max(binary.entrypoint, text_section.virtual_address)
     start_off = start_va - text_section.virtual_address
-    #else:
+    # else:
     #    start_va =  text_section.virtual_address
     #    start_off = start_va - text_section.virtual_address
 
@@ -171,7 +257,6 @@ def disassemble_text_section(binary_path: Path):
         insns = list(md.disasm(code, text_section.virtual_address))
 
     return insns
-
 
 
 def shift_exit_code(x: int) -> int:
@@ -470,55 +555,6 @@ def generate_x_bits_mutated_file(
     return out_file
 
 
-def generate_double_bit_mutated_file(
-    i, inst_bits, target, inst, common
-) -> tuple[None, Path | None]:
-    binary = lief.parse(common.program_file)
-
-    original_bits = [x for x in inst_bits]
-    if original_bits[i] == "0":
-        original_bits[i] = 1
-    else:
-        original_bits[i] = 0
-
-    if original_bits[i + 1] == "0":
-        original_bits[i + 1] = 1
-    else:
-        original_bits[i + 1] = 0
-
-    bit_flipped_inst = "".join([str(x) for x in original_bits])
-
-    # Turn the bits back to an instruction for the patch
-    patch = bytes(
-        int("".join(bit_flipped_inst[i : i + 8]), 2)
-        for i in range(0, len(bit_flipped_inst), 8)
-    )
-
-    # If the instruction is not valid, go to the next instruction
-    good_inst, new_inst = is_valid_instruction(patch, target)
-
-    if not good_inst:
-        return None, None
-
-    # Re-adjust the patch so that it is a list of ints
-    patch = [
-        int("".join(bit_flipped_inst[i : i + 8]), 2)
-        for i in range(0, len(bit_flipped_inst), 8)
-    ]
-
-    # If we get here the instruction is good
-
-    binary.patch_address(inst.address, patch)
-
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst.address)}_{i}"
-    )
-    binary.write(str(out_file.resolve()))
-
-    out_file.chmod(0o755)
-    return out_file
-
-
 def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None, Path]:
     binary = lief.parse(common.program_file)
 
@@ -560,12 +596,76 @@ def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None,
     return out_file
 
 
+def generate_data_bit_flip(
+    binary_path: Path, data_idx: int, data_bit_idx: int, out_file: Path, target_section: str = ".data"
+) -> Path:
+
+    # Load the ELF binary
+    binary = lief.parse(binary_path)
+
+    # Find the .data section
+    section = binary.get_section(target_section)
+
+    if not section:
+        raise ValueError("No section found in the binary.")
+
+    # Get the content of the .data section (the raw bytes)
+    data_bytes = bytearray(section.content)
+
+    # Check if data_idx is within the bounds of the .data section
+    if data_idx >= len(data_bytes):
+        raise ValueError(
+            f"Data index {data_idx} is out of bounds for the .data section."
+        )
+
+    # Get the byte at data_idx
+    byte_to_modify = data_bytes[data_idx]
+
+    # Flip the bit at the specified data_bit_idx (0-based bit index)
+    if data_bit_idx < 0 or data_bit_idx >= 8:
+        raise ValueError("data_bit_idx must be between 0 and 7.")
+
+    # Flip the bit by toggling it using XOR
+    modified_byte = byte_to_modify ^ (1 << data_bit_idx)
+
+    data_bytes[data_idx] = modified_byte
+
+    # Rewrite the .data section with the modified data
+    section.content = list(data_bytes)
+
+    binary.write(str(out_file.absolute()))
+
+    out_file.chmod(0o755)
+    return out_file
+
+
+# def generate_data_mutated_bin(
+#    binary: Path, target, data_idx, bit_idx, output: Path
+# ) -> Path:
+#    """Geneate a single mutated binary.
+#
+#    Replace all the instructions with the nop patch for this target
+#    architecture.
+#    """
+#
+#    shutil.copy(binary, output)
+#
+#    # Run many patches - patching in place so they all get applied
+#    for inst in instructions:
+#        nop_patch = gen_nop_patch(inst, target=target)
+#        in_place_patch(output, output, inst.address, bytes(nop_patch))
+#
+#    output.chmod(0o755)
+#
+#    return output
+
+
 def generate_nops_mutated_bin(
     binary: Path, target, instructions: list, output: Path
 ) -> Path:
     """Geneate a single mutated binary.
 
-    Replace all the instructions with the nop patch for this target 
+    Replace all the instructions with the nop patch for this target
     architecture.
     """
 
@@ -579,65 +679,6 @@ def generate_nops_mutated_bin(
     output.chmod(0o755)
 
     return output
-
-
-# def generate_double_nop_mutated_bin(common, target, inst1, inst2) -> Path:
-def generate_double_nop_mutated_bin(
-    program_file: Path, target, inst1, inst2, out_file: Path
-) -> Path:
-    """
-    Geneate a single mutated binary
-    """
-
-    # out_file = common.out_dir.joinpath(
-    #    common.program_file.name + f"_{hex(inst1.address)}"
-    # )
-
-    shutil.copy(program_file, out_file)
-    nop_patch = gen_nop_patch(inst1, target=target)
-    # in_place_patch(common.program_file, out_file, inst1.address, bytes(nop_patch))
-    in_place_patch(program_file, out_file, inst1.address, bytes(nop_patch))
-
-    nop_patch = gen_nop_patch(inst2, target=target)
-    in_place_patch(out_file, out_file, inst2.address, bytes(nop_patch))
-
-    out_file.chmod(0o755)
-
-    return out_file
-
-
-def generate_nop_mutated_bin(common, target, inst) -> Path:
-    """
-    Geneate a single mutated binary
-    """
-
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst.address)}"
-    )
-
-    shutil.copy(common.program_file, out_file)
-    nop_patch = gen_nop_patch(inst, target=target)
-
-    in_place_patch(common.program_file, out_file, inst.address, bytes(nop_patch))
-    out_file.chmod(0o755)
-
-    return out_file
-
-
-def _generate_nop_mutated_bin(source: Path, target, inst, out_dir: Path) -> Path:
-    """
-    Geneate a single mutated binary
-    """
-
-    out_file = out_dir.joinpath(source.name + f"_{hex(inst.address)}")
-
-    shutil.copy(source, out_file)
-    nop_patch = gen_nop_patch(inst, target=target)
-
-    in_place_patch(source, out_file, inst.address, bytes(nop_patch))
-    out_file.chmod(0o755)
-
-    return out_file
 
 
 def detect_target(bin: Path) -> Target:
@@ -657,9 +698,9 @@ def detect_target(bin: Path) -> Target:
             return Target.X86_32
 
         case lief.ELF.ARCH.RISCV:
-            is_64 = (binary.header.identity_class == lief.ELF.Header.CLASS.ELF64)
+            is_64 = binary.header.identity_class == lief.ELF.Header.CLASS.ELF64
             return Target.RISCV if is_64 else Target.RISCV_32
-            #return Target.RISCV
+            # return Target.RISCV
 
         # case lief.ELF.ARCH.RISC:
         #    return Target.RISCV_32
@@ -841,7 +882,8 @@ def is_valid_instruction(opcode_bytes, target):
         case Target.RISCV_32:
             md = Cs(
                 capstone.CS_ARCH_RISCV,
-                capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC)
+                capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC,
+            )
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
@@ -888,15 +930,18 @@ def generate_run_cmd(inp: Path, target: Target) -> list[str]:
             return [f"{inp.expanduser().absolute()}", "-g"]
 
         case Target.X86_32:
-            return ["/usr/bin/qemu-i386-static",
-                    "-L", 
-                    "/usr/i386-linux-gnu", 
-                    f"{inp.expanduser().absolute()}", 
-                    "-g"]
+            return [
+                "/usr/bin/qemu-i386-static",
+                "-L",
+                "/usr/i386-linux-gnu",
+                f"{inp.expanduser().absolute()}",
+                "-g",
+            ]
 
         case Target.RISCV:
             return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
-                " ")
+                " "
+            )
         case Target.RISCV_32:
             return f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
                 " "
@@ -1341,6 +1386,7 @@ def compile_program(
         print(e)
         raise e
 
+
 def disasm(
     binary: list[Path],
     start_addr: int,
@@ -1500,7 +1546,3 @@ def compare_disassembly(
         total += f"{out}\n"
 
     return total
-
-
-
-

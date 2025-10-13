@@ -6,7 +6,8 @@ from binary_tools import (
     count_bit_differences, 
     run_binary_w_input, 
     sim_binary_w_input, 
-    generate_x_bits_mutated_file
+    generate_x_bits_mutated_file,
+    generate_data_bit_flip
 )
 import lief
 
@@ -145,6 +146,52 @@ def x_nop_para_run_helper(common, insts, target: Target):
     except Exception as e:
         print(f"Failed to run bin with {e}")
         return out_file, -100, insts, common, target, "", ""
+
+#TODO: Data struct for results
+
+def x_data_para_run_helper(common, data_idx, target: Target, target_section):
+    """
+    Run a binary and capture its output
+    """
+
+    if common.program_input[-1:] != "\n":
+        common.program_input += "\n"
+
+    results = []
+
+    # Generate hte mutated binary
+    for i in range(8):
+        try:
+            out_path = common.out_dir.joinpath(
+                common.program_file.name + f"_{data_idx}_{i}"
+            )
+            out_file = generate_data_bit_flip(common.program_file, data_idx, i, out_path, target_section=target_section)
+
+        except Exception as e:
+            print(f"Issue making binary: {e}")
+            results.append((Path(""), -100, data_idx, common, target, "", "", i))
+            continue
+
+        try:
+            returncode, stdout, stderr = run_binary_w_input(
+                out_file, common.program_input, target, common.timeout
+            )
+
+            if returncode is not None:
+                returncode = shift_exit_code(returncode)
+
+            results.append((out_file, returncode, data_idx, common, target, stdout, stderr, i))
+
+        except Exception as e:
+            print(f"Failed to run bin with {e}")
+            results.append((out_file, -100, data_idx, common, target, "", "", i))
+
+    return results
+
+
+
+
+
 
 
 
