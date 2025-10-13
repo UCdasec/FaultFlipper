@@ -2420,11 +2420,19 @@ def x_nop_qemu_parallel(
 
     start_time = datetime.now()
 
+    all_comb = False
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for i in range(len(disasm) - (num_nops) + 1):
-            insts = [disasm[i + x] for x in range(num_nops)]
-            future = executor.submit(x_nop_para_run_helper, common, insts, target)
-            futures.append(future)
+        if (all_comb == False):
+            for i in range(len(disasm) - (num_nops) + 1):
+                insts = [disasm[i + x] for x in range(num_nops)]
+                future = executor.submit(x_nop_para_run_helper, common, insts, target)
+                futures.append(future)
+        else:
+            from itertools import combinations
+            for insts_indices in combinations(range(len(disasm)), num_nops):
+                insts = [disasm[i] for i in insts_indices]
+                future = executor.submit(x_nop_para_run_helper, common, insts, target)
+                futures.append(future)
 
         with alive_bar(len(futures), title="Processing tasks") as bar:
             for future in as_completed(futures):
