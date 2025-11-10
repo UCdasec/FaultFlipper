@@ -417,6 +417,7 @@ def save_report(
     4. Disassmeblys of the files that ran critical codes
     5. Validation of correct mutations
     6. Whole dataframe
+    7. A json of just the successful faults.
 
     Parameters
     ----------
@@ -542,6 +543,11 @@ def save_report(
 
     address_to_lines = map_asm_to_c(common.program_file, common.program_source_code)
 
+    # Aggregate the json info whie mapping root cause.
+    c_source_lines: list[int] = []
+
+    # So in we have 
+
     for name in upset_names:
         if is_bit:
             mut_addr = name.replace(f"{common.program_file.name}_", "")
@@ -551,7 +557,9 @@ def save_report(
             mut_addr = int(name.replace(f"{common.program_file.name}_", ""), 16)
 
         if mut_addr in address_to_lines.keys():
-            root_cause += f"| {hex(mut_addr)} | {address_to_lines[mut_addr]}|\n"
+            c_line = address_to_lines[mut_addr]
+            root_cause += f"| {hex(mut_addr)} | {c_line}|\n"
+            c_source_lines.append(c_line)
         else:
             # Find the Next smallest addr that is a key.
             last_key = None
@@ -560,29 +568,22 @@ def save_report(
                     last_key = addr 
                 else:
                     break
-
             try:
                 # Now last key will be the last address tha
                 root_cause += f"| {hex(mut_addr)} | {address_to_lines[last_key]}|\n"
             except Exception:
                 pass
 
-
-    #for addr, line in address_to_lines.items():
-    #    if str(hex(addr)) in list_of_progs:
-    #        root_cause += f"| {hex(addr)} | {line}|\n"
-    #    else 
+    # Save the json:
+    with open(report_path.parent.joinpath('vuln_c_lines.json'), 'w') as f:
+        json.dump({'c_line_numbers' : c_source_lines}, f)
 
 
     # 4. Disassembly of the files that ran critical code
     # 10 bytes on either side will be included
     pad = 10
-    #if log_matching:
-
     bins = [Path(x) for x in list(upset_df["binary_path"])]
 
-    #else:
-    #    bins = [Path(x) for x in list(non_matching_info["binary_path"])]
 
     disassems = ""
     for i, bin in enumerate(bins):
