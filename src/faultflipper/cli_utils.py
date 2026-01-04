@@ -5,9 +5,10 @@ from cyclopts import App, Parameter
 from pathlib import Path
 from typing import Union
 import pandas as pd
-from typing import Optional
+from typing import Optional, Literal
 from enum import Enum
 from report_utils import list_tuple_table, generate_pdf_report
+
 
 from dataclasses import dataclass, fields
 
@@ -50,6 +51,7 @@ class RegCommandParameters:
     yes: bool = False
     expected_returncode: int | None = None
     expected_stdout: str | None = None
+    dynamic_filter: bool = False
 
     def to_dict(self):
         if self.save_results is None:
@@ -81,6 +83,11 @@ class CommandParameters:
     save_results: Union[Path, None] = None
     yes: bool = False
     program_source_code: Path | None = None
+    dynamic_filter: bool = False
+    comp: bool = True
+    opts: str | None = None # compilation options
+    trace_backend: Literal["angr", "best"] = "best" # Use best fit by defualt, otherwise force the capstone if possible
+    # If the program is alread compiled don't try to recompile it 
 
     def to_dict(self):
         if self.save_results is None:

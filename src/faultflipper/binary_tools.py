@@ -1,15 +1,41 @@
 from datetime import datetime
 import angr
+import pandas as pd
+
+from pathlib import Path
+from enum import Enum
 import subprocess
 from enum import Enum
+from capstone import CsInsn
 import lief
 from pathlib import Path
+from pathlib import Path
+from collections import Counter
+from random import sample
+import lief
+
+
+import struct
+from pathlib import Path
+from random import sample
+from collections import Counter, defaultdict
+import struct
+from collections import Counter
+from typing import Sequence, Set
 from capstone import CsInsn
 import shutil
+
+from tempfile import NamedTemporaryFile
 from angr.exploration_techniques import Timeout
 import capstone
 from capstone import Cs
+
+from pathlib import Path
+from collections import Counter, defaultdict
+
+
 import psutil, os, angr
+
 from elftools.elf.elffile import ELFFile
 from capstone import (
     Cs,
@@ -65,6 +91,612 @@ class Target(Enum):
     X86_64 = 6
 
 
+
+
+
+import subprocess
+from pathlib import Path
+
+
+def compile_qemu_insn_plugin(
+    source: Path,
+    output: Path | None = None,
+    cc: str = "gcc",
+    qemu_prefix: Path = Path("~/.local").expanduser().absolute()
+) -> Path:
+    """
+    Compile the QEMU instruction-trace plugin *without* using pkg-config.
+
+    Assumes:
+      - qemu-plugin.h is in <qemu_prefix>/include
+      - GLib is installed in standard Ubuntu locations:
+          /usr/include/glib-2.0
+          /usr/lib/x86_64-linux-gnu/glib-2.0/include
+          /usr/lib/x86_64-linux-gnu (libglib-2.0.so)
+    """
+    source = Path(source)
+
+    if output is None:
+        output = source.with_suffix(".so")
+
+    output = Path(output)
+
+    qemu_prefix = qemu_prefix.expanduser().absolute()
+
+    # Where qemu-plugin.h lives
+    qemu_inc = qemu_prefix / "include"
+    if not qemu_inc.exists():
+        raise RuntimeError(f"QEMU include dir not found: {qemu_inc} (looking for qemu-plugin.h)")
+
+    # GLib standard locations on Ubuntu
+    glib_inc1 = Path("/usr/include/glib-2.0")
+    glib_inc2 = Path("/usr/lib/x86_64-linux-gnu/glib-2.0/include")
+    glib_libdir = Path("/usr/lib/x86_64-linux-gnu")
+
+    for p in (glib_inc1, glib_inc2, glib_libdir):
+        if not p.exists():
+            raise RuntimeError(
+                f"Expected GLib path missing: {p}. "
+                "Is libglib2.0-dev installed?"
+            )
+
+    cmd = [
+        cc,
+        "-fPIC",
+        "-shared",
+        f"-I{qemu_inc}",
+        f"-I{glib_inc1}",
+        f"-I{glib_inc2}",
+        f"-L{glib_libdir}",
+        "-lglib-2.0",
+        "-o",
+        str(output),
+        str(source),
+    ]
+
+    print("Compiling QEMU plugin:", " ".join(cmd))
+    subprocess.run(cmd, check=True)
+    return output
+
+from typing import Iterable, Any, List, Dict
+
+
+def build_adjusted_hit_map_with_markers(
+    disasm: Iterable[Any],
+    raw_hit_map: Dict[int, int],
+    target,
+    min_hits: int = 1,
+    treat_markers_implicit: bool = True,
+) -> Dict[int, int]:
+    """
+    Take the original angr hit_map {addr -> count} and return an adjusted
+    hit-map that:
+      - keeps only instructions with hits >= min_hits
+      - optionally treats certain ABI 'marker' instructions (endbr64, bti, etc.)
+        as executed if at least one neighbor has hits >= min_hits.
+
+    Args:
+        disasm:
+            Iterable of Capstone instruction objects.
+        raw_hit_map:
+            dict { address -> execution_count } from run_angr_trace.
+        target:
+            Your Target enum (Target.X86_64, Target.X86_32, Target.ARM_64, etc.).
+        min_hits:
+            Minimum execution count to consider an instruction executed.
+        treat_markers_implicit:
+            If True, special marker mnemonics can be treated as executed
+            based on neighbor activity.
+
+    Returns:
+        Dict[int, int]: adjusted hit_map {addr -> count} containing only
+        instructions considered executed (including implicit markers).
+    """
+    insns = list(disasm)
+    n = len(insns)
+
+    # Direct hits from angr
+    direct_hits = [raw_hit_map.get(insn.address, 0) for insn in insns]
+
+    # Figure out which mnemonics are "marker" style for this target
+    marker_mnemonics: set[str] = set()
+
+    # x86-64 CET markers
+    if target == Target.X86_64:
+        marker_mnemonics.update({"endbr64"})
+
+    # x86-32: do NOT assume CET; optionally auto-detect if endbr32 even exists
+    elif target == Target.X86_32:
+        if any(insn.mnemonic == "endbr32" for insn in insns):
+            marker_mnemonics.add("endbr32")
+
+    # AArch64 markers (BTI / hint-based)
+    elif target == Target.ARM_64:
+        marker_mnemonics.update({"bti", "hint"})
+
+    # ARM32 / RISCV: leave marker_mnemonics empty by default
+
+    # Decide effective hits per instruction
+    effective_hits = [0] * n
+
+    # 1) Start with the direct hits
+    for i in range(n):
+        if direct_hits[i] >= min_hits:
+            effective_hits[i] = direct_hits[i]
+
+    # 2) Optionally promote marker instructions based on neighbors
+    if treat_markers_implicit and marker_mnemonics:
+        for i, insn in enumerate(insns):
+            # Skip if already considered executed
+            if effective_hits[i] >= min_hits:
+                continue
+
+            # Skip if not a known marker
+            if insn.mnemonic not in marker_mnemonics:
+                continue
+
+            # Check neighbors' direct hits
+            left_hit = direct_hits[i - 1] if i > 0 else 0
+            right_hit = direct_hits[i + 1] if i + 1 < n else 0
+
+            if left_hit >= min_hits or right_hit >= min_hits:
+                # Treat it as executed with at least min_hits.
+                # You could also choose max(left_hit,right_hit,min_hits) if you
+                # want a "stronger" inferred count.
+                effective_hits[i] = max(min_hits, left_hit, right_hit)
+
+    # Build the adjusted hit_map: only include instructions considered executed
+    adjusted_hit_map: Dict[int, int] = {}
+    for insn, count in zip(insns, effective_hits):
+        if count >= min_hits:
+            adjusted_hit_map[insn.address] = count
+
+    return adjusted_hit_map
+
+
+def run_angr_insn_trace(
+    binary_path: str | Path,
+    stdin_data: str | None = None,
+) -> tuple[dict[int, int], int]:
+    """
+    Run `binary_path` concretely in angr and record how many times each
+    *instruction address* is executed.
+
+    Addresses are returned in angr's virtual address space, which (for a
+    normal ELF loaded at its linked VA) will match the Capstone disasm
+    addresses if you disassemble using the ELF VAs.
+
+    Args:
+        binary_path:
+            Path to the ELF binary.
+        stdin_data:
+            Optional string to feed as stdin (one-shot, like `echo ... | ./a.out`).
+
+    Returns:
+        hit_map:
+            dict { instruction_address (int) -> execution_count (int) }
+        base_addr:
+            proj.loader.main_object.min_addr (for reference / debugging)
+    """
+    binary_path = str(Path(binary_path).expanduser().absolute())
+    proj = angr.Project(binary_path, auto_load_libs=False)
+    base_addr = proj.loader.main_object.min_addr
+
+    # Create initial state with optional stdin
+    if stdin_data is not None:
+        sim_stdin = angr.SimFileStream(name="stdin", content=stdin_data + "\n")
+        state = proj.factory.full_init_state(stdin=sim_stdin)
+    else:
+        state = proj.factory.full_init_state()
+
+    hit_counter: Counter[int] = Counter()
+
+    # Instruction-level callback
+    def insn_cb(st: angr.SimState) -> None:
+        # st.addr is the current instruction address in the *guest* VA space
+        hit_counter[st.addr] += 1
+
+    state.inspect.b("instruction", when=angr.BP_BEFORE, action=insn_cb)
+
+    simgr = proj.factory.simulation_manager(state)
+    simgr.run()
+
+    # Convert Counter to a plain dict for nicer serialization / printing
+    return dict(hit_counter), base_addr
+
+def compute_best_offset_with_distinct(
+    qemu_trace: Sequence[tuple[int, bytes]],
+    cap_insns,
+) -> tuple[int, int, int]:
+    """
+    Infer the most likely OFFSET such that:
+        pc_qemu ≈ cap_addr + OFFSET
+
+    But score deltas by:
+      - how many DISTINCT Capstone addresses support them
+      - then total hits as a tie-breaker
+
+    Returns:
+        best_offset, distinct_support, total_support
+    """
+
+    # Build bytes -> [cap_addr, ...] from Capstone
+    caps_by_bytes: dict[bytes, list[int]] = defaultdict(list)
+    for insn in cap_insns:
+        caps_by_bytes[bytes(insn.bytes)].append(insn.address)
+
+    deltas_total = Counter()
+    delta_to_caps: dict[int, set[int]] = defaultdict(set)
+
+    #print(f"Leng of the pc is {len(qemu_trace)}")
+
+    #got = False
+
+    for pc_qemu, q_bytes in qemu_trace:
+        addrs = caps_by_bytes.get(q_bytes)
+
+        if not addrs:
+            #print(f"pc of {pc_qemu} has: {q_bytes.hex()} or not in caps by bytes")
+            continue
+
+        for cap_addr in addrs:
+            d = pc_qemu - cap_addr
+            deltas_total[d] += 1
+            delta_to_caps[d].add(cap_addr)
+
+    print(f"Cap has bytes: {{k.hex() for k in caps_by_bytes.keys()}}")
+
+    if not deltas_total:
+        print(f"No delta total")
+        return 0, 0, 0
+
+    # Rank deltas: first by distinct cap addrs, then by total hits
+    candidates: list[tuple[int, int, int]] = []
+    for d, total in deltas_total.items():
+        distinct = len(delta_to_caps[d])
+        candidates.append((distinct, total, d))
+
+    # max by (distinct, total)
+    best_distinct, best_total, best_delta = max(candidates)
+    print(
+        "                hhhhhhhhhhhhhhhhhhhhhhhhh      \n\n        "
+
+        f"[offset] best_offset={best_delta:#x}, "
+        f"distinct_caps={best_distinct}, total_support={best_total}"
+    )
+
+    return best_delta, best_distinct, best_total
+
+def build_executed_capstone_addrs_from_qemu(
+    disasm,
+    qemu_trace: Sequence[tuple[int, bytes]],
+    min_distinct_caps: int = 3,
+) -> tuple[dict[int,int], dict[int, int], int, int]:
+    """
+    Returns:
+      hit_map: {cap_addr -> exec_count}
+      best_offset
+      distinct_support
+    """
+    cap_insns = list(disasm)
+    cap_addrs = [insn.address for insn in cap_insns]
+
+    # Initialize hit map in Capstone space
+    hit_map: dict[int, int] = {addr: 0 for addr in cap_addrs}
+
+    print("Computing best offset with distnct")
+
+    best_offset, distinct_support, total_support = compute_best_offset_with_distinct(
+        qemu_trace,
+        cap_insns,
+    )
+
+    # If we only got 1 distinct Capstone addr, we probably locked onto
+    # one repeated pattern (system noise) instead of real alignment.
+    if distinct_support < min_distinct_caps:
+        print(
+            f"[warn] Only {distinct_support} distinct capstone addresses "
+            f"support best offset; not trusting alignment."
+        )
+        return {}, hit_map, 0, distinct_support
+
+    # Rebuild bytes map
+    from collections import defaultdict
+    caps_by_bytes: dict[bytes, list[int]] = defaultdict(list)
+
+    for insn in cap_insns:
+        caps_by_bytes[bytes(insn.bytes)].append(insn.address)
+
+    # Count executions: must match bytes AND chosen offset
+    for pc_qemu, q_bytes in qemu_trace:
+        addrs = caps_by_bytes.get(q_bytes)
+        if not addrs:
+            continue
+        for cap_addr in addrs:
+            if pc_qemu - cap_addr == best_offset:
+                hit_map[cap_addr] += 1
+
+    print(hit_map)
+    adj_map = [x-best_offset for x,_ in qemu_trace]
+
+    return adj_map, hit_map, best_offset, distinct_support
+
+
+
+
+def load_qemu_trace_text(trace_path: Path) -> list[tuple[int, bytes]]:
+    """
+    Parse lines of the form:
+      PC: 0x105e4, Size: 4, Bytes: aa bb cc dd
+
+    Returns a list of (pc, raw_bytes).
+    """
+    pcs: list[tuple[int, bytes]] = []
+    trace_path = Path(trace_path)
+
+    with trace_path.open("r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            # Very simple pattern-based parse
+            # PC: 0x105e4, Size: 4, Bytes: aa bb cc dd
+            try:
+                # Split into 3 parts: "PC: ...", " Size: ...", " Bytes: ..."
+                parts = [p.strip() for p in line.split(",")]
+                if len(parts) < 3:
+                    continue
+
+                # PC
+                pc_str = parts[0].split("PC:", 1)[1].strip()
+                pc = int(pc_str, 16) if pc_str.startswith("0x") else int(pc_str)
+
+                # Bytes
+                bytes_part = parts[2]
+                if "Bytes:" in bytes_part:
+                    bytes_str = bytes_part.split("Bytes:", 1)[1].strip()
+                else:
+                    bytes_str = bytes_part.strip()
+
+                if bytes_str:
+                    byte_vals = bytes.fromhex(bytes_str)
+                else:
+                    byte_vals = b""
+
+                pcs.append((pc, byte_vals))
+            except Exception:
+                # Ignore malformed lines
+                continue
+
+    #print(pcs)
+    return pcs
+
+
+
+def get_text_range(binary_path: Path) -> tuple[int, int]:
+    """
+    Return (text_start, text_end) virtual address range for the main .text section.
+    """
+    bin_ = lief.parse(str(binary_path))
+    if not bin_:
+        raise RuntimeError(f"Failed to parse ELF: {binary_path}")
+
+    text = bin_.get_section(".text")
+    if text is None:
+        raise RuntimeError(".text section not found")
+
+    start = text.virtual_address
+    end = start + text.size
+    return start, end
+
+
+def file_compiled_as_pie(binary_path: Path) -> bool:
+    bin_ = lief.parse(str(binary_path))
+    if not bin_:
+        raise RuntimeError(f"Failed to parse ELF: {binary_path}")
+    return bin_.header.file_type == lief.ELF.E_TYPE.DYNAMIC
+
+
+def compute_best_offset_pc_only(
+    qemu_pcs: list[int],
+    capstone_addrs: list[int],
+    text_start: int,
+    text_end: int,
+    max_qemu_samples: int = 200_000,
+    max_capstone_samples: int = 500_000,
+) -> tuple[int, int]:
+    """
+    Improved PC-only offset inference for x86.
+
+    1) Use sampled (pc, cap_addr) pairs to generate candidate deltas.
+    2) For each candidate delta, use *all* PCs to compute:
+         - how many distinct Capstone addrs in [.text] get hits,
+         - how many total PCs map into [.text].
+    3) Return the delta with best (distinct_caps_in_text, total_in_text).
+    """
+    if not qemu_pcs or not capstone_addrs:
+        return 0, 0
+
+    qemu_uniq = list(set(qemu_pcs))
+    caps_uniq = list(set(capstone_addrs))
+
+    if len(qemu_uniq) > max_qemu_samples:
+        qemu_uniq = sample(qemu_uniq, max_qemu_samples)
+    if len(caps_uniq) > max_capstone_samples:
+        caps_uniq = sample(caps_uniq, max_capstone_samples)
+
+    # Stage 1: generate candidate deltas from samples
+    delta_hits: Counter = Counter()
+    for qp in qemu_uniq:
+        for ca in caps_uniq:
+            d = qp - ca
+            delta_hits[d] += 1
+
+    if not delta_hits:
+        return 0, 0
+
+    # Only keep top-K deltas by raw hit count to keep stage 2 cheap
+    TOP_K = 512
+    candidate_deltas = [d for d, _ in delta_hits.most_common(TOP_K)]
+
+    capstone_set = set(capstone_addrs)
+
+    # Stage 2: full scoring using all PCs + .text range
+    best_delta = 0
+    best_distinct = -1
+    best_in_text = -1
+
+    for d in candidate_deltas:
+        mapped_in_text = 0
+        distinct_caps_in_text: set[int] = set()
+
+        for pc in qemu_pcs:
+            a = pc - d
+            if text_start <= a < text_end:
+                mapped_in_text += 1
+                if a in capstone_set:
+                    distinct_caps_in_text.add(a)
+
+        distinct_count = len(distinct_caps_in_text)
+
+        # Score by (distinct_capstone_in_text, mapped_in_text)
+        if distinct_count > best_distinct or (
+            distinct_count == best_distinct and mapped_in_text > best_in_text
+        ):
+            best_delta = d
+            best_distinct = distinct_count
+            best_in_text = mapped_in_text
+
+    # Optional debug:
+    # print(f"[pc-only] best_delta={best_delta:#x}, "
+    #       f"distinct_caps_in_text={best_distinct}, mapped_in_text={best_in_text}")
+
+    return best_delta, best_distinct
+
+def build_x86_hit_map_from_pcs(
+    binary_path: Path,
+    disasm,          # list of Capstone insns
+    qemu_pcs: list[int],
+) -> tuple[dict[int, int], int]:
+    capstone_addrs = [ins.address for ins in disasm]
+    capstone_set = set(capstone_addrs)
+
+    text_start, text_end = get_text_range(binary_path)
+
+    if file_compiled_as_pie(binary_path):
+        offset, support = compute_best_offset_pc_only(
+            qemu_pcs,
+            capstone_addrs,
+            text_start,
+            text_end,
+        )
+    else:
+        offset, support = 0, len(capstone_set)
+
+    hit_map: dict[int, int] = {addr: 0 for addr in capstone_set}
+
+    for pc in qemu_pcs:
+        a = pc - offset
+        if a in hit_map:
+            hit_map[a] += 1
+
+    # If you only care about executed:
+    # hit_map = {addr: c for addr, c in hit_map.items() if c > 0}
+
+    return hit_map, offset
+
+
+def filter_executed_instructions(
+    insns: list[CsInsn],
+    hit_map: dict[int, int],
+) -> list[CsInsn]:
+    """
+    Return only those disassembled instructions whose addresses
+    appear in the QEMU hit_map with count >= 1.
+
+    Parameters
+    ----------
+    insns : list[CsInsn]
+        Instructions from disassemble_text_section(binary_path)
+        Each `CsInsn` has a `.address` attribute.
+    hit_map : dict[int, int]
+        { pc : count } from run_qemu_trace()
+
+    Returns
+    -------
+    list[CsInsn]
+        Subset of insns that were executed at least once.
+    """
+    if not hit_map:
+        #return []  # no instructions executed (or failed run)
+        raise Exception("No instructions executed")
+
+    #for ins in insns:
+        #print(f"0x{ins.address:x}:\t{ins.mnemonic}\t{ins.op_str}")
+
+    #print(f"In filter")
+    max_cap = 0
+    min_cap = float('inf')
+
+    for insn in insns:
+        if insn.address > max_cap:
+            max_cap = insn.address
+        if insn.address < min_cap:
+            min_cap = insn.address
+
+    executed = []
+    for insn in insns:
+        if hit_map.get(insn.address, 0) > 0:
+            executed.append(insn)
+        #else:
+        #    print(f"Apparently {hex(insn.address)} has 0 {adj_map.get(hex(insn.address),None)}")
+
+
+    return executed
+
+
+
+def dyna_detect_insns(common, target:Target, disasm, drop_sys: bool = True)-> list[CsInsn]:
+    """
+    Execute the binary once to detect which instrcutions are executed
+    """
+    #plugin_so = compile_qemu_insn_plugin(Path(__file__).parent.parent.joinpath("trace_insn.c"))
+    plugin_so = compile_qemu_insn_plugin(Path(__file__).parent.parent.joinpath("adv_trace_insn.c"))
+
+    # Get the hit_map
+    hit_map, series, rc, out, err, trace_path = run_qemu_trace(
+        path=common.program_file,
+        target=target,
+        program_input=None,
+        runtime_input=common.program_input,
+        plugin_so=plugin_so,
+        disasm=disasm,
+        timeout=common.timeout*10,
+        keep_trace=True,
+        trace_backend=common.trace_backend,
+    )
+
+
+    #print("\n".join(sorted([hex(x.address) for x in disasm])))
+    #sorted_insns = sorted(disasm, key=lambda ins: ins.address)
+
+    #for ins in sorted_insns:
+    #Jk:print(f"0x{ins.address:x}:\t{ins.mnemonic}\t{ins.op_str}")
+
+    #filt_disasm, hit_map = filter_executed_insns(common.program_file, trace_path, disasm, min_hits=1)
+
+    #return filt_disasm #filter_executed_instructions(disasm, hit_map, offset=0)
+    return filter_executed_instructions(disasm, hit_map)
+
+#TODO: DEP THIS 
+def filter_executed_insns(binary_path: Path, trace_path: Path, disasm, min_hits: int = 1):
+
+    hit_map = build_hit_map_static(binary_path, trace_path)
+    executed = [insn for insn in disasm if hit_map.get(insn.address, 0) >= min_hits]
+
+    return executed, hit_map
+
+
 def map_asm_to_c(binary_path, source_path):
     """A simple mapper that uses pyelftools to map ASM lines to C.
 
@@ -99,8 +731,12 @@ def map_asm_to_c(binary_path, source_path):
         arch_mode_map = {
             Target.X86_64: (CS_ARCH_X86, CS_MODE_64),
             Target.X86_32: (CS_ARCH_X86, CS_MODE_32),
+
             Target.ARM_32: (CS_ARCH_ARM, CS_MODE_ARM),
             Target.ARM_64: (CS_ARCH_ARM64, CS_MODE_ARM),
+
+            Target.RISCV: (CS_ARCH_RISCV, capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC),
+            Target.RISCV_32: (CS_ARCH_RISCV, capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC | capstone.CS_MODE_LITTLE_ENDIAN),
         }
 
         cs_arch, cs_mode = arch_mode_map[target]
@@ -140,7 +776,506 @@ def get_return_reg(target: Target) -> str | None:
         return None
 
 
-def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
+import subprocess
+from pathlib import Path
+from enum import Enum
+from collections import Counter
+
+
+class Target(Enum):
+    X86_32 = 0
+    RISCV = 2
+    ARM_64 = 3
+    ARM_32 = 4
+    RISCV_32 = 5
+    X86_64 = 6
+
+
+def generate_qemu_cmd_with_plugin(
+    inp: Path,
+    target: Target,
+    plugin_so: Path,
+    trace_log: Path,
+    call_time_program_input: str | None = None,
+    qemu_base: Path = Path("~/.local/bin/").expanduser().absolute()
+) -> list[str]:
+    """
+    Build the QEMU user-mode command that runs `inp` for a given `Target`
+    with the instruction-trace plugin attached.
+
+    The plugin receives `trace_log` as its `input=` argument, so it writes PCs there.
+    """
+    inp = Path(inp).expanduser().absolute()
+    plugin_so = Path(plugin_so).expanduser().absolute()
+    trace_log = Path(trace_log).expanduser().absolute()
+
+    # Base QEMU cmd: [qemu-bin, <opts...>, guest-binary]
+    base = generate_run_cmd_custom_qemu(inp, target, qemu_base)
+    if not base:
+        raise RuntimeError("generate_run_cmd_custom_qemu returned an empty command")
+
+    # Everything except the last element is QEMU + options, last is the guest binary
+    emu_part = base[:-1]
+    guest_bin = base[-1]
+
+    # QEMU plugin arg: file=/path/to/trace.bin
+    plugin_spec = f"{plugin_so},input={trace_log}"
+
+    cmd: list[str] = emu_part + [
+        "-plugin",
+        plugin_spec,
+        guest_bin,
+    ]
+
+    if call_time_program_input is not None:
+        cmd.append(call_time_program_input)
+
+    return cmd
+
+from pathlib import Path
+
+def load_qemu_trace(trace_path: Path) -> list[tuple[int, str]]:
+    """
+    Load the QEMU plugin trace written in *text* form:
+        PC: 0x105e4, Instruction: mov
+
+    Returns a list of (pc, mnemonic).
+    """
+    trace_path = Path(trace_path)
+    pcs: list[tuple[int, str]] = []
+
+    with trace_path.open("r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            # Expected format: "PC: 0x..., Instruction: <mnemonic>"
+            try:
+                # Split at the first comma
+                left, right = line.split(",", 1)
+                # Left: "PC: 0x105e4"
+                # Right: " Instruction: mov"
+
+                # Parse PC
+                _, pc_str = left.split("PC:", 1)
+                pc_str = pc_str.strip()
+                pc = int(pc_str, 16) if pc_str.startswith("0x") else int(pc_str)
+
+                # Parse mnemonic
+                if "Instruction:" in right:
+                    _, mnem = right.split("Instruction:", 1)
+                    mnemonic = mnem.strip()
+                else:
+                    mnemonic = right.strip()
+
+                pcs.append((pc, mnemonic))
+            except ValueError:
+                # If a weird line sneaks in, just skip it
+                continue
+
+    print(pcs)
+    return pcs
+
+
+def load_pc_series_from_trace(trace_path: Path) -> list[int]:
+    """
+    Load the binary instruction trace produced by the QEMU plugin.
+
+    The plugin writes a sequence of uint64_t (little-endian) PC values.
+    """
+    #print(f"The trace path is {trace_path}")
+
+    pcs: list[int] = []
+
+    count = 0
+    with trace_path.open("rb") as f:
+        while True:
+            chunk = f.read(8 * 1024)  # multiple of 8 bytes
+            count+=1
+
+            if not chunk:
+                break
+
+            # Process in 8-byte steps
+            for i in range(0, len(chunk), 8):
+                if i + 8 > len(chunk):
+                    break  # ignore partial trailing
+                pc_bytes = chunk[i:i+8]
+                pc = int.from_bytes(pc_bytes, byteorder="little", signed=False)
+                pcs.append(pc)
+
+    return pcs
+
+
+def compute_best_offset_by_mnemonic(
+    qemu_trace: Sequence[tuple[int, str]],
+    disasm,
+    align: int = 4,
+    max_pairs_per_mnemonic: int = 20_000,
+) -> tuple[int, int]:
+    """
+    Compute the best offset Δ such that:
+
+        pc_qemu ≈ addr_capstone + Δ
+
+    but only using pairs where the mnemonics match. This cuts down the
+    D, D+4, D+8 ambiguity significantly.
+
+    Returns (best_delta, support_count).
+    """
+    # Group QEMU PCs by mnemonic
+    print(f"Qemu mnuemeic")
+    qemu_by_mnem: dict[str, list[int]] = defaultdict(list)
+    for pc, mnem in qemu_trace:
+        qemu_by_mnem[mnem].append(pc)
+        print(mnem)
+
+    # Group Capstone addresses by mnemonic
+    print(f"Capstone mnuemeic")
+    cap_by_mnem: dict[str, list[int]] = defaultdict(list)
+    for insn in disasm:
+        cap_by_mnem[insn.mnemonic].append(insn.address)
+        print(insn.mnemonic)
+
+    deltas = Counter()
+
+
+
+    for mnem in set(qemu_by_mnem.keys()) & set(cap_by_mnem.keys()):
+        q_list = qemu_by_mnem[mnem]
+        c_list = cap_by_mnem[mnem]
+
+        # Some mnemonics (like 'mov') can be huge; bound work a bit
+        if len(q_list) * len(c_list) > max_pairs_per_mnemonic:
+            # crude throttling: subsample
+            q_list = q_list[: max(1, max_pairs_per_mnemonic // max(len(c_list), 1))]
+            c_list = c_list[: max(1, max_pairs_per_mnemonic // max(len(q_list), 1))]
+
+        for qp in q_list:
+            for ca in c_list:
+                d = qp - ca
+                if align and (d % align) != 0:
+                    continue
+                deltas[d] += 1
+
+    if not deltas:
+        # Nothing matched at all
+        print("Nothing matched!!!")
+        return 0, 0
+
+    raw_top = deltas.most_common(8)
+    print(f"Raw top deltas (mnemonic-filtered): {raw_top}")
+
+    best_delta, support = raw_top[0]
+    print(f"Chosen offset = {best_delta:#x}, support = {support}")
+    return best_delta, support
+
+
+#def load_qemu_trace(trace_path: Path) -> list[int]:
+#    trace_path = Path(trace_path)
+#    data = trace_path.read_bytes()
+#    if len(data) % 8 != 0:
+#        raise ValueError(f"Trace size {len(data)} not multiple of 8 bytes")
+#
+#    pcs = list(struct.unpack("<" + "Q" * (len(data) // 8), data))
+#
+#    #print("TRACEEEEEEEEEEEEEEEEE..........")
+#    #for i, pc in enumerate(pcs):
+#        #if pc < 0x4000000:
+#        #print(f"{i}: {hex(pc)}")
+#    return pcs
+
+
+def load_qemu_offsets(trace_path: Path) -> list[int]:
+    data = trace_path.read_bytes()
+
+    if len(data) % 8 != 0:
+        raise ValueError(f"Trace size {len(data)} not multiple of 8 bytes")
+
+    return list(struct.unpack("<" + "Q" * (len(data) // 8), data))
+
+
+def offsets_to_static_addrs(binary_path: Path, offsets: list[int]) -> list[int]:
+    binary = lief.parse(str(binary_path))
+    if not binary:
+        raise RuntimeError(f"Failed to parse {binary_path}")
+
+    text = binary.get_section(".text")
+    if text is None:
+        raise RuntimeError(".text section not found")
+
+    # Find the PT_LOAD segment that contains .text
+    code_seg = None
+    for seg in binary.segments:
+        if seg.type != lief.ELF.Segment.TYPE.LOAD:
+            continue
+        start = seg.virtual_address
+        end = start + seg.virtual_size
+        if start <= text.virtual_address < end:
+            code_seg = seg
+            break
+
+    if code_seg is None:
+        raise RuntimeError("No LOAD segment found that covers .text")
+
+    seg_base = code_seg.virtual_address  # this matches qemu_plugin_start_code()
+
+    # Now reconstruct static addresses
+    return [seg_base + off for off in offsets]
+ 
+def build_hit_map_static(binary_path: Path, trace_path: Path) -> dict[int, int]:
+
+    offsets = load_qemu_offsets(trace_path)
+    print(f" Got {len(offsets)} offsets")
+
+    static_addrs = offsets_to_static_addrs(binary_path, offsets)
+
+    print(f" Got {len(static_addrs)} addrs")
+    return Counter(static_addrs)
+
+def align_qemu_pcs_to_text(
+    qemu_pcs: list[int],
+    offset: int,
+    text_start: int,
+    text_end: int,
+):
+    """
+    Apply offset and keep only addresses that land in .text.
+    """
+    aligned = []
+    for pc in qemu_pcs:
+        addr = pc - offset
+        if text_start <= addr < text_end:
+            aligned.append(addr)
+    return aligned
+
+def get_text_range(binary_path: Path):
+    binary = lief.parse(str(binary_path))
+    text = binary.get_section(".text")
+    start = text.virtual_address
+    end = start + text.size
+    return start, end
+
+def file_compiled_as_pie(binary_path: Path) -> bool:
+    """
+    Return True if this ELF looks like a PIE (ET_DYN main executable),
+    False for classic ET_EXEC binaries.
+
+    Assumes 'binary_path' is an ELF binary that you're actually running
+    under qemu-*-linux-user.
+    """
+    bin_obj = lief.parse(str(binary_path))
+    if not isinstance(bin_obj, lief.ELF.Binary):
+        raise ValueError(f"{binary_path} is not an ELF binary")
+
+    ftype = bin_obj.header.file_type
+
+    # ET_DYN => position-independent (shared object or PIE).
+    # In your pipeline, anything ET_DYN that you're running as "the program"
+    # is effectively a PIE.
+
+    return ftype == lief.ELF.Header.FILE_TYPE.DYN
+
+def build_aligned_trace(binary_path: Path, trace_path: Path, disasm, target:Target, stdin, trace_backend, assume_hits=True):
+
+    if file_compiled_as_pie(binary_path):
+
+        print("FILE IS CMPILED AS PIE... MUST DETECT OFFSET")
+
+        if trace_backend == 'angr':
+
+            map, offset = run_angr_insn_trace(binary_path, stdin)
+            print(f"Capstone pre adj: {map}")
+            map = {x-offset : k for x,k in map.items()}
+            print(f"Capstone post adj: {map}")
+
+            if assume_hits:
+                map = build_adjusted_hit_map_with_markers(disasm, map, target=target)
+
+
+        #elif target == Target.X86_32 or target == Target.X86_64:
+
+
+        #    #qemu_pcs = load_qemu_trace(trace_path)
+        #    qemu_pcs = [x[0] for x in out]
+        #    #map, offset = build_x86_hit_map_from_pcs(binary_path, disasm, qemu_pcs)
+        #    map, offset = build_x86_hit_map_from_pcs(binary_path, disasm, qemu_pcs)
+
+        #    print(f"Running heuristic for x86")
+
+            
+        else:
+            out = load_qemu_trace_text(trace_path)
+            print("Buildin best offset with pcs and bytes")
+
+            qemu_pcs, map, offset, _ = build_executed_capstone_addrs_from_qemu(disasm, out)
+
+            print(f"Best offset = {offset:#x}")#, support = {support}")
+
+    else:
+        qemu_pcs = load_qemu_trace_text(trace_path)
+        qemu_pcs = [x[0] for x in qemu_pcs]
+
+        #text_start, text_end = get_text_range(binary_path)
+        #aligned_pcs = align_qemu_pcs_to_text(qemu_pcs, offset, text_start, text_end)
+        offset = 0
+
+        #common = set(capstone_addrs) & set(aligned_pcs)
+        #print(f"The new intestion size is: {len(common)} out of {len(capstone_addrs)} cap addrs")
+
+        #print(f"The set size of qemu pcs is {len(set(qemu_pcs))}")
+        map = Counter(qemu_pcs)
+
+    print(map)
+
+    # Now aligned_pcs live in the same address space as capstone_insns
+    return map, offset
+
+
+def run_qemu_trace(
+    path: Path,
+    target: Target,
+    program_input: str | None,
+    plugin_so: Path,
+    disasm,
+    timeout: int = 60,
+    keep_trace: bool = False,
+    runtime_input: str | None = None,
+    trace_backend: str = "best",
+) -> tuple[dict[int, int], list[int], int | None, str, str, Path | None]:
+    """
+    Run `path` under QEMU with the instruction-trace plugin and
+    return a hit-map and time series of executed PCs.
+
+    Parameters
+    ----------
+    path : Path
+        Path to the guest binary.
+    target : Target
+        Architecture / target enum.
+    program_input : str | None
+        Optional CLI argument passed to the guest program (like your current function).
+    plugin_so : Path
+        Path to compiled trace_insn.so.
+    timeout : int
+        Timeout in seconds for the whole run.
+    keep_trace : bool
+        If True, keep the trace file and return its path; otherwise use a temp file.
+
+    Returns
+    -------
+    hit_map : dict[int, int]
+        Map from PC -> execution count.
+    pc_series : list[int]
+        Time-ordered list of executed PCs.
+    returncode : int | None
+        Return code from QEMU process (None on timeout).
+    stdout : str
+        Captured stdout from QEMU.
+    stderr : str
+        Captured stderr from QEMU.
+    trace_path : Path | None
+        Path to the trace file if keep_trace=True, otherwise None.
+    """
+    if not path.is_file():
+        raise FileNotFoundError(f"Binary not found: {path}")
+
+    plugin_so = Path(plugin_so).expanduser().absolute()
+
+    # Create a temporary trace file or let the caller manage it
+    if keep_trace:
+        trace_path = path.with_suffix(path.suffix + ".insn_trace.bin")
+        print(f"The trace path is {trace_path} being kept")
+    else:
+        tmp = NamedTemporaryFile(prefix="insn_trace_", suffix=".bin", delete=False)
+        trace_path = Path(tmp.name)
+        tmp.close()
+
+    cmd = generate_qemu_cmd_with_plugin(
+        inp=path,
+        target=target,
+        plugin_so=plugin_so,
+        trace_log=trace_path,
+        call_time_program_input=program_input,
+    )
+
+    # Wrap with timeout(1) like your existing function
+    full_cmd = ["timeout", f"{timeout}s"] + cmd
+    print(f"The golden run command is {full_cmd}")
+
+    process = subprocess.Popen(
+        full_cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    try:
+        if runtime_input is not None:
+            if "\n" not in runtime_input:
+                runtime_input = runtime_input + "\n"
+
+            # Gather the outputs
+            stdout_b, stderr_b = process.communicate(
+                input=runtime_input.encode(), timeout=timeout + 0.5
+            )
+        else:
+            stdout_b, stderr_b = process.communicate(timeout=timeout + 0.5)
+
+        returncode = process.returncode
+    except subprocess.TimeoutExpired:
+        process.kill()
+        stdout_b, stderr_b = b"TIMEOUT", b"timeout expired"
+        returncode = None
+
+    print(f"Godlen outputted: {stdout_b}")
+
+    stdout = stdout_b.decode(errors="replace")
+    stderr = stderr_b.decode(errors="replace")
+
+    # Parse the trace
+    pc_series: list[int] = []
+    hit_map: dict[int, int] = {}
+
+    if trace_path.is_file():
+        #pc_series = load_pc_series_from_trace(trace_path)
+        #pc_series = load_qemu_trace(trace_path)
+
+        ##print(f"The pc series is {pc_series}")
+        #hit_map = hit_map_from_pc_series(pc_series)
+
+        hit_map, offset = build_aligned_trace(path, trace_path, disasm, target, program_input, trace_backend)
+
+        #filt_disasm, offset = (path, trace_path, disasm)
+        #print(f"THE DETECTED OFFSET IS {hex(offset)}")
+
+        #hit_map = Counter(pc_series)
+
+        if not keep_trace:
+            # If you’d like to auto-clean, uncomment:
+            trace_path.unlink(missing_ok=True)
+            pass
+    else:
+        raise Exception("No trace path")
+
+    return hit_map, pc_series, returncode, stdout, stderr, (trace_path if keep_trace else None)
+    #return returncode, stdout, stderr, trace_path
+
+
+
+
+def hit_map_from_pc_series(pcs: list[int]) -> dict[int, int]:
+    """
+    Convert a PC time series to a hit-map {address -> execution count}.
+    """
+    c = Counter(pcs)
+
+    return dict(c)
+
+
+
+def generate_compile_cmd(inp: Path, out: Path, target: Target, opts: str) -> list[str]:
     """
     Compile a program for a specific arch
     """
@@ -154,18 +1289,22 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target) -> list[str]:
         case Target.X86_64:
             compiler = "gcc -g"
         case Target.RISCV:
+            #compiler = "riscv64-linux-gnu-gcc -g"
             compiler = "riscv64-linux-gnu-gcc"
         case Target.RISCV_32:
+            #compiler = "riscv32-unknown-linux-gnu-gcc -g"
             compiler = "riscv32-unknown-linux-gnu-gcc"
         case Target.ARM_64:
-            compiler = "aarch64-linux-gnu-gcc"
+            #compiler = "aarch64-linux-gnu-gcc"
+            compiler = "aarch64-linux-gnu-gcc -g"
         case Target.ARM_32:
+            #compiler = "arm-linux-gnueabi-gcc -g"
             compiler = "arm-linux-gnueabi-gcc"
         case _:
             msg = f"Do not support Compilation for target {target}"
             raise Exception(msg)
 
-    cmd = f"{compiler} {inp} -o {out}".split(" ")
+    cmd = f"{compiler} {opts} {inp} -o {out}".split(" ")
     return cmd
 
 
@@ -184,7 +1323,8 @@ class Nop(Enum):
     RISCV_32_COMPACT = [0x01, 0x00]
 
 
-def disassemble_text_section(binary_path: Path):
+def disassemble_text_section(binary_path: Path, always_skip_data:bool = True):
+#def disassemble_text_section(binary_path: Path, always_skip_data:bool = False):
     """Disassemble the .text section of the binary and output instructions.
 
     Use lief to get the bytes from the .text section, then use capstone
@@ -205,10 +1345,12 @@ def disassemble_text_section(binary_path: Path):
     target = detect_target(binary_path)
 
     match target:
+
         case Target.X86_64:
             md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
         case Target.X86_32:
             md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_32)
+
         case Target.RISCV:
             md = Cs(
                 capstone.CS_ARCH_RISCV,
@@ -221,10 +1363,11 @@ def disassemble_text_section(binary_path: Path):
                 | capstone.CS_MODE_RISCVC
                 | capstone.CS_MODE_LITTLE_ENDIAN,
             )
-            try:
-                md.skipdata = True
-            except Exception:
-                pass
+            #try:
+            #    md.skipdata = True
+            #except Exception:
+            #    pass
+
         case Target.ARM_64:
             md = Cs(capstone.CS_ARCH_ARM64, capstone.CS_MODE_LITTLE_ENDIAN)
         case Target.ARM_32:
@@ -235,6 +1378,9 @@ def disassemble_text_section(binary_path: Path):
         case _:
             msg = f"Target {target} is currently not support by the disassembler"
             raise Exception(msg)
+
+    if always_skip_data:
+        md.skipdata = True
 
     # The below code ensures that we are only mutating the instructions that
     # are _going to be run at startup_....
@@ -289,6 +1435,7 @@ def in_place_patch(in_file: Path, out_file: Path, patch_addr: int, patch_data: b
     for seg in binary.segments:
         va_start = seg.virtual_address
         va_end = va_start + seg.virtual_size
+
         if va_start <= patch_addr < va_end:
             segment_found = seg
             break
@@ -822,7 +1969,12 @@ def run_binary_w_calltime_input(
     # if process.returncode is None:
     #    process.returncode = LinuxExitCodes.EX_SIGSEGV - 255
 
-    return process.returncode, stdout.decode(), ""  # stderr.decode()
+    try: 
+        out = stdout.decode()
+    except UnicodeDecodeError:
+        out = ""
+
+    return process.returncode, out, ""  # stderr.decode()
 
 
 def run_binary_w_input(
@@ -919,7 +2071,164 @@ def is_valid_instruction(opcode_bytes, target):
         return False, None
 
 
-def generate_run_cmd(inp: Path, target: Target) -> list[str]:
+
+class Target(Enum):
+    X86_32 = 0
+    RISCV = 2
+    ARM_64 = 3
+    ARM_32 = 4
+    RISCV_32 = 5
+    X86_64 = 6
+
+
+def generate_run_cmd_custom_qemu(
+    inp: Path,
+    target: Target,
+    qemu_base: Path | None = None,
+) -> list[str]:
+    """
+    Produce the QEMU command that runs the given binary for the given target.
+    If qemu_base is provided, QEMU binaries are searched there.
+    Names used are the upstream-standard QEMU user-mode binaries:
+
+        qemu-x86_64
+        qemu-i386
+        qemu-riscv64
+        qemu-riscv32
+        qemu-arm
+        qemu-aarch64
+
+    The sysroot -L directories stay the same, since they depend on the *guest*
+    ABI, not how QEMU was built.
+    """
+    inp = inp.expanduser().absolute()
+
+    def qemu_path(name: str) -> str:
+        if qemu_base is not None:
+            return str((qemu_base / name).expanduser().absolute())
+        return name  # fallback to PATH-based discovery (e.g., /usr/bin)
+
+    match target:
+        case Target.X86_64:
+            # Native execution on host
+            return [str(inp), "-g"]
+
+        case Target.X86_32:
+            return [
+                qemu_path("qemu-i386"),
+                "-L", "/usr/i386-linux-gnu",
+                str(inp),
+                "-g",
+            ]
+
+        case Target.RISCV:
+            return [
+                qemu_path("qemu-riscv64"),
+                "-L", "/usr/riscv64-linux-gnu",
+                str(inp),
+            ]
+
+        case Target.RISCV_32:
+            return [
+                qemu_path("qemu-riscv32"),
+                "-L", "/usr/riscv32-linux-gnu",
+                str(inp),
+            ]
+
+        case Target.ARM_32:
+            return [
+                qemu_path("qemu-arm"),
+                "-L", "/usr/arm-linux-gnueabi",
+                str(inp),
+            ]
+
+        case Target.ARM_64:
+            return [
+                qemu_path("qemu-aarch64"),
+                "-L", "/usr/aarch64-linux-gnu",
+                str(inp),
+            ]
+
+        case _:
+            raise Exception(f"Unsupported target {target}")
+    return
+
+
+def generate_run_cmd(
+    inp: Path,
+    target: Target,
+    qemu_base: Path | None = None,
+) -> list[str]:
+    """Run the binary with the QEMU backend (where applicable).
+
+    If qemu_base is provided, QEMU binaries are resolved as qemu_base / name.
+    Otherwise, fall back to /usr/bin or bare names as appropriate.
+    """
+
+    inp = inp.expanduser().absolute()
+
+    # Helper for building full path to a QEMU binary
+    def qemu_path(name: str) -> str:
+        if qemu_base is not None:
+            return str((qemu_base / name).expanduser().absolute())
+        # Default to /usr/bin/name to match your current layout
+        return f"/usr/bin/{name}"
+
+    match target:
+        case Target.X86_64:
+            # Native execution on host (no QEMU). If you later want QEMU here,
+            # just change this branch.
+            return [str(inp), "-g"]
+
+        case Target.X86_32:
+            return [
+                qemu_path("qemu-i386-static"),  # or "qemu-i386" if that's what you build
+                "-L",
+                "/usr/i386-linux-gnu",
+                str(inp),
+                "-g",
+            ]
+
+        case Target.RISCV:
+            return [
+                qemu_path("qemu-riscv64-static"),  # or "qemu-riscv64"
+                "-L",
+                "/usr/riscv64-linux-gnu",
+                str(inp),
+            ]
+
+        case Target.RISCV_32:
+            return [
+                qemu_path("qemu-riscv32-static"),  # or "qemu-riscv32"
+                "-L",
+                "/usr/riscv32-linux-gnu",
+                str(inp),
+            ]
+
+        case Target.ARM_32:
+            # For ARM you were using plain "qemu-arm-static" (no /usr/bin)
+            # We can still run it through qemu_path for consistency:
+            return [
+                qemu_path("qemu-arm-static"),  # or "qemu-arm"
+                "-L",
+                "/usr/arm-linux-gnueabi",
+                str(inp),
+            ]
+
+        case Target.ARM_64:
+            return [
+                qemu_path("qemu-aarch64-static"),  # or "qemu-aarch64"
+                "-L",
+                "/usr/aarch64-linux-gnu",
+                str(inp),
+            ]
+
+        case _:
+            raise Exception(f"Unsupported target {target}")
+            
+    return
+
+def OLD_generate_run_cmd(inp: Path, target: Target) -> list[str]:
     """Run the binary with the qemu backend.
 
     Run the binary using the corresponding QEMU emulator.
@@ -1350,7 +2659,7 @@ def get_program_rc(s):
 
 
 def compile_program(
-    inp: Path, out: Path, target: Target, optimization: OptimizationLevel
+    inp: Path, out: Path, target: Target, optimization: OptimizationLevel, opts:str | None,
 ) -> Path:
     """Compile a program for a specific arch and specific target."""
 
@@ -1373,12 +2682,16 @@ def compile_program(
         case _:
             raise Exception("No support for nops")
 
-    cmd = f"{compiler} -O{optimization.value} {inp} -o {out}".split(" ")
+    if opts:
+        cmd = f"{compiler} -O{optimization.value} {inp} -o {out} {opts}".split(" ")
+    else:
+        cmd = f"{compiler} -O{optimization.value} {inp} -o {out}".split(" ")
 
     try:
         subprocess.run(cmd)
         if not out.exists():
-            raise Exception(f"Failed to compile program")
+            msg = f"Failted to compile. Coommand was: {cmd}"
+            raise Exception(msg)
         return out
     except Exception as e:
         # TODO
@@ -1506,7 +2819,7 @@ def compare_disassembly(
         GRUVBOX_YELLOW = ""
 
     if not text or verbose:
-        logger.debug("Using pretty lines")
+
         print(
             f"{GRUVBOX_YELLOW}{'-':<{i_pad}}|{GRUVBOX_YELLOW} {name1:<{short_max_left - 1}}|{GRUVBOX_YELLOW} {name2:<{short_max_right - 1}}{GRUVBOX_YELLOW}|"
         )
@@ -1546,3 +2859,44 @@ def compare_disassembly(
         total += f"{out}\n"
 
     return total
+
+
+def delete_mutated_binaries(*dfs: pd.DataFrame) -> int:
+    """
+    Delete binaries referenced by the provided dataframes.
+
+    The helper returns the number of files removed so callers can emit
+    a concise status message.
+    """
+
+    deleted = 0
+    seen_paths: set[str] = set()
+
+    for df in dfs:
+        if df is None or getattr(df, "empty", True):
+            continue
+
+        if "binary_path" not in df.columns:
+            continue
+
+        for raw_path in df["binary_path"].dropna().unique():
+            path = Path(str(raw_path))
+            path_key = str(path)
+
+            if path_key in seen_paths:
+                continue
+
+            seen_paths.add(path_key)
+
+            try:
+                if path.exists():
+                    path.unlink()
+                    deleted += 1
+            except OSError as exc:
+                print(f"Failed to delete {path}: {exc}")
+
+    return deleted
+
+
+
+

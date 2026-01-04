@@ -32,11 +32,13 @@ from cli_utils import (
 )
 
 from binary_tools import (
+    delete_mutated_binaries,
     disasm,
     generate_compile_cmd,
     Target,
     compile_program,
     get_return_reg,
+    dyna_detect_insns,
     shift_exit_code,
     #_generate_nop_mutated_bin,
     generate_nops_mutated_bin,
@@ -127,7 +129,6 @@ def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
     df.to_csv(out)
     return
 
-
 def bit_inout_runner(inst, target, common, ins, outs, result_out, source_code):
     """A helper to run a bit mutantion on the file, and test on the inputs."""
 
@@ -144,55 +145,61 @@ def bit_inout_runner(inst, target, common, ins, outs, result_out, source_code):
             continue
 
         # Run all the possible inputs and outputs
-        for cur_in, cur_out in zip(ins, outs):
-            cur_in = Path(cur_in)
+        try:
+            for cur_in, cur_out in zip(ins, outs):
+                cur_in = Path(cur_in)
 
-            # See if the intermediate result exists yet
-            intermediate_out = result_out.joinpath(
-                out_file.name + f"_{cur_in.name.split('.')[0]}" + f"_{i}_" + ".json"
-            )
-
-            if intermediate_out.exists():
-                # Load and skip test
-                with open(intermediate_out, "r") as f:
-                    result = json.load(f)
-                    result = BitFlipExperimentResult(**result)
-            else:
-                # Test the binary
-                status, stdout, _ = run_binary_w_calltime_input(
-                    out_file,
-                    cur_in,
-                    target=target,
-                    timeout=common.timeout,
+                # See if the intermediate result exists yet
+                intermediate_out = result_out.joinpath(
+                    out_file.name + f"_{cur_in.name.split('.')[0]}" + f"_{i}_" + ".json"
                 )
 
-                # Status is None when there is a Timeout or
-                # when there the input image does not exist
-
-                if status is not None:
-                    status = shift_exit_code(status)
+                if intermediate_out.exists():
+                    #print('loading intermediate result')
+                    # Load and skip test
+                    with open(intermediate_out, "r") as f:
+                        result = json.load(f)
+                        result = BitFlipExperimentResult(**result)
                 else:
-                    status = -999
+                    # Test the binary
+                    status, stdout, _ = run_binary_w_calltime_input(
+                        out_file,
+                        cur_in,
+                        target=target,
+                        timeout=common.timeout,
+                    )
 
-                result = BitFlipExperimentResult(
-                    source_file=source_code,
-                    unmutated_binary=common.program_file,
-                    binary_path=out_file,
-                    flipped_addr=inst.address,
-                    flipped_index=i,
-                    return_code=status,
-                    program_input=cur_in,
-                    program_stdout=stdout,
-                    expected_stdout=cur_out,
-                    target=target,
-                    expected_returncode=common.expected_returncode,
-                    custom_returncodes=other_returncodes,
-                )
+                    # Status is None when there is a Timeout or
+                    # when there the input image does not exist
 
-                dicted_result = result.to_dict()
-                with open(intermediate_out, "w") as f:
-                    json.dump(dicted_result, f)
-            results.append(result)
+                    if status is not None:
+                        status = shift_exit_code(status)
+                    else:
+                        status = -999
+
+                    result = BitFlipExperimentResult(
+                        source_file=source_code,
+                        unmutated_binary=common.program_file,
+                        binary_path=out_file,
+                        flipped_addr=inst.address,
+                        flipped_index=i,
+                        return_code=status,
+                        program_input=cur_in,
+                        program_stdout=stdout,
+                        expected_stdout=cur_out,
+                        target=target,
+                        expected_returncode=common.expected_returncode,
+                        custom_returncodes=other_returncodes,
+                    )
+
+                    dicted_result = result.to_dict()
+                    with open(intermediate_out, "w") as f:
+                        json.dump(dicted_result, f)
+
+                results.append(result)
+        finally:
+            out_file.unlink()
+
     return results
 
 
@@ -305,8 +312,6 @@ def bit_no_comp_inout(
     print(f"The shape of the dataframe that HAS fails is {df.shape}")
     print(f"The shape of the dataframe that dropped fails is {df_no_fail.shape}")
 
-    ROWS_PER_COMBO = df.groupby(["flipped_addr", "flipped_index"]).size().iloc[0]
-
     # Make a agg group based on fliopped addr and index
     agg_df = (
         df.groupby(["flipped_addr", "flipped_index"])
@@ -331,16 +336,9 @@ def bit_no_comp_inout(
         lambda row: row["total_correct"] / len(outs), axis=1
     )
 
-    # agg_df_no_fail_upsests_only["accuracy"] = agg_df.apply(
-    #    lambda row: row['total_correct'] / len(outs), axis=1
-    # )
-
-    # plot_df = agg_df_no_fail[(int(agg_df_no_fail["total_correct"]) != int(expected_correct)) & (agg_df_no_fail['total_correct'] != 0)]
     plot_df = agg_df_no_fail[
         agg_df_no_fail["total_correct"] != int(expected_correct)
     ]
-
-    # plot_df = agg_df_no_fail[(agg_df_no_fail["total_correct"] != (expected_correct / len(outs)))]
 
     console.print("Generating Plots")
     plot_desc_accuracy(
@@ -380,20 +378,11 @@ def bit_no_comp_inout(
 
     # Per (flipped addr, flipped index), get the number of correct predictions
     grouped_df_no_fail = df_no_fail.groupby(["flipped_addr", "flipped_index"])
-    correct_per_mutated_no_fail = grouped_df_no_fail["correct"].sum()
+    #correct_per_mutated_no_fail = grouped_df_no_fail["correct"].sum()
 
-    counts = correct_per_mutated.value_counts()
-    # print(f"GROUPPED WITH FAILS: ")
-    # print(grouped_df)
     print(f"The value counts of correct predictions:")
+    counts = correct_per_mutated.value_counts()
     print(counts)
-
-    # print(f"GROUPPED WITHOUT FAILS: ")
-    # print(grouped_df_no_fail)
-    # print(f"The value counts of correct predictions (of binaries that NEVER FAILED):")
-    # counts_no_fail = correct_per_mutated_no_fail.count()
-    # print(counts_no_fail)
-    # print(agg_df['total_correct'].sum())
 
     show_results(common, df, other_returncodes)
     return df
@@ -564,8 +553,6 @@ def angr_nop_no_comp_inout(
         total_upset += len(bad_res)
         total_error += len(error_case)
 
-        # df = dataclass_to_dataframe(results)
-
     print(f"Total normal: {total_normal}")
     print(f"Total upset: {total_upset}")
     print(f"Total error: {total_error}")
@@ -573,51 +560,8 @@ def angr_nop_no_comp_inout(
         f.write(f"Total normal: {total_normal}")
         f.write(f"Total upset: {total_upset}")
         f.write(f"Total error: {total_error}")
+
     return
-
-    # Doing the analyiss.............................
-
-    print(f"Return code value counts... cols: {df.columns}")
-
-    # Add a column to see if there was a match
-
-    df["correct"] = df.apply(
-        lambda row: str(row["expected_stdout"]) in str(row["program_stdout"]), axis=1
-    )
-
-    df["failed"] = df["return_code"] == -999
-
-    # Use this to get the number of mutated bines that
-    # got 0 correct BUT still ran correctly
-    addrs_with_failed = df.loc[df["return_code"] == -999, "nopped_addr"].unique()
-    df_no_fail = df[~df["nopped_addr"].isin(addrs_with_failed)]
-
-    # nopped addrs that have one failed ANY
-
-    # Grop by the addr and record the failed and correct
-    agg_df = (
-        df.groupby("nopped_addr")
-        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-        .reset_index()
-    )
-
-    agg_df_no_fail = (
-        df_no_fail.groupby("nopped_addr")
-        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-        .reset_index()
-    )
-
-    print(f"We have {agg_df.shape} shaped agg df")
-    print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
-
-    # This is the count of number of corrects. Notice, that
-    # if the number of correct predictions is 0 it may
-    # or may not be a case where the model ran correctly
-    # and outputed zero.
-    show_results(common, df, other_returncodes)
-
-    return df
-
 
 def nn_inout_runner(common, inst, result_out, target, ins, outs, source_code):
     """Function to help with running parallel neural network in outs.
@@ -687,6 +631,8 @@ def nn_inout_runner(common, inst, result_out, target, ins, outs, source_code):
                 json.dump(dicted_result, f)
 
         results.append(result)
+
+    out_file.unlink()
 
     return results
 
@@ -850,7 +796,7 @@ def nop_no_comp_inout(
         print("Loading existing results")
     else:
         print(f"Old results: {res_file} does not exists")
-        common.out_dir.mkdir(exist_ok=True)
+        common.out_dir.mkdir(exist_ok=True, parents=True)
 
         # Intermeidate results
         result_out = common.out_dir.joinpath("intermediate_results")
@@ -892,13 +838,24 @@ def nop_no_comp_inout(
                     # Check the status codes
                     result = future.result()
                     results.extend(result)
+
+                    #if delete_non_upsets:
+
+                        # Delete anything that is not an event upsets for space..
+                        #df = dataclass_to_dataframe(results)
+
+                        #normal, error, upsets = parse_results(df)
+
+                        #delete_mutated_binaries
+
+
+
                     bar()
 
         df = dataclass_to_dataframe(results)
         save_df(df, res_file)
 
     # Doing the analyiss.............................
-    print(f"Return code value counts...cols are {df.columns}")
     print(df["return_code"].value_counts())
 
     # Add a column to see if there was a match
@@ -1519,6 +1476,7 @@ def x_bit_qemu_seq(
     num_bits: int,
     log_matching: bool,
     optimization: OptimizationLevel,
+    delete_non_upsets: bool = False,
 ):
     """Run the x bit mutation scheme with a qemu backend.
 
@@ -1560,6 +1518,10 @@ def x_bit_qemu_seq(
             return
 
     disasm = disassemble_text_section(common.program_file)
+
+    # Filter 
+    if common.dynamic_filter:
+        disasm = dyna_detect_insns(common,  target, disasm)
 
     results: list[BitFlipExperimentResult] = []
     start = datetime.now()
@@ -1615,6 +1577,10 @@ def x_bit_qemu_seq(
     upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
+    if delete_non_upsets:
+        deleted = delete_mutated_binaries(normal_df, error_df)
+        print(f"Deleted {deleted} non-upset mutated binaries")
+
     save_report(
         report_path,
         common,
@@ -1642,6 +1608,7 @@ def x_bit_qemu_parallel(
     num_bits: int,
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
+    delete_non_upsets: bool = False,
 ):
     """Run the x bit mutation scheme with a parallel qemu backend.
 
@@ -1654,26 +1621,27 @@ def x_bit_qemu_parallel(
     common.out_dir.mkdir(exist_ok=True, parents=True)
     base_out = common.out_dir
 
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    common.program_source_code = source_code
-    program_context = common.program_file.parent.joinpath(
-        common.program_file.name.replace(".c", ".toml")
-    )
+    if common.comp:
+        # Copy the source cdoe to the experiement
+        source_code = common.program_file
+        common.program_source_code = source_code
+        program_context = common.program_file.parent.joinpath(
+            common.program_file.name.replace(".c", ".toml")
+        )
 
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-    if program_context.exists():
-        shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
+        shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
+        if program_context.exists():
+            shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
 
-    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+        bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
+        compile_cmd = generate_compile_cmd(common.program_file, bin_out, target, common.opts)
 
-    res_file = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-    common.out_dir.mkdir(exist_ok=True)
+        res_file = common.out_dir.joinpath("results.csv")
+        common.out_dir = common.out_dir.joinpath("mutated_bins")
+        common.out_dir.mkdir(exist_ok=True)
 
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target, optimization)
+        # Compile the binary for the target
+        common.program_file = compile_program(source_code, bin_out, target, optimization, common.opts)
 
     if not common.yes:
         cont = str(
@@ -1685,6 +1653,16 @@ def x_bit_qemu_parallel(
             return
 
     disasm = disassemble_text_section(common.program_file)
+
+    # Filter 
+    if common.dynamic_filter:
+        print(f"Total disasm had: {len(disasm)} insns")
+        disasm = dyna_detect_insns(common,  target, disasm)
+        print(f"after filter we had: {len(disasm)} insns")
+        #for x in disasm:
+        #    print(f"Addr: {hex(x.address)}")
+
+
     futures = []
     results: list[BitFlipExperimentResult] = []
 
@@ -1694,7 +1672,7 @@ def x_bit_qemu_parallel(
         # Run the threads
         for inst in disasm:
             future = executor.submit(
-                x_bit_para_run_helper, common, inst, target, num_bits
+                x_bit_para_run_helper, common, inst, target, num_bits 
             )
             futures.append(future)
 
@@ -1752,6 +1730,10 @@ def x_bit_qemu_parallel(
     report_path = common.out_dir.parent.joinpath("report.md")
     upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
+    if delete_non_upsets:
+        deleted = delete_mutated_binaries(normal_df, error_df)
+        print(f"Deleted {deleted} non-upset mutated binaries")
 
     save_report(
         report_path,
@@ -1826,6 +1808,11 @@ def x_nop_reg_seq(
     original_bin = common.program_file
 
     disasm = disassemble_text_section(common.program_file)
+
+    # Filter 
+    if common.dynamic_filter:
+        disasm = dyna_detect_insns(common,  target, disasm)
+
     num_instructions = len(disasm)
 
     if not common.yes:
@@ -1930,7 +1917,8 @@ def x_nop_reg_seq(
 
 @app.command()
 def x_bit(
-    common: RegCommandParameters,  # TODO: Make everything use this version and rename
+    #common: RegCommandParameters,  # TODO: Make everything use this version and rename
+    common: CommandParameters,  # TODO: Make everything use this version and rename
     target: Target,
     func_names: str,
     num_bits: int = 1,
@@ -1939,10 +1927,12 @@ def x_bit(
     backend: Backends = Backends.QEMU,
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
+    delete_non_upsets: bool = False,
 ):
     """
     Run the bit experiemnt with either the qemu backend
-    or the angr backend
+    or the angr backend. Set delete_non_upsets to remove mutated binaries
+    that behaved normally or errored when the run completes.
     """
 
     if backend == Backends.ANGR and num_cpus > 1:
@@ -1968,18 +1958,31 @@ def x_bit(
 
         if num_cpus == 1:
             # Sequantial
-            x_bit_qemu_seq(common, target, num_bits, log_matching, optimization)
+            x_bit_qemu_seq(
+                common,
+                target,
+                num_bits,
+                log_matching,
+                optimization,
+                delete_non_upsets=delete_non_upsets,
+            )
         else:
             # Parallel
             x_bit_qemu_parallel(
-                common, target, num_cpus, num_bits, log_matching, optimization
+                common,
+                target,
+                num_cpus,
+                num_bits,
+                log_matching,
+                optimization,
+                delete_non_upsets=delete_non_upsets,
             )
     return
 
 
 @app.command()
 def x_nop(
-    common: RegCommandParameters,  # TODO: Make everything use this version and rename
+    common: CommandParameters,  # TODO: Make everything use this version and rename
     target: Target,
     func_names: str = "",
     num_nops: int = 1,
@@ -1988,9 +1991,11 @@ def x_nop(
     backend: Backends = Backends.QEMU,
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
+    delete_non_upsets: bool = False,
 ):
     """
-    Command to run NOP experiments!
+    Command to run NOP experiments. Set delete_non_upsets to remove mutated
+    binaries that did not produce an event upset after results are collected.
     """
 
     if backend == Backends.ANGR and num_cpus > 1:
@@ -2019,7 +2024,14 @@ def x_nop(
         if num_cpus == 1:
             # Sequantial
             logger.info(f"Staring with backend {backend} sequential")
-            x_nop_qemu_seq(common, target, num_nops, log_matching, optimization)
+            x_nop_qemu_seq(
+                common,
+                target,
+                num_nops,
+                log_matching,
+                optimization,
+                delete_non_upsets=delete_non_upsets,
+            )
         else:
             # Parallel
             logger.info(f"Staring with backend {backend} parallel")
@@ -2030,6 +2042,7 @@ def x_nop(
                 num_nops,
                 log_matching,
                 optimization=optimization,
+                delete_non_upsets=delete_non_upsets,
             )
 
     return
@@ -2257,6 +2270,7 @@ def x_nop_qemu_seq(
     verbose: bool = True,
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
+    delete_non_upsets: bool = False,
 ):
     """
     Take c source code as input, compile it, mutate it, and test
@@ -2358,6 +2372,10 @@ def x_nop_qemu_seq(
 
     upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
+    if delete_non_upsets:
+        deleted = delete_mutated_binaries(normal_df, error_df)
+        print(f"Deleted {deleted} non-upset mutated binaries")
 
     save_report(
         report_path,
@@ -2547,6 +2565,7 @@ def x_nop_qemu_parallel(
     log_matching: bool = True,
     comp: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
+    delete_non_upsets: bool = False,
 ):
     """Run an experiment that gernerates mutant binaries with num_nops, and tests them with QEMU.
 
@@ -2574,9 +2593,9 @@ def x_nop_qemu_parallel(
 
         # Compile the binary for the target
         common.program_file = compile_program(
-            source_code, bin_out, target, optimization
+            source_code, bin_out, target, optimization, common.opts
         )
-        compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+        compile_cmd = generate_compile_cmd(common.program_file, bin_out, target, common.opts)
     else:
         source_code = ""
         bin_out = common.program_file
@@ -2656,6 +2675,10 @@ def x_nop_qemu_parallel(
 
     upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
+
+    if delete_non_upsets:
+        deleted = delete_mutated_binaries(normal_df, error_df)
+        print(f"Deleted {deleted} non-upset mutated binaries")
 
     save_report(
         report_path,
@@ -2948,106 +2971,6 @@ def dataset_split_random(
     test = data.loc[test_idx]
 
     return train, val, test
-
-
-#@app.command()
-#def new_nn_test(inp: Path, out: Path, test_size: int):
-#    """
-#    Temp function to run against the new neural net
-#    """
-#
-#    out.mkdir(exist_ok=True)
-#
-#    disasm = disassemble_text_section(inp)
-#
-#    # Load the target type
-#    target = detect_target(inp)
-#    if target == Target.ARM_32:
-#        arm = True
-#    else:
-#        arm = False
-#
-#    logger.debug(f"Detected Target: {target}")
-#
-#    mutated_bins = []
-#    for inst in alive_it(disasm, title="generating mutations"):
-#        # 1. mutate
-#        mutated_bins.append(_generate_nop_mutated_bin(inp, target, inst, out))
-#
-#    baseline_correct_predictions = []
-#    for i in range(test_size):
-#        stdout = class_helper(inp, i, 5, arm)
-#        print(stdout)
-#        if "CORRECT" in stdout.decode():
-#            baseline_correct_predictions.append(i)
-#
-#    # Now, try only those in the mutated model and see what
-#    # we get
-#    results = []
-#
-#    atleast_one_mistake = 0
-#
-#    for bin in alive_it(mutated_bins, title="testing mutations"):
-#        bin_results = {
-#            "correct": [],
-#            "wrong": [],
-#            "failed": [],
-#        }
-#
-#        for i in baseline_correct_predictions:
-#            try:
-#                stdout = class_helper(bin, i, 1, arm)
-#                if "CORRECT" in stdout.decode():
-#                    bin_results["correct"].append(bin)
-#                elif "WRONG" in stdout.decode():
-#                    bin_results["wrong"].append(bin)
-#                    print(f"Bin: {bin} wrong on {i}")
-#                else:
-#                    bin_results["failed"].append(bin)
-#            except:
-#                bin_results["failed"].append(bin)
-#
-#        if len(bin_results["wrong"]) > 0:
-#            atleast_one_mistake += 1
-#        if len(bin_results["failed"]) > 0:
-#            atleast_one_mistake += 1
-#
-#        results.append((bin, bin_results))
-#
-#    console.print(
-#        f"Baseline correctly labeled {len(baseline_correct_predictions)} inputs"
-#    )
-#    console.print(
-#        f"Of {len(mutated_bins)}, {atleast_one_mistake} mutated bins incorrect labeled an input that baseline correctly labeld"
-#    )
-#
-#    for bin, res in results:
-#        if len(res["wrong"]) > 0:
-#            print(f"{bin.name} | mistakes: {res['wrong']}\n")
-#
-#    with open("TEMPDELME.txt", "w") as f:
-#        for bin, res in results:
-#            if len(res["wrong"]) > 0:
-#                f.write(f"{bin.name} | mistakes: {res['wrong']}\n")
-#
-#    return
-
-
-def class_helper(bin_path: Path, input: int, timeout: int, use_arm: bool):
-    """
-    Helper for a simple nerual net
-    """
-
-    if use_arm:
-        args = ["qemu-arm-static", bin_path, str(input)]
-    else:
-        args = [bin_path, str(input)]
-
-    args = ["timeout", f"{timeout}s"] + args
-    out = subprocess.check_output(args, stderr=subprocess.DEVNULL)
-
-    return out
-
 
 def plot_faults_and_failures(start_addr, end_addr, faulted_addresses, failed_addresses):
     """
