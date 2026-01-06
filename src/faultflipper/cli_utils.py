@@ -1,25 +1,17 @@
-from dataclasses import dataclass
 import json
-from collections import defaultdict
-from cyclopts import App, Parameter
-from pathlib import Path
-from typing import Union
-import pandas as pd
-from typing import Optional, Literal
-from enum import Enum
-from report_utils import list_tuple_table, generate_pdf_report
-
-
-from dataclasses import dataclass, fields
-
-from enums import LinuxExitCodes
-from binary_tools import Target, generate_run_cmd, Nop, disasm, map_asm_to_c
-
-from rich.table import Table
-from rich.console import Console
 import logging
+from dataclasses import dataclass, fields
+from enum import Enum
+from pathlib import Path
+from typing import Literal
 
+import pandas as pd
+from binary_tools import Nop, Target, disasm, generate_run_cmd, map_asm_to_c
+from cyclopts import Parameter
+from enums import LinuxExitCodes
+from report_utils import generate_pdf_report, list_tuple_table
 from rich.console import Console
+from rich.table import Table
 
 logger = logging.getLogger(__name__)  # module-level logger
 
@@ -47,7 +39,7 @@ class RegCommandParameters:
     program_input: str
     list_expected: bool = False
     timeout: int = 5
-    save_results: Union[Path, None] = None
+    save_results: Path | None = None
     yes: bool = False
     expected_returncode: int | None = None
     expected_stdout: str | None = None
@@ -80,7 +72,7 @@ class CommandParameters:
     expected_returncode: int
     list_expected: bool = False
     timeout: int = 5
-    save_results: Union[Path, None] = None
+    save_results: Path | None = None
     yes: bool = False
     program_source_code: Path | None = None
     dynamic_filter: bool = False
@@ -134,7 +126,7 @@ def show_results(
             ]
             good_names = set([Path(x).name for x in list(info["binary_path"])])
         else:
-            print(f"Using the list of stdout")
+            print("Using the list of stdout")
             for line in common.expected_stdout:
                 info = df[df["program_stdout"].str.contains(line, na=False)]
                 out_names = set([Path(x).name for x in list(info["binary_path"])])
@@ -153,7 +145,6 @@ def show_results(
     new_freqs = calc_freqs(df, common.expected_stdout, other_returncodes)
     print_histogram(new_freqs)
 
-    return
 
 def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Returns the split of (Normal, Error, upset).
@@ -162,12 +153,11 @@ def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataF
     expected STDOUT is found, this is a successful attack, however in other cases 
     if it is found, this is a failed attack. 
     """
-
-    expected = df['expected_stdout'][0]
+    expected = df["expected_stdout"][0]
 
     # If a program does not return 0, it must be an error case
-    return_is_0 = df[df['return_code'] ==0]
-    error = df[df['return_code'] != 0]
+    return_is_0 = df[df["return_code"] ==0]
+    error = df[df["return_code"] != 0]
 
     print(f"The expected out is {expected}")
     #print(f"out is epctped; {return_is_0["program_stdout"].str.contains(str(expected))}")
@@ -195,8 +185,7 @@ def orig_parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.
     expected STDOUT is found, this is a successful attack, however in other cases 
     if it is found, this is a failed attack. 
     """
-
-    expected = df['expected_stdout'][0]
+    expected = df["expected_stdout"][0]
 
     # Get the expected versus the not expected
     out_is_expected = df[df["program_stdout"].str.contains(expected, na=False)]
@@ -208,18 +197,18 @@ def orig_parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.
         # If the upset is on a match then the definition is easy...
         upset = out_is_expected 
         #remaining = out_is_not_expected
-        normal = out_is_not_expected[out_is_not_expected['return_code'] == 0]
-        error =  out_is_not_expected[out_is_not_expected['return_code'] != 0]
+        normal = out_is_not_expected[out_is_not_expected["return_code"] == 0]
+        error =  out_is_not_expected[out_is_not_expected["return_code"] != 0]
     else:
         # If the upset is on a non-match, the definition is harder...
         # That is we need the program to returncode 0 AND have an 
         # stdout that is not match.
-        upset = out_is_not_expected[out_is_not_expected['return_code'] == 0]
-        error1 = out_is_not_expected[out_is_not_expected['return_code'] != 0]
+        upset = out_is_not_expected[out_is_not_expected["return_code"] == 0]
+        error1 = out_is_not_expected[out_is_not_expected["return_code"] != 0]
         #upset = out_is_not_expected
 
-        error2 = out_is_expected[out_is_expected['return_code'] != 0]
-        normal = out_is_expected[out_is_expected['return_code'] == 0]
+        error2 = out_is_expected[out_is_expected["return_code"] != 0]
+        normal = out_is_expected[out_is_expected["return_code"] == 0]
 
         error = pd.concat([error1, error2],axis=1)
     return normal, error, upset
@@ -273,7 +262,6 @@ def print_histogram(results):
 
     console.print(table)
 
-    return
 
 
 def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
@@ -282,13 +270,12 @@ def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     Determine cases where the program exits with a normal exit code,
     and provides a bad output.
     """
-
     freqs = df["return_code"].value_counts().to_dict()
 
     if isinstance(expected_stdout, list):
         correct_stdouts = []
     else:
-        ret_is_0 = df[df['return_code'] == 0]
+        ret_is_0 = df[df["return_code"] == 0]
         correct_stdouts = ret_is_0[
             ret_is_0["program_stdout"].str.contains(expected_stdout, na=False)
         ]
@@ -372,14 +359,14 @@ class BitFlipExperimentResult(MutationExperiment):
     flipped_addr: int
     flipped_index: int
     mutation: str = "single_bit"
-    source_code: Optional[Path] = None
+    source_code: Path | None = None
 
 
 @dataclass
 class NopExperimentResult(MutationExperiment):
     nopped_addr: int
     mutation: str = "nop"
-    source_code: Optional[Path] = None
+    source_code: Path | None = None
 
 
 @dataclass
@@ -428,14 +415,12 @@ def save_report(
 
     Parameters
     ----------
-
     log_matching: bool = True
         The default behavior is to save the disassembly for cases where the
     expected stdout matching the true stdout (log_matching=True). If set to
     false the disasseblies will include all the cases where the expected
     STDOUT was no observed.
     """
-
     #TODO: This is bad code but fixes for exps:
     log_matching = True if "pass" in common.program_file.name else False
 
@@ -458,7 +443,7 @@ def save_report(
         logger.debug(f"Opening context file: {program_context}")
         settings_bullets += "\n"
         settings_bullets += "```toml"
-        with open(program_context, "r") as f:
+        with open(program_context) as f:
             for line in f.readlines():
                 settings_bullets += f"{line}\n"
         settings_bullets += "```"
@@ -582,8 +567,8 @@ def save_report(
                 pass
 
     # Save the json:
-    with open(report_path.parent.joinpath('vuln_c_lines.json'), 'w') as f:
-        json.dump({'c_line_numbers' : c_source_lines}, f)
+    with open(report_path.parent.joinpath("vuln_c_lines.json"), "w") as f:
+        json.dump({"c_line_numbers" : c_source_lines}, f)
 
 
     # 4. Disassembly of the files that ran critical code
@@ -622,7 +607,7 @@ def save_report(
     lines += "```c\n"
 
     # Program file source code:
-    with open(source_code, "r") as f:
+    with open(source_code) as f:
         for v in f.readlines():
             lines = lines + v
 
@@ -653,7 +638,6 @@ def save_report(
         report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
 
-    return
 
 
 def save_reg_report(
@@ -681,7 +665,6 @@ def save_reg_report(
     5. Validation of correct mutations
     6. Whole dataframe
     """
-
     # . The title
     title = f"# Experiment {results[0].mutation.upper()} on {common.program_file.name} with target {results[0].target}\n"
 
@@ -701,7 +684,7 @@ def save_reg_report(
         logger.debug(f"Opening context file: {program_context}")
         settings_bullets += "\n"
         settings_bullets += "```toml"
-        with open(program_context, "r") as f:
+        with open(program_context) as f:
             for line in f.readlines():
                 settings_bullets += f"{line}\n"
         settings_bullets += "```"
@@ -772,9 +755,9 @@ def save_reg_report(
     for res in bad_reg_info:
         list_of_progs += f"- {res.binary_path}\n"
 
-    list_of_progs += f"\n"
+    list_of_progs += "\n"
     list_of_progs += f"REG INFO NORMAL RESULTS: {len(normal_results)}"
-    list_of_progs += f"\n"
+    list_of_progs += "\n"
     list_of_progs += f"REG INFO ERROR RESULTS: {len(error_results)}"
 
     # 4. Disassembly of the files that ran critical code
@@ -813,7 +796,7 @@ def save_reg_report(
     lines += "```c\n"
 
     # Program file source code:
-    with open(source_code, "r") as f:
+    with open(source_code) as f:
         for v in f.readlines():
             lines = lines + v
 
@@ -840,7 +823,6 @@ def save_reg_report(
         report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
 
-    return
 
 
 

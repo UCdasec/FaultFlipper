@@ -1,22 +1,13 @@
 # shell.py
 
-import sys
-from prompt_toolkit import PromptSession
-from prompt_toolkit.patch_stdout import patch_stdout
-
 # Import the same 'app' from cli.py
 import cli
-from cli import console
-from rich.console import Console
+import colorama
+from prompt_toolkit import PromptSession
+from prompt_toolkit.output import create_output
 
 # console = Console()
 from prompt_toolkit.output.color_depth import ColorDepth
-
-
-from prompt_toolkit.output import create_output
-from prompt_toolkit.patch_stdout import patch_stdout
-
-import colorama
 
 colorama.init()
 
@@ -63,7 +54,7 @@ def main():
             break
         except Exception as e:
             print(e)
-            print(f"Leaving ??")
+            print("Leaving ??")
             continue
     print("out")
 

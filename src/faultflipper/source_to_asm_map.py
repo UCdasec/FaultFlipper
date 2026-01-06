@@ -1,20 +1,14 @@
-from cyclopts import App
 from pathlib import Path
-from rich.table import Table
+
+from cyclopts import App
 from rich.console import Console
-from typing_extensions import Annotated
-
-import subprocess
-
-import pandas as pd
-
 
 console = Console()
 app = App()
 
 
+from capstone import CS_ARCH_X86, CS_MODE_64, Cs
 from elftools.elf.elffile import ELFFile
-from capstone import Cs, CS_ARCH_X86, CS_MODE_64
 
 
 def parse_dwarf_info(binary_path):

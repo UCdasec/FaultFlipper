@@ -1,14 +1,10 @@
-import lief
-import capstone
-
-from capstone import Cs
 from pathlib import Path
 
+import capstone
+import lief
+from capstone import Cs
 from cyclopts import App
-from rich.table import Table
 from rich.console import Console
-from typing_extensions import Annotated
-
 
 console = Console()
 app = App()

@@ -1,6 +1,7 @@
 import re
-from pathlib import Path
 import subprocess
+from pathlib import Path
+
 import pandas as pd
 
 
@@ -8,7 +9,6 @@ def df_to_obsidian(df:pd.DataFrame):
     """
     Generate the obsidian Mathjax for the dataframe
     """
-
     # Generate the LaTeX table with pandas
     latex_str = df.to_latex(index=False)
     
@@ -38,7 +38,6 @@ def list_tuple_table(column_names:list[str], data:list[tuple])->str:
     """
     Make a table from a list of tuples
     """
-
     # Top
     ret = "$$\n"
     col_str = "|c"*len(column_names)+"|}"
@@ -63,5 +62,4 @@ def generate_pdf_report(inp:Path, out:Path):
     genrate the report pdf
     """
     cmd = f"pandoc {inp} --pdf-engine=xelatex -V geometry:top=0.5in,left=0.125in,right=0.5in,bottom=0.5in -o {out} -V fontsize=8pt".split(" ")
-    subprocess.run(cmd)
-    return
+    subprocess.run(cmd, check=False)

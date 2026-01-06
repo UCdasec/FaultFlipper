@@ -1,54 +1,33 @@
-from datetime import datetime
-import angr
-import pandas as pd
-
-from pathlib import Path
-from enum import Enum
-import subprocess
-from enum import Enum
-from capstone import CsInsn
-import lief
-from pathlib import Path
-from pathlib import Path
-from collections import Counter
-from random import sample
-import lief
-
-
-import struct
-from pathlib import Path
-from random import sample
-from collections import Counter, defaultdict
-import struct
-from collections import Counter
-from typing import Sequence, Set
-from capstone import CsInsn
+import os
 import shutil
-
-from tempfile import NamedTemporaryFile
-from angr.exploration_techniques import Timeout
-import capstone
-from capstone import Cs
-
-from pathlib import Path
+import struct
+import subprocess
 from collections import Counter, defaultdict
+from collections.abc import Sequence
+from datetime import datetime
+from enum import Enum
+from pathlib import Path
+from random import sample
+from tempfile import NamedTemporaryFile
 
-
-import psutil, os, angr
-
-from elftools.elf.elffile import ELFFile
+import angr
+import capstone
+import lief
+import pandas as pd
+import psutil
+from angr.exploration_techniques import Timeout
 from capstone import (
-    Cs,
-    CS_ARCH_X86,
-    CS_MODE_64,
     CS_ARCH_ARM,
-    CS_MODE_ARM,
     CS_ARCH_ARM64,
-    CS_MODE_ARM,
     CS_ARCH_RISCV,
-    CS_MODE_RISCV64,
+    CS_ARCH_X86,
     CS_MODE_32,
+    CS_MODE_64,
+    CS_MODE_ARM,
+    Cs,
+    CsInsn,
 )
+from elftools.elf.elffile import ELFFile
 
 
 class OptimizationLevel(Enum):
@@ -94,8 +73,6 @@ class Target(Enum):
 
 
 
-import subprocess
-from pathlib import Path
 
 
 def compile_qemu_insn_plugin(
@@ -158,16 +135,17 @@ def compile_qemu_insn_plugin(
     subprocess.run(cmd, check=True)
     return output
 
-from typing import Iterable, Any, List, Dict
+from collections.abc import Iterable
+from typing import Any
 
 
 def build_adjusted_hit_map_with_markers(
     disasm: Iterable[Any],
-    raw_hit_map: Dict[int, int],
+    raw_hit_map: dict[int, int],
     target,
     min_hits: int = 1,
     treat_markers_implicit: bool = True,
-) -> Dict[int, int]:
+) -> dict[int, int]:
     """
     Take the original angr hit_map {addr -> count} and return an adjusted
     hit-map that:
@@ -188,7 +166,8 @@ def build_adjusted_hit_map_with_markers(
             If True, special marker mnemonics can be treated as executed
             based on neighbor activity.
 
-    Returns:
+    Returns
+    -------
         Dict[int, int]: adjusted hit_map {addr -> count} containing only
         instructions considered executed (including implicit markers).
     """
@@ -246,8 +225,8 @@ def build_adjusted_hit_map_with_markers(
                 effective_hits[i] = max(min_hits, left_hit, right_hit)
 
     # Build the adjusted hit_map: only include instructions considered executed
-    adjusted_hit_map: Dict[int, int] = {}
-    for insn, count in zip(insns, effective_hits):
+    adjusted_hit_map: dict[int, int] = {}
+    for insn, count in zip(insns, effective_hits, strict=False):
         if count >= min_hits:
             adjusted_hit_map[insn.address] = count
 
@@ -272,7 +251,8 @@ def run_angr_insn_trace(
         stdin_data:
             Optional string to feed as stdin (one-shot, like `echo ... | ./a.out`).
 
-    Returns:
+    Returns
+    -------
         hit_map:
             dict { instruction_address (int) -> execution_count (int) }
         base_addr:
@@ -316,10 +296,10 @@ def compute_best_offset_with_distinct(
       - how many DISTINCT Capstone addresses support them
       - then total hits as a tie-breaker
 
-    Returns:
+    Returns
+    -------
         best_offset, distinct_support, total_support
     """
-
     # Build bytes -> [cap_addr, ...] from Capstone
     caps_by_bytes: dict[bytes, list[int]] = defaultdict(list)
     for insn in cap_insns:
@@ -344,10 +324,10 @@ def compute_best_offset_with_distinct(
             deltas_total[d] += 1
             delta_to_caps[d].add(cap_addr)
 
-    print(f"Cap has bytes: {{k.hex() for k in caps_by_bytes.keys()}}")
+    print("Cap has bytes: {k.hex() for k in caps_by_bytes.keys()}")
 
     if not deltas_total:
-        print(f"No delta total")
+        print("No delta total")
         return 0, 0, 0
 
     # Rank deltas: first by distinct cap addrs, then by total hits
@@ -373,7 +353,8 @@ def build_executed_capstone_addrs_from_qemu(
     min_distinct_caps: int = 3,
 ) -> tuple[dict[int,int], dict[int, int], int, int]:
     """
-    Returns:
+    Returns
+    -------
       hit_map: {cap_addr -> exec_count}
       best_offset
       distinct_support
@@ -636,13 +617,11 @@ def filter_executed_instructions(
 
     #print(f"In filter")
     max_cap = 0
-    min_cap = float('inf')
+    min_cap = float("inf")
 
     for insn in insns:
-        if insn.address > max_cap:
-            max_cap = insn.address
-        if insn.address < min_cap:
-            min_cap = insn.address
+        max_cap = max(insn.address, max_cap)
+        min_cap = min(insn.address, min_cap)
 
     executed = []
     for insn in insns:
@@ -766,7 +745,6 @@ def map_asm_to_c(binary_path, source_path):
 # TODO: THis is incomplete
 def get_return_reg(target: Target) -> str | None:
     """Get the return register for the target."""
-
     # Get the register
     if target == Target.ARM_32:
         return "r0"
@@ -776,10 +754,8 @@ def get_return_reg(target: Target) -> str | None:
         return None
 
 
-import subprocess
-from pathlib import Path
 from enum import Enum
-from collections import Counter
+from pathlib import Path
 
 
 class Target(Enum):
@@ -833,6 +809,7 @@ def generate_qemu_cmd_with_plugin(
     return cmd
 
 from pathlib import Path
+
 
 def load_qemu_trace(trace_path: Path) -> list[tuple[int, str]]:
     """
@@ -925,14 +902,14 @@ def compute_best_offset_by_mnemonic(
     Returns (best_delta, support_count).
     """
     # Group QEMU PCs by mnemonic
-    print(f"Qemu mnuemeic")
+    print("Qemu mnuemeic")
     qemu_by_mnem: dict[str, list[int]] = defaultdict(list)
     for pc, mnem in qemu_trace:
         qemu_by_mnem[mnem].append(pc)
         print(mnem)
 
     # Group Capstone addresses by mnemonic
-    print(f"Capstone mnuemeic")
+    print("Capstone mnuemeic")
     cap_by_mnem: dict[str, list[int]] = defaultdict(list)
     for insn in disasm:
         cap_by_mnem[insn.mnemonic].append(insn.address)
@@ -1083,7 +1060,7 @@ def build_aligned_trace(binary_path: Path, trace_path: Path, disasm, target:Targ
 
         print("FILE IS CMPILED AS PIE... MUST DETECT OFFSET")
 
-        if trace_backend == 'angr':
+        if trace_backend == "angr":
 
             map, offset = run_angr_insn_trace(binary_path, stdin)
             print(f"Capstone pre adj: {map}")
@@ -1279,7 +1256,6 @@ def generate_compile_cmd(inp: Path, out: Path, target: Target, opts: str) -> lis
     """
     Compile a program for a specific arch
     """
-
     if not out.parent.exists():
         out.parent.mkdir(parents=True)
 
@@ -1330,7 +1306,6 @@ def disassemble_text_section(binary_path: Path, always_skip_data:bool = True):
     Use lief to get the bytes from the .text section, then use capstone
     to disassemble the bytes.
     """
-
     if not binary_path.exists():
         raise Exception("No bin")
 
@@ -1466,7 +1441,6 @@ def in_place_patch(in_file: Path, out_file: Path, patch_addr: int, patch_data: b
     with open(out_file, "wb") as f:
         f.write(data)
 
-    return
 
 
 def get_capstone_arch_mode(filename):
@@ -1614,7 +1588,6 @@ def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
     If the target instructio requies 4 NOPS to completely overwrite, then
     the byte sequence for 4 nops will be returned
     """
-
     match target:
         case Target.X86_64:
             nop = Nop.X86_64
@@ -1635,7 +1608,7 @@ def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
         msg = f"No way to generate nop patch for inst len {len(inst.bytes)} and nop size {len(nop.value)}"
         raise Exception(msg)
 
-    nop_patch = nop.value * int((len(inst.bytes) / len(nop.value)))
+    nop_patch = nop.value * int(len(inst.bytes) / len(nop.value))
     return nop_patch
 
 
@@ -1815,7 +1788,6 @@ def generate_nops_mutated_bin(
     Replace all the instructions with the nop patch for this target
     architecture.
     """
-
     shutil.copy(binary, output)
 
     # Run many patches - patching in place so they all get applied
@@ -1871,7 +1843,7 @@ def count_bit_differences(bytes_1, bytes_2):
         return float("inf")  # Ensure same size; otherwise, reject
 
     diff_bits = 0
-    for b1, b2 in zip(bytes_1, bytes_2):
+    for b1, b2 in zip(bytes_1, bytes_2, strict=False):
         diff_bits += bin(b1 ^ b2).count("1")  # Count bitwise differences
 
     return diff_bits
@@ -1939,7 +1911,6 @@ def run_binary_w_calltime_input(
     ./my_binary arg1
     ```
     """
-
     cmd = generate_run_cmd(path, target)
     cmd = ["timeout", f"{timeout}s"] + cmd
     cmd.append(program_input)
@@ -1983,7 +1954,6 @@ def run_binary_w_input(
     """
     Run a binary and capture its output
     """
-
     # TODO: Robust handle here?
     if program_input[-1:] != "\n":
         program_input += "\n"
@@ -2020,7 +1990,6 @@ def is_valid_instruction(opcode_bytes, target):
     """
     Check if the provided byte sequence is a valid insturction
     """
-
     match target:
         case Target.X86_64:
             md = Cs(capstone.CS_ARCH_X86, capstone.CS_MODE_64)
@@ -2164,7 +2133,6 @@ def generate_run_cmd(
     If qemu_base is provided, QEMU binaries are resolved as qemu_base / name.
     Otherwise, fall back to /usr/bin or bare names as appropriate.
     """
-
     inp = inp.expanduser().absolute()
 
     # Helper for building full path to a QEMU binary
@@ -2228,154 +2196,6 @@ def generate_run_cmd(
             
     return
 
-def OLD_generate_run_cmd(inp: Path, target: Target) -> list[str]:
-    """Run the binary with the qemu backend.
-
-    Run the binary using the corresponding QEMU emulator.
-    """
-
-    match target:
-        case Target.X86_64:
-            return [f"{inp.expanduser().absolute()}", "-g"]
-
-        case Target.X86_32:
-            return [
-                "/usr/bin/qemu-i386-static",
-                "-L",
-                "/usr/i386-linux-gnu",
-                f"{inp.expanduser().absolute()}",
-                "-g",
-            ]
-
-        case Target.RISCV:
-            return f"/usr/bin/qemu-riscv64-static -L /usr/riscv64-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-        case Target.RISCV_32:
-            return f"/usr/bin/qemu-riscv32-static -L /usr/riscv32-linux-gnu {inp.expanduser().absolute()}".split(
-                " "
-            )
-        # TODO: Static bins don't need the linker
-        case Target.ARM_32:
-            return [
-                "qemu-arm-static",
-                "-L",
-                "/usr/arm-linux-gnueabi",
-                f"{inp.expanduser().absolute()}",
-            ]
-        case Target.ARM_64:
-            return [
-                "qemu-aarch64-static",
-                "-L",
-                "/usr/aarch64-linux-gnu",
-                f"{inp.expanduser().absolute()}",
-            ]
-        case _:
-            raise Exception(f"Unsupported target {target}")
-    return
-
-
-def old_sim_binary_w_input(bin: Path, inp: str):
-    """
-    Simulate the binary with ANGR
-    """
-
-    proj = angr.Project(bin, load_options={"auto_load_libs": False})
-    pwd = inp.encode()
-    cfg = proj.analyses.CFGFast()
-
-    stdin_sf = angr.SimFile("stdin", content=pwd)
-
-    state = proj.factory.full_init_state(stdin=stdin_sf)
-
-    funcs = [v.name for _, v in cfg.functions.items()]
-
-    addr_list = [x.addr for _, x in cfg.functions.items()]
-    addr_list.sort()
-    addr_set = list(set(addr_list))
-    addr_set.sort()
-
-    if len(addr_list) != len(addr_set):
-        print(addr_list)
-        print(addr_set)
-        raise ValueError
-
-    if addr_list != addr_set:
-        print(f"Addr list: \n{addr_list}")
-        print(f"Addr set: \n{addr_set}")
-        raise ValueError
-
-    captured = {}
-
-    # def after_ret(s):
-    #    if s.callstack.func_addr not in [x.addr for x in funcs]:
-    #        return
-    #
-    #    cur_regs = {}
-    #    for name in s.arch.registers.keys():
-    #        bv = getattr(s.regs, name)
-    #        cur_regs[name] = s.solver.eval(bv, cast_to=int)
-
-    #    key =  addr_to_name[s.callstack.func_addr]
-
-    #    if key not in captured.keys():
-    #        captured[key] = []
-
-    #    #captured[addr_to_name[s.callstack.func_addr]] = cur_regs
-    #    captured[key].append(cur_regs)
-
-    def ret_hook(fn_name):
-        def _after_ret(s):
-            cur_regs = {}
-            for name in s.arch.registers.keys():
-                bv = getattr(s.regs, name)
-                cur_regs[name] = s.solver.eval(bv, cast_to=int)
-
-            if fn_name not in captured.keys():
-                captured[fn_name] = []
-            captured[fn_name].append(cur_regs)
-
-        return _after_ret
-
-    # for func in funcs:
-    #    if func.is_plt:
-    #        continue
-    #    # For every return site in the chosen function
-    #    for r in func.ret_sites:
-    #        state.inspect.b(
-    #            'instruction',
-    #            #when=angr.BP_BEFORE,
-    #            when=angr.BP_AFTER,
-    #            instruction=r.addr,
-    #            action=ret_hook(func.name),
-    #        )
-
-    for func_name in funcs:
-        cur_func = cfg.functions.function(name=func_name)
-        if cur_func is None:
-            captured[func_name] = []
-            continue
-
-            # For every return site in the chosen function
-        state.inspect.b(
-            #'instruction',
-            "return",
-            # when=angr.BP_AFTER,
-            when=angr.BP_BEFORE,
-            # instruction=pwd_clk.addr,
-            function_address=cur_func.addr,
-            action=ret_hook(func_name),
-        )
-
-    simgr = proj.factory.simulation_manager(state).run()
-
-    dead = simgr.deadended[0]
-    stdout = dead.posix.dumps(1).decode()
-    ret = get_program_rc(dead)
-
-    return ret, stdout, captured
-
-
 def fast_sim_binary_w_input(bin: Path, inp: str, func_names: str):
     """
     Use a automatic prototype grabbing and execute the
@@ -2383,7 +2203,6 @@ def fast_sim_binary_w_input(bin: Path, inp: str, func_names: str):
 
     This requries knownledge aout the function arguments however
     """
-
     # proj = angr.Project(bin, load_options={'auto_load_libs': False}, add_options=angr.options.unicorn | {angr.options.LAZY_SOLVES})
     proj = angr.Project(bin, load_options={"auto_load_libs": False})
     extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
@@ -2399,7 +2218,7 @@ def fast_sim_binary_w_input(bin: Path, inp: str, func_names: str):
     # CFGFast only does static lifting...
     stdin_sf = angr.SimFile("stdin", content=inp.encode())
 
-    print(f"Init state")
+    print("Init state")
     # Initialiaitve the sim state
     state = proj.factory.full_init_state(stdin=stdin_sf, options=extra_options)
 
@@ -2417,7 +2236,7 @@ def fast_sim_binary_w_input(bin: Path, inp: str, func_names: str):
                 cur_regs[name] = s.solver.eval(bv, cast_to=int)
 
             # Add all register information into captured dict
-            if fn_name not in captured.keys():
+            if fn_name not in captured:
                 captured[fn_name] = []
             captured[fn_name].append(cur_regs)
 
@@ -2471,7 +2290,6 @@ def sim_binary_w_calltime_input(
     """
     Simulate the binary with ANGR
     """
-
     proj = angr.Project(bin, load_options={"auto_load_libs": False})
 
     # TODO: This caused a segfault but should be possible soon
@@ -2505,7 +2323,7 @@ def sim_binary_w_calltime_input(
                 cur_regs[name] = s.solver.eval(bv, cast_to=int)
 
             # Add all register information into captured dict
-            if fn_name not in captured.keys():
+            if fn_name not in captured:
                 captured[fn_name] = []
             captured[fn_name].append(cur_regs)
 
@@ -2560,7 +2378,6 @@ def sim_binary_w_input(
     """
     Simulate the binary with ANGR
     """
-
     proj = angr.Project(bin, load_options={"auto_load_libs": False})
 
     # TODO: This caused a segfault but should be possible soon
@@ -2594,7 +2411,7 @@ def sim_binary_w_input(
                 cur_regs[name] = s.solver.eval(bv, cast_to=int)
 
             # Add all register information into captured dict
-            if fn_name not in captured.keys():
+            if fn_name not in captured:
                 captured[fn_name] = []
             captured[fn_name].append(cur_regs)
 
@@ -2662,7 +2479,6 @@ def compile_program(
     inp: Path, out: Path, target: Target, optimization: OptimizationLevel, opts:str | None,
 ) -> Path:
     """Compile a program for a specific arch and specific target."""
-
     if not out.parent.exists():
         out.parent.mkdir(parents=True)
 
@@ -2688,7 +2504,7 @@ def compile_program(
         cmd = f"{compiler} -O{optimization.value} {inp} -o {out}".split(" ")
 
     try:
-        subprocess.run(cmd)
+        subprocess.run(cmd, check=False)
         if not out.exists():
             msg = f"Failted to compile. Coommand was: {cmd}"
             raise Exception(msg)
@@ -2718,7 +2534,6 @@ def disasm(
     end_addr: int
         The decimsal 10 end address
     """
-
     pretty_insns = []
     for bin in binary:
         disassembly = disassemble_text_section(bin)
@@ -2796,7 +2611,6 @@ def compare_disassembly(
     :param lines_b: list of strings (disassembly lines for binary B)
     :param column_width: width allocated for each column
     """
-
     white_a = [x[0] for x in lines_a]
     white_b = [x[0] for x in lines_b]
     nice_a = [x[1] for x in lines_a]
@@ -2868,7 +2682,6 @@ def delete_mutated_binaries(*dfs: pd.DataFrame) -> int:
     The helper returns the number of files removed so callers can emit
     a concise status message.
     """
-
     deleted = 0
     seen_paths: set[str] = set()
 

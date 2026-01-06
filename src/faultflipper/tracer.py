@@ -37,38 +37,30 @@ Requirements:
 
 import argparse
 import os
-import sys
-from cli import Target, get_capstone_arch_mode
 from dataclasses import dataclass, field
-from typing import List, Dict, Optional
+from pathlib import Path
 
 import angr
-import claripy
-
-from cyclopts import App, Parameter
-from typing import Annotated, Optional
-from rich.table import Table
-from rich.console import Console
-from typing_extensions import Annotated
-from enum import Enum
-from pathlib import Path
-from enums import LinuxExitCodes
-
-
-# For reading DWARF debug info
-from elftools.elf.elffile import ELFFile
 
 # For disassembly
 from capstone import (
+    CS_ARCH_ARM64,
+    CS_ARCH_RISCV,
+    CS_ARCH_X86,
+    CS_MODE_64,
+    CS_MODE_ARM,
+    CS_MODE_RISCV64,
     Cs,
-    CS_ARCH_X86, CS_MODE_64,
-    CS_ARCH_ARM64, CS_MODE_ARM,
-    CS_ARCH_RISCV, CS_MODE_RISCV64
 )
+from cli import Target, get_capstone_arch_mode
+from cyclopts import App
+
+# For reading DWARF debug info
+from elftools.elf.elffile import ELFFile
+from rich.console import Console
+from rich.table import Table
 
 # For pretty output
-from rich.table import Table
-from rich.console import Console
 
 console = Console()
 app = App()
@@ -79,10 +71,11 @@ class CriticalHitResult:
     """
     Represents each "critical" instruction address and how many times it was executed.
     """
+
     address: int
     hit_count: int = field(default=0)
 
-    def to_dict(self) -> Dict[str, str]:
+    def to_dict(self) -> dict[str, str]:
         """
         Convert to dict for easy CSV or Pandas usage.
         """
@@ -112,7 +105,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def parse_line_numbers(line_specs: List[str]) -> List[int]:
+def parse_line_numbers(line_specs: list[str]) -> list[int]:
     """
     Parse a list of line specs which could be single integers (e.g., "42")
     or ranges (e.g., "40-45"). Return a flat list of all line numbers.
@@ -132,7 +125,7 @@ def parse_line_numbers(line_specs: List[str]) -> List[int]:
 
 #def find_addresses_with_pyelftools(binary_path: str, source_path: str, critical_lines: List[int]) -> List[int]:
 
-def find_addresses_with_pyelftools(binary: Path, source_path: Path, critical_lines: List[int], base_addr:int, arch: Target) -> tuple[List[int], Dict]:
+def find_addresses_with_pyelftools(binary: Path, source_path: Path, critical_lines: list[int], base_addr:int, arch: Target) -> tuple[list[int], dict]:
     """
     Use pyelftools to parse DWARF line info in the ELF and gather addresses
     corresponding to the given line numbers in source_path.
@@ -153,13 +146,13 @@ def find_addresses_with_pyelftools(binary: Path, source_path: Path, critical_lin
             raise RuntimeError("No DWARF debug info found in the binary. Recompile with -g.")
 
         dwarfinfo = elffile.get_dwarf_info()
-        text_section = elffile.get_section_by_name('.text')
+        text_section = elffile.get_section_by_name(".text")
 
         if text_section is None:
             raise RuntimeError("No .text section found in the ELF.")
         
         text_data = text_section.data()
-        text_vaddr = text_section['sh_addr']  # The load address of .text
+        text_vaddr = text_section["sh_addr"]  # The load address of .text
 
         # Setup Capstone for the requested architecture
         # (If you're dealing with 32-bit or different modes, adapt as needed)
@@ -196,7 +189,7 @@ def find_addresses_with_pyelftools(binary: Path, source_path: Path, critical_lin
                 if state.file == 0 or state.line == 0:
                     continue
 
-                file_entry = line_program['file_entry'][state.file - 1]
+                file_entry = line_program["file_entry"][state.file - 1]
                 file_name = file_entry.name.decode("utf-8", errors="ignore")
                 # Check if it matches our source filename (base name or exact path)
                 if os.path.basename(file_name) == os.path.basename(source_path):
@@ -242,7 +235,7 @@ def find_addresses_with_pyelftools(binary: Path, source_path: Path, critical_lin
 
 
 #def run_angr_concrete(binary_path: str, critical_addrs: List[int], stdin_data: Optional[str] = None) -> tuple[Dict[int, int], int]:
-def run_angr_concrete(binary_path: str, stdin_data: Optional[str] = None) -> tuple[Dict[int, int], int]:
+def run_angr_concrete(binary_path: str, stdin_data: str | None = None) -> tuple[dict[int, int], int]:
     """
     Load the binary into angr, feed it optional stdin (concretely),
     and track how many times each address in critical_addrs is executed.
@@ -254,7 +247,7 @@ def run_angr_concrete(binary_path: str, stdin_data: Optional[str] = None) -> tup
 
     # Provide optional stdin
     if stdin_data is not None:
-        sim_stdin = angr.SimFileStream(name='stdin', content=stdin_data + '\n')
+        sim_stdin = angr.SimFileStream(name="stdin", content=stdin_data + "\n")
         state = proj.factory.full_init_state(stdin=sim_stdin)
     else:
         state = proj.factory.full_init_state()
@@ -270,7 +263,7 @@ def run_angr_concrete(binary_path: str, stdin_data: Optional[str] = None) -> tup
             hit_map[st.addr] = 1
 
     # Attach the callback
-    state.inspect.b('irsb', when=angr.BP_BEFORE, action=block_callback)
+    state.inspect.b("irsb", when=angr.BP_BEFORE, action=block_callback)
 
     simgr = proj.factory.simulation_manager(state)
     simgr.run()
@@ -282,7 +275,7 @@ def run_angr_concrete(binary_path: str, stdin_data: Optional[str] = None) -> tup
     return hit_map, base_addr
 
 
-def print_results_rich(results: List[CriticalHitResult]):
+def print_results_rich(results: list[CriticalHitResult]):
     """
     Pretty-print the results in a Rich table.
     """
@@ -297,7 +290,7 @@ def print_results_rich(results: List[CriticalHitResult]):
     console.print(table)
 
 
-def save_results_csv(results: List[CriticalHitResult], csv_path: str):
+def save_results_csv(results: list[CriticalHitResult], csv_path: str):
     """
     Save the results to CSV format.
     """
@@ -316,7 +309,7 @@ def trace_dumb(
     #critical_asm:Optional[list[str]] = None,
     #source:Optional[Path] = None,
     #critical_source_lines: Optional[list[str]] = None,
-    csv_out: Optional[Path] = None,
+    csv_out: Path | None = None,
     arch: Target = Target.X86_64,
 ):
     """
@@ -326,8 +319,6 @@ def trace_dumb(
     (1) Provide source code + critical lines 
     (2) Provide asm critcal lines
     """
-
-    # 
     hit_map, base_addr = run_angr_concrete(binary,  stdin_data=stdin)
     new_map = {}
 
@@ -355,10 +346,10 @@ def trace_dumb(
 def trace(
     binary,
     stdin,
-    critical_asm:Optional[list[str]] = None,
-    source:Optional[Path] = None,
-    critical_source_lines: Optional[list[str]] = None,
-    csv_out: Optional[Path] = None,
+    critical_asm:list[str] | None = None,
+    source:Path | None = None,
+    critical_source_lines: list[str] | None = None,
+    csv_out: Path | None = None,
     arch: Target = Target.X86_64,
 ):
     """
@@ -368,8 +359,6 @@ def trace(
     (1) Provide source code + critical lines 
     (2) Provide asm critcal lines
     """
-
-    # 
     hit_map, base_addr = run_angr_concrete(binary,  stdin_data=stdin)
     new_map = {}
 

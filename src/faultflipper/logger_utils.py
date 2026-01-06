@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 
+
 def setup_logger(
     log_dir: str | Path = "logs",
     log_name: str = "run.log",

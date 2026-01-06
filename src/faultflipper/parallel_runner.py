@@ -1,15 +1,17 @@
 from pathlib import Path
-from binary_tools import (
-    Target,  
-    shift_exit_code, 
-    generate_nops_mutated_bin,  
-    count_bit_differences, 
-    run_binary_w_input, 
-    sim_binary_w_input, 
-    generate_x_bits_mutated_file,
-    generate_data_bit_flip
-)
+
 import lief
+from binary_tools import (
+    Target,
+    count_bit_differences,
+    generate_data_bit_flip,
+    generate_nops_mutated_bin,
+    generate_x_bits_mutated_file,
+    run_binary_w_input,
+    shift_exit_code,
+    sim_binary_w_input,
+)
+
 
 def x_bit_angr_helper(common, inst, target: Target, num_bits:int, func_names, timeout):
     """Generate all mutations and run each for the target binary with angr.
@@ -17,7 +19,6 @@ def x_bit_angr_helper(common, inst, target: Target, num_bits:int, func_names, ti
     Run a binary and capture its output - This version will return
     multiple results
     """
-
     if common.program_input[-1:] != "\n":
         common.program_input = common.program_input + "\n"
     else:
@@ -63,7 +64,6 @@ def x_bit_para_run_helper(common, inst, target: Target, num_bits: int):
     Run a binary and capture its output - This version will return
     multiple results
     """
-
     if common.program_input[-1:] != "\n":
         input = common.program_input + "\n"
     else:
@@ -111,7 +111,7 @@ def x_bit_para_run_helper(common, inst, target: Target, num_bits: int):
             results.append(
                 (out_file, returncode, inst, common, target, stdout, stderr, i)
             )
-        except Exception as e:
+        except Exception:
             results.append((out_file, -900, inst, common, target, "", "", i))
 
     return results
@@ -120,7 +120,6 @@ def x_nop_para_run_helper(common, insts, target: Target):
     """
     Run a binary and capture its output
     """
-
     if common.program_input[-1:] != "\n":
         common.program_input += "\n"
 
@@ -153,7 +152,6 @@ def x_data_para_run_helper(common, data_idx, target: Target, target_section):
     """
     Run a binary and capture its output
     """
-
     if common.program_input[-1:] != "\n":
         common.program_input += "\n"
 
@@ -201,7 +199,6 @@ def x_nop_angr_helper(common, insts, target: Target, func_names:list[str], timeo
     """
     Run a binary and capture its output with angr
     """
-
     if common.program_input[-1:] != "\n":
         common.program_input += "\n"
 
@@ -255,7 +252,6 @@ def nop_para_run_helper(common, inst, target: Target):
     """
     Run a binary and capture its output
     """
-
     if common.program_input[-1:] != "\n":
         common.program_input += "\n"
 
