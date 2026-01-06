@@ -15,5 +15,9 @@ ML_RESULTS
 classifier_profiles
 logs
 
+# Test files
+test_files/
+test_packages/
+
 __pycache__/
 __pycache__
