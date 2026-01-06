@@ -1,9 +1,10 @@
 import os
 import shutil
 import struct
+from typing import Any
 import subprocess
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Sequence, Iterable
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -62,17 +63,13 @@ class MemLimiter(angr.exploration_techniques.ExplorationTechnique):
 
 
 class Target(Enum):
+    """Support Targets."""
     X86_32 = 0
     RISCV = 2
     ARM_64 = 3
     ARM_32 = 4
     RISCV_32 = 5
     X86_64 = 6
-
-
-
-
-
 
 
 def compile_qemu_insn_plugin(
@@ -135,8 +132,6 @@ def compile_qemu_insn_plugin(
     subprocess.run(cmd, check=True)
     return output
 
-from collections.abc import Iterable
-from typing import Any
 
 
 def build_adjusted_hit_map_with_markers(
@@ -308,10 +303,6 @@ def compute_best_offset_with_distinct(
     deltas_total = Counter()
     delta_to_caps: dict[int, set[int]] = defaultdict(set)
 
-    #print(f"Leng of the pc is {len(qemu_trace)}")
-
-    #got = False
-
     for pc_qemu, q_bytes in qemu_trace:
         addrs = caps_by_bytes.get(q_bytes)
 
@@ -339,8 +330,6 @@ def compute_best_offset_with_distinct(
     # max by (distinct, total)
     best_distinct, best_total, best_delta = max(candidates)
     print(
-        "                hhhhhhhhhhhhhhhhhhhhhhhhh      \n\n        "
-
         f"[offset] best_offset={best_delta:#x}, "
         f"distinct_caps={best_distinct}, total_support={best_total}"
     )
@@ -382,7 +371,6 @@ def build_executed_capstone_addrs_from_qemu(
         return {}, hit_map, 0, distinct_support
 
     # Rebuild bytes map
-    from collections import defaultdict
     caps_by_bytes: dict[bytes, list[int]] = defaultdict(list)
 
     for insn in cap_insns:
@@ -472,6 +460,19 @@ def get_text_range(binary_path: Path) -> tuple[int, int]:
 
 
 def file_compiled_as_pie(binary_path: Path) -> bool:
+    """
+    Determine whether an ELF binary was compiled as a position-independent executable.
+
+    Parameters
+    ----------
+    binary_path : Path
+        Path to the ELF binary being inspected.
+
+    Returns
+    -------
+    bool
+        ``True`` when the file type is ``ET_DYN`` (typical for PIE), otherwise ``False``.
+    """
     bin_ = lief.parse(str(binary_path))
     if not bin_:
         raise RuntimeError(f"Failed to parse ELF: {binary_path}")
@@ -559,6 +560,24 @@ def build_x86_hit_map_from_pcs(
     disasm,          # list of Capstone insns
     qemu_pcs: list[int],
 ) -> tuple[dict[int, int], int]:
+    """
+    Build an execution hit map for x86 targets from raw QEMU program counters.
+
+    Parameters
+    ----------
+    binary_path : Path
+        Path to the binary whose instructions were traced.
+    disasm : list[capstone.CsInsn]
+        Disassembly of the binary's ``.text`` section.
+    qemu_pcs : list[int]
+        Raw PC values emitted by the QEMU tracing plugin.
+
+    Returns
+    -------
+    tuple[dict[int, int], int]
+        Mapping of Capstone instruction addresses to execution counts, and the
+        offset applied to align QEMU PCs to static addresses.
+    """
     capstone_addrs = [ins.address for ins in disasm]
     capstone_set = set(capstone_addrs)
 
@@ -669,7 +688,25 @@ def dyna_detect_insns(common, target:Target, disasm, drop_sys: bool = True)-> li
 
 #TODO: DEP THIS 
 def filter_executed_insns(binary_path: Path, trace_path: Path, disasm, min_hits: int = 1):
+    """
+    Filter Capstone instructions using a static hit map derived from a QEMU trace.
 
+    Parameters
+    ----------
+    binary_path : Path
+        Binary whose trace is being examined.
+    trace_path : Path
+        File produced by the QEMU tracing plugin.
+    disasm : Iterable[capstone.CsInsn]
+        Disassembled instructions to filter.
+    min_hits : int, optional
+        Minimum number of executions required to keep an instruction, by default ``1``.
+
+    Returns
+    -------
+    tuple[list[capstone.CsInsn], dict[int, int]]
+        (executed instructions, raw hit map indexed by instruction address).
+    """
     hit_map = build_hit_map_static(binary_path, trace_path)
     executed = [insn for insn in disasm if hit_map.get(insn.address, 0) >= min_hits]
 
@@ -917,8 +954,6 @@ def compute_best_offset_by_mnemonic(
 
     deltas = Counter()
 
-
-
     for mnem in set(qemu_by_mnem.keys()) & set(cap_by_mnem.keys()):
         q_list = qemu_by_mnem[mnem]
         c_list = cap_by_mnem[mnem]
@@ -948,23 +983,20 @@ def compute_best_offset_by_mnemonic(
     print(f"Chosen offset = {best_delta:#x}, support = {support}")
     return best_delta, support
 
-
-#def load_qemu_trace(trace_path: Path) -> list[int]:
-#    trace_path = Path(trace_path)
-#    data = trace_path.read_bytes()
-#    if len(data) % 8 != 0:
-#        raise ValueError(f"Trace size {len(data)} not multiple of 8 bytes")
-#
-#    pcs = list(struct.unpack("<" + "Q" * (len(data) // 8), data))
-#
-#    #print("TRACEEEEEEEEEEEEEEEEE..........")
-#    #for i, pc in enumerate(pcs):
-#        #if pc < 0x4000000:
-#        #print(f"{i}: {hex(pc)}")
-#    return pcs
-
-
 def load_qemu_offsets(trace_path: Path) -> list[int]:
+    """
+    Load the raw offsets recorded by the QEMU trace plugin.
+
+    Parameters
+    ----------
+    trace_path : Path
+        Binary file generated by the plugin (sequence of little-endian ``uint64`` values).
+
+    Returns
+    -------
+    list[int]
+        Offsets measured relative to QEMU's start address for the code segment.
+    """
     data = trace_path.read_bytes()
 
     if len(data) % 8 != 0:
@@ -974,6 +1006,21 @@ def load_qemu_offsets(trace_path: Path) -> list[int]:
 
 
 def offsets_to_static_addrs(binary_path: Path, offsets: list[int]) -> list[int]:
+    """
+    Convert offsets emitted by the tracing plugin into static instruction addresses.
+
+    Parameters
+    ----------
+    binary_path : Path
+        ELF binary corresponding to the trace.
+    offsets : list[int]
+        Offsets returned by :func:`load_qemu_offsets`.
+
+    Returns
+    -------
+    list[int]
+        Absolute virtual addresses inside the binary's ``.text`` section.
+    """
     binary = lief.parse(str(binary_path))
     if not binary:
         raise RuntimeError(f"Failed to parse {binary_path}")
@@ -1002,7 +1049,21 @@ def offsets_to_static_addrs(binary_path: Path, offsets: list[int]) -> list[int]:
     return [seg_base + off for off in offsets]
  
 def build_hit_map_static(binary_path: Path, trace_path: Path) -> dict[int, int]:
+    """
+    Build a frequency map of executed addresses using only QEMU trace output.
 
+    Parameters
+    ----------
+    binary_path : Path
+        Binary whose instructions were executed.
+    trace_path : Path
+        Path to the raw trace file produced by QEMU.
+
+    Returns
+    -------
+    dict[int, int]
+        Counts keyed by static instruction address.
+    """
     offsets = load_qemu_offsets(trace_path)
     print(f" Got {len(offsets)} offsets")
 
@@ -1028,6 +1089,19 @@ def align_qemu_pcs_to_text(
     return aligned
 
 def get_text_range(binary_path: Path):
+    """
+    Return the start/end virtual addresses of the ``.text`` section.
+
+    Parameters
+    ----------
+    binary_path : Path
+        ELF binary to inspect.
+
+    Returns
+    -------
+    tuple[int, int]
+        Start (inclusive) and end (exclusive) virtual addresses.
+    """
     binary = lief.parse(str(binary_path))
     text = binary.get_section(".text")
     start = text.virtual_address
@@ -1055,7 +1129,27 @@ def file_compiled_as_pie(binary_path: Path) -> bool:
     return ftype == lief.ELF.Header.FILE_TYPE.DYN
 
 def build_aligned_trace(binary_path: Path, trace_path: Path, disasm, target:Target, stdin, trace_backend, assume_hits=True):
+    """
+    Align a QEMU or angr trace to static instruction addresses and build a hit map.
 
+    Parameters
+    ----------
+    binary_path : Path
+        Binary under analysis.
+    trace_path : Path
+        Trace file produced by the selected backend.
+    disasm : list[capstone.CsInsn]
+        Disassembly of the ``.text`` section.
+    target : Target
+        Architecture enum describing the binary.
+    stdin : str | bytes | None
+        Runtime input used for angr traces (ignored for QEMU).
+    trace_backend : str
+        Either ``\"angr\"`` or ``\"qemu\"`` to control offset recovery.
+    assume_hits : bool, optional
+        When ``True`` the resulting hit map is forced to contain every instruction
+        once even if the trace skipped it; defaults to ``True``.
+    """
     if file_compiled_as_pie(binary_path):
 
         print("FILE IS CMPILED AS PIE... MUST DETECT OFFSET")
@@ -1632,6 +1726,29 @@ def get_target_nop(target):
 def generate_x_bits_mutated_file(
     i, inst_bits, target, inst, common, num_bits
 ) -> None | Path:
+    """
+    Flip a contiguous block of bits in an instruction and materialize a mutated binary.
+
+    Parameters
+    ----------
+    i : int
+        Starting bit index to flip.
+    inst_bits : list[str]
+        Bit-string representation of the original instruction.
+    target : Target
+        Architecture of the binary (used to validate mutations).
+    inst : Any
+        Capstone instruction object providing the address/bytes to patch.
+    common : CommandParameters
+        Experiment settings containing paths and expectations.
+    num_bits : int
+        Number of consecutive bits to toggle starting at ``i``.
+
+    Returns
+    -------
+    Path | None
+        Path to the mutated binary when the instruction remains valid; ``None`` otherwise.
+    """
     binary = lief.parse(common.program_file)
 
     original_bits = [x for x in inst_bits]
@@ -1676,6 +1793,28 @@ def generate_x_bits_mutated_file(
 
 
 def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None, Path]:
+    """
+    Flip a single bit within an instruction and write the patched binary to disk.
+
+    Parameters
+    ----------
+    i : int
+        Bit index to toggle.
+    inst_bits : list[str]
+        Bit-string representation of the instruction.
+    target : Target
+        Architecture of the binary (used for validation).
+    inst : Any
+        Capstone instruction describing the location being patched.
+    common : CommandParameters
+        Experiment settings with output directory and reference binary.
+
+    Returns
+    -------
+    tuple[None, Path]
+        ``None`` when the flipped bit produces an invalid instruction, otherwise the
+        path to the mutated binary.
+    """
     binary = lief.parse(common.program_file)
 
     original_bits = [x for x in inst_bits]
@@ -1719,7 +1858,27 @@ def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None,
 def generate_data_bit_flip(
     binary_path: Path, data_idx: int, data_bit_idx: int, out_file: Path, target_section: str = ".data"
 ) -> Path:
+    """
+    Flip a specific bit inside a writable section (default: ``.data``) and emit a new binary.
 
+    Parameters
+    ----------
+    binary_path : Path
+        Path to the source binary.
+    data_idx : int
+        Byte index within the target section to modify.
+    data_bit_idx : int
+        Bit position (0-7) inside the byte to toggle.
+    out_file : Path
+        Destination path for the mutated binary.
+    target_section : str, optional
+        Section name to mutate, default is ``\".data\"``.
+
+    Returns
+    -------
+    Path
+        Path to the mutated binary.
+    """
     # Load the ELF binary
     binary = lief.parse(binary_path)
 
@@ -2709,7 +2868,6 @@ def delete_mutated_binaries(*dfs: pd.DataFrame) -> int:
                 print(f"Failed to delete {path}: {exc}")
 
     return deleted
-
 
 
 
