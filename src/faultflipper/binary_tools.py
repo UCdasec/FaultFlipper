@@ -11,12 +11,9 @@ from pathlib import Path
 from random import sample
 from tempfile import NamedTemporaryFile
 
-import angr
 import capstone
 import lief
 import pandas as pd
-import psutil
-from angr.exploration_techniques import Timeout
 from capstone import (
     CS_ARCH_ARM,
     CS_ARCH_ARM64,
@@ -30,6 +27,15 @@ from capstone import (
 )
 from elftools.elf.elffile import ELFFile
 
+from angr_backend import (
+    MemLimiter,
+    fast_sim_binary_w_input,
+    get_program_rc,
+    run_angr_insn_trace,
+    sim_binary_w_calltime_input,
+    sim_binary_w_input,
+)
+
 
 class OptimizationLevel(Enum):
     O0 = "0"
@@ -37,29 +43,6 @@ class OptimizationLevel(Enum):
     O2 = "2"
     O3 = "3"
     OZ = "z"
-
-
-class MemLimiter(angr.exploration_techniques.ExplorationTechnique):
-    """This is a Limiter for ANGR to put on upper bound on the total memory that it can use."""
-
-    def __init__(self, max_gb: int, stash="out_of_memory"):
-        super().__init__()
-        self.proc = psutil.Process(os.getpid())
-        self.limit = max_gb * (1 << 30)
-        self.cap = max_gb
-        self.triggered = False
-        self.stash = stash
-
-    def _over(self):
-        return self.proc.memory_info().rss > self.limit
-
-    def step(self, simgr, stash="active", **kwargs):
-        if self._over():
-            self.triggered = True
-            # if self.proc.memory_info().rss > self.cap * (1<<30):
-            simgr.move(from_stash=stash, to_stash=self.stash)
-            return simgr
-        return simgr.step(stash=stash, **kwargs)
 
 
 class Target(Enum):
@@ -227,57 +210,6 @@ def build_adjusted_hit_map_with_markers(
 
     return adjusted_hit_map
 
-
-def run_angr_insn_trace(
-    binary_path: str | Path,
-    stdin_data: str | None = None,
-) -> tuple[dict[int, int], int]:
-    """
-    Run `binary_path` concretely in angr and record how many times each
-    *instruction address* is executed.
-
-    Addresses are returned in angr's virtual address space, which (for a
-    normal ELF loaded at its linked VA) will match the Capstone disasm
-    addresses if you disassemble using the ELF VAs.
-
-    Args:
-        binary_path:
-            Path to the ELF binary.
-        stdin_data:
-            Optional string to feed as stdin (one-shot, like `echo ... | ./a.out`).
-
-    Returns
-    -------
-        hit_map:
-            dict { instruction_address (int) -> execution_count (int) }
-        base_addr:
-            proj.loader.main_object.min_addr (for reference / debugging)
-    """
-    binary_path = str(Path(binary_path).expanduser().absolute())
-    proj = angr.Project(binary_path, auto_load_libs=False)
-    base_addr = proj.loader.main_object.min_addr
-
-    # Create initial state with optional stdin
-    if stdin_data is not None:
-        sim_stdin = angr.SimFileStream(name="stdin", content=stdin_data + "\n")
-        state = proj.factory.full_init_state(stdin=sim_stdin)
-    else:
-        state = proj.factory.full_init_state()
-
-    hit_counter: Counter[int] = Counter()
-
-    # Instruction-level callback
-    def insn_cb(st: angr.SimState) -> None:
-        # st.addr is the current instruction address in the *guest* VA space
-        hit_counter[st.addr] += 1
-
-    state.inspect.b("instruction", when=angr.BP_BEFORE, action=insn_cb)
-
-    simgr = proj.factory.simulation_manager(state)
-    simgr.run()
-
-    # Convert Counter to a plain dict for nicer serialization / printing
-    return dict(hit_counter), base_addr
 
 def compute_best_offset_with_distinct(
     qemu_trace: Sequence[tuple[int, bytes]],
@@ -2355,285 +2287,6 @@ def generate_run_cmd(
             
     return
 
-def fast_sim_binary_w_input(bin: Path, inp: str, func_names: str):
-    """
-    Use a automatic prototype grabbing and execute the
-    function directly with unicorn
-
-    This requries knownledge aout the function arguments however
-    """
-    # proj = angr.Project(bin, load_options={'auto_load_libs': False}, add_options=angr.options.unicorn | {angr.options.LAZY_SOLVES})
-    proj = angr.Project(bin, load_options={"auto_load_libs": False})
-    extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
-
-    cfg = proj.analyses.CFGFast()
-
-    proj.analyses.CompleteCallingConventions(recover_variables=True)
-
-    assert [x in [y.name for _, y in cfg.functions.items()] for x in func_names]
-
-    # Setup the CFG parser
-
-    # CFGFast only does static lifting...
-    stdin_sf = angr.SimFile("stdin", content=inp.encode())
-
-    print("Init state")
-    # Initialiaitve the sim state
-    state = proj.factory.full_init_state(stdin=stdin_sf, options=extra_options)
-
-    captured = {}
-
-    # Define a hook to capture register values based on
-    # function name
-    def ret_hook(fn_name):
-        def _after_ret(s):
-            cur_regs = {}
-
-            # Solve for all register values
-            for name in s.arch.registers.keys():
-                bv = getattr(s.regs, name)
-                cur_regs[name] = s.solver.eval(bv, cast_to=int)
-
-            # Add all register information into captured dict
-            if fn_name not in captured:
-                captured[fn_name] = []
-            captured[fn_name].append(cur_regs)
-
-        return _after_ret
-
-    # Iterate over all functions
-    # for _, func in cfg.functions.items():
-    for func in func_names:
-        # cur_func = cfg.functions.function(name=func.name)
-
-        cur_func = cfg.functions.function(name=func)
-
-        if cur_func is None:
-            captured[func] = []
-            continue
-        captured[func] = []
-
-        ret = proj.factory.callable(
-            cur_func.addr, prototype=proto.c_prototype(), concrete_only=True
-        )
-
-        regs = {
-            name: st.solver.eval(getattr(ret.regs, name), cast_to=int)
-            for name in ret.arch.registers
-        }
-
-        captured[func] = [regs]
-
-        # For every return site in the chosen function
-        # state.inspect.b(
-        #            'return',
-        #            when=angr.BP_BEFORE,
-        #            function_address=cur_func.addr,
-        #            action=ret_hook(func)
-        #        )
-
-    # Run the simulation
-    simgr = proj.factory.simulation_manager(state).run()
-
-    # Dead is the deadend state of the program
-    dead = simgr.deadended[0]
-    stdout = dead.posix.dumps(1).decode()
-    ret = get_program_rc(dead)
-
-    return ret, stdout, captured
-
-
-def sim_binary_w_calltime_input(
-    bin: Path, inp: str, func_names: list[str], timeout, max_gb: int = 24
-):
-    """
-    Simulate the binary with ANGR
-    """
-    proj = angr.Project(bin, load_options={"auto_load_libs": False})
-
-    # TODO: This caused a segfault but should be possible soon
-    extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
-    cfg = proj.analyses.CFGFast()
-
-    assert [x in [y.name for _, y in cfg.functions.items()] for x in func_names], (
-        "Function names missing!"
-    )
-
-    # Setup the CFG parser
-
-    # CFGFast only does static lifting...
-    # stdin_sf = angr.SimFile("stdin", content=inp.encode())
-
-    # Initialiaitve the sim state
-    # state = proj.factory.full_init_state(stdin=stdin_sf, options=extra_options)
-    state = proj.factory.full_init_state(args=["ignored", inp])
-
-    captured = {}
-
-    # Define a hook to capture register values based on
-    # function name
-    def ret_hook(fn_name):
-        def _after_ret(s):
-            cur_regs = {}
-
-            # Solve for all register values
-            for name in s.arch.registers.keys():
-                bv = getattr(s.regs, name)
-                cur_regs[name] = s.solver.eval(bv, cast_to=int)
-
-            # Add all register information into captured dict
-            if fn_name not in captured:
-                captured[fn_name] = []
-            captured[fn_name].append(cur_regs)
-
-        return _after_ret
-
-    # Iterate over all functions
-    for func in func_names:
-        cur_func = cfg.functions.function(name=func)
-
-        if cur_func is None:
-            captured[func] = []
-            continue
-
-        # For every return site in the chosen function
-        state.inspect.b(
-            "return",
-            when=angr.BP_BEFORE,
-            function_address=cur_func.addr,
-            action=ret_hook(func),
-        )
-
-    # Run the simulation
-    simgr = proj.factory.simulation_manager(state)
-
-    time_limiter = Timeout(timeout)
-    simgr.use_technique(time_limiter)
-    mem_limiter = MemLimiter(max_gb=max_gb)
-    simgr.use_technique(mem_limiter)
-
-    simgr.run()
-
-    if len(simgr.deadended) != 0:
-        # Dead is the deadend state of the program
-        dead = simgr.deadended[0]
-        stdout = dead.posix.dumps(1).decode()
-        ret = get_program_rc(dead)
-    else:
-        stdout = ""
-        ret = "error"
-
-    if mem_limiter.triggered:
-        ret = "mem_limit"
-    elif simgr.stashes.get("timeout"):
-        ret = "timeout"
-
-    return ret, stdout, captured
-
-
-def sim_binary_w_input(
-    bin: Path, inp: str, func_names: list[str], timeout, max_gb: int = 24
-):
-    """
-    Simulate the binary with ANGR
-    """
-    proj = angr.Project(bin, load_options={"auto_load_libs": False})
-
-    # TODO: This caused a segfault but should be possible soon
-    extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
-    cfg = proj.analyses.CFGFast()
-
-    assert [x in [y.name for _, y in cfg.functions.items()] for x in func_names], (
-        "Function names missing!"
-    )
-
-    # Setup the CFG parser
-
-    # CFGFast only does static lifting...
-    stdin_sf = angr.SimFile("stdin", content=inp.encode())
-
-    # Initialiaitve the sim state
-    # state = proj.factory.full_init_state(stdin=stdin_sf, options=extra_options)
-    state = proj.factory.full_init_state(stdin=stdin_sf)
-
-    captured = {}
-
-    # Define a hook to capture register values based on
-    # function name
-    def ret_hook(fn_name):
-        def _after_ret(s):
-            cur_regs = {}
-
-            # Solve for all register values
-            for name in s.arch.registers.keys():
-                bv = getattr(s.regs, name)
-                cur_regs[name] = s.solver.eval(bv, cast_to=int)
-
-            # Add all register information into captured dict
-            if fn_name not in captured:
-                captured[fn_name] = []
-            captured[fn_name].append(cur_regs)
-
-        return _after_ret
-
-    # Iterate over all functions
-    for func in func_names:
-        cur_func = cfg.functions.function(name=func)
-
-        if cur_func is None:
-            captured[func] = []
-            continue
-
-        # For every return site in the chosen function
-        state.inspect.b(
-            "return",
-            when=angr.BP_BEFORE,
-            function_address=cur_func.addr,
-            action=ret_hook(func),
-        )
-
-    # Run the simulation
-    simgr = proj.factory.simulation_manager(state)
-
-    time_limiter = Timeout(timeout)
-    simgr.use_technique(time_limiter)
-    mem_limiter = MemLimiter(max_gb=max_gb)
-    simgr.use_technique(mem_limiter)
-
-    simgr.run()
-
-    if len(simgr.deadended) != 0:
-        # Dead is the deadend state of the program
-        dead = simgr.deadended[0]
-        stdout = dead.posix.dumps(1).decode()
-        ret = get_program_rc(dead)
-    else:
-        stdout = ""
-        ret = "error"
-
-    if mem_limiter.triggered:
-        ret = "mem_limit"
-    elif simgr.stashes.get("timeout"):
-        ret = "timeout"
-
-    return ret, stdout, captured
-
-
-def get_program_rc(s):
-    """
-    Handle for the concrete exit status of a whole program
-    """
-    if hasattr(s, "exit_code"):  # modern angr
-        return s.solver.eval(s.exit_code)
-
-    if "exit_code" in s.globals:  # older angr
-        return s.solver.eval(s.globals["exit_code"])
-
-    # fallback: grab the arch's conventional return register
-    ret_reg = s.arch.register_names.get(s.arch.ret_offset)
-    return s.solver.eval(getattr(s.regs, ret_reg))
-
-
 def compile_program(
     inp: Path, out: Path, target: Target, optimization: OptimizationLevel, opts:str | None,
 ) -> Path:
@@ -2868,6 +2521,3 @@ def delete_mutated_binaries(*dfs: pd.DataFrame) -> int:
                 print(f"Failed to delete {path}: {exc}")
 
     return deleted
-
-
-

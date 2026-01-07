@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import lief
+from angr_backend import sim_binary_w_input
 from binary_tools import (
     Target,
     count_bit_differences,
@@ -9,7 +10,6 @@ from binary_tools import (
     generate_x_bits_mutated_file,
     run_binary_w_input,
     shift_exit_code,
-    sim_binary_w_input,
 )
 
 
@@ -283,5 +283,4 @@ def nop_para_run_helper(common, inst, target: Target):
     except Exception as e:
         print(f"Failed to run bin with {e}")
         return out_file, -100, inst, common, target, "", ""
-
 

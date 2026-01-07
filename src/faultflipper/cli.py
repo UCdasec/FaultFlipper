@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from alive_progress import alive_bar, alive_it
+from angr_backend import sim_binary_w_calltime_input, sim_binary_w_input
 from binary_tools import (
     OptimizationLevel,
     Target,
@@ -29,8 +30,6 @@ from binary_tools import (
     get_return_reg,
     run_binary_w_calltime_input,
     shift_exit_code,
-    sim_binary_w_calltime_input,
-    sim_binary_w_input,
     timed_run_binary_w_input,
 )
 from cli_utils import (
