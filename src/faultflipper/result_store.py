@@ -5,7 +5,7 @@ import sqlite3
 import threading
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import pandas as pd
 
@@ -88,6 +88,21 @@ class _BaseResultStore:
     def _serialize_result(self, result) -> Mapping[str, Any]:
         raise NotImplementedError
 
+    def exit_code_histogram(self, unmutated_binary: Path) -> list[tuple[int | None, int]]:
+        """Return (return_code, count) aggregated for a binary."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"""
+            SELECT return_code, COUNT(*) AS total
+            FROM {self.TABLE_NAME}
+            WHERE unmutated_binary = ?
+            GROUP BY return_code
+            ORDER BY total DESC
+            """,
+            (self._normalize_path(unmutated_binary),),
+        )
+        return [(row["return_code"], row["total"]) for row in cursor]
+
 
 class BitFlipResultStore(_BaseResultStore):
     """
@@ -127,6 +142,51 @@ class BitFlipResultStore(_BaseResultStore):
         )
         return result_dict
 
+    def load_completed_pairs(self, total_inputs: int) -> set[tuple[int, int]]:
+        """Return (addr, bit) pairs that already have results for every input."""
+        if total_inputs <= 0:
+            return set()
+
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"""
+            SELECT flipped_addr, flipped_index
+            FROM {self.TABLE_NAME}
+            GROUP BY flipped_addr, flipped_index
+            HAVING COUNT(*) >= ?
+            """,
+            (total_inputs,),
+        )
+
+        return {(row["flipped_addr"], row["flipped_index"]) for row in cursor}
+
+    def summarize_bit_results(self, unmutated_binary: Path) -> list[dict[str, Any]]:
+        """Aggregate per (addr, bit) stats for a given reference binary."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"""
+            SELECT
+                flipped_addr,
+                flipped_index,
+                COUNT(*) AS total_runs,
+                SUM(CASE WHEN return_code = -999 THEN 1 ELSE 0 END) AS total_failed,
+                SUM(
+                    CASE
+                        WHEN expected_stdout IS NOT NULL
+                             AND program_stdout LIKE '%' || expected_stdout || '%'
+                        THEN 1 ELSE 0
+                    END
+                ) AS total_correct
+            FROM {self.TABLE_NAME}
+            WHERE unmutated_binary = ?
+            GROUP BY flipped_addr, flipped_index
+            ORDER BY flipped_addr, flipped_index
+            """,
+            (self._normalize_path(unmutated_binary),),
+        )
+
+        return [dict(row) for row in cursor]
+
 
 class NopResultStore(_BaseResultStore):
     """
@@ -162,3 +222,68 @@ class NopResultStore(_BaseResultStore):
             result_dict["custom_returncodes"]
         )
         return result_dict
+
+
+    def stdout_histogram(
+        self, unmutated_binary: Path, addrs: Sequence[int]
+    ) -> list[tuple[str, int]]:
+        """Return (stdout, count) pairs for the given addresses."""
+        if not addrs:
+            return []
+
+        placeholders = ",".join(["?"] * len(addrs))
+        sql = f"""
+            SELECT program_stdout, COUNT(*) AS total
+            FROM {self.TABLE_NAME}
+            WHERE unmutated_binary = ? AND nopped_addr IN ({placeholders})
+            GROUP BY program_stdout
+            ORDER BY total DESC
+        """
+        params = [self._normalize_path(unmutated_binary), *addrs]
+        conn = self._get_conn()
+        cursor = conn.execute(sql, params)
+        return [(row["program_stdout"], row["total"]) for row in cursor]
+
+    def load_completed_addrs(self, total_inputs: int) -> set[int]:
+        """Return nopped addresses that already have results for every input."""
+        if total_inputs <= 0:
+            return set()
+
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"""
+            SELECT nopped_addr
+            FROM {self.TABLE_NAME}
+            GROUP BY nopped_addr
+            HAVING COUNT(*) >= ?
+            """,
+            (total_inputs,),
+        )
+
+        return {row["nopped_addr"] for row in cursor}
+
+    def summarize_nop_results(self, unmutated_binary: Path) -> list[dict[str, Any]]:
+        """Aggregate per-address stats for a given reference binary."""
+        conn = self._get_conn()
+        cursor = conn.execute(
+            f"""
+            SELECT
+                nopped_addr,
+                COUNT(*) AS total_runs,
+                SUM(CASE WHEN return_code = -999 THEN 1 ELSE 0 END) AS total_failed,
+                SUM(
+                    CASE
+                        WHEN expected_stdout IS NOT NULL
+                             AND program_stdout LIKE '%' || expected_stdout || '%'
+                        THEN 1 ELSE 0
+                    END
+                ) AS total_correct
+            FROM {self.TABLE_NAME}
+            WHERE unmutated_binary = ?
+            GROUP BY nopped_addr
+            ORDER BY nopped_addr
+            """,
+            (self._normalize_path(unmutated_binary),),
+        )
+
+        return [dict(row) for row in cursor]

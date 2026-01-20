@@ -159,12 +159,14 @@ def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataF
     return_is_0 = df[df["return_code"] ==0]
     error = df[df["return_code"] != 0]
 
-    print(f"The expected out is {expected}")
-    #print(f"out is epctped; {return_is_0["program_stdout"].str.contains(str(expected))}")
+    print(f"The expected out is {expected}, and upset on match is {upset_on_match}")
 
     # Get the expected and not expected 
     out_is_expected =     return_is_0[ return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)]
     out_is_not_expected = return_is_0[~return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)]
+
+    print(f"Num out is expected: {len(out_is_expected)}")
+    print(f"Num out is not expected: {len(out_is_not_expected)}")
 
     upset = out_is_expected if upset_on_match else out_is_not_expected
     normal = out_is_expected if not upset_on_match else out_is_not_expected
@@ -434,7 +436,7 @@ def save_report(
 
     for k, v in settings.items():
         if k in ["program_input", "expected_stdout"]:
-            settings_bullets = settings_bullets + f"- **{k}**:" + f"`{list(v)}`" + "\n"
+            settings_bullets = settings_bullets + f"- **{k}**:" + f"`{v}`" + "\n"
             continue
         settings_bullets += f"- **{k}**: {v}\n"
 

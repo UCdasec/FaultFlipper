@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import shutil
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -104,6 +105,26 @@ def dataclass_to_dataframe(
     return pd.DataFrame([r.to_dict() for r in result])
 
 
+def _sanitize_csv_value(value):
+    """
+    Replace characters that cause pandas' CSV reader to truncate fields.
+    """
+    if isinstance(value, str):
+        return value.replace("\x00", "\\x00")
+    return value
+
+
+def sanitize_dataframe_for_csv(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Return a copy of df with string columns sanitized for CSV output.
+    """
+    sanitized = df.copy()
+    object_columns = sanitized.select_dtypes(include=["object"]).columns
+    for column in object_columns:
+        sanitized[column] = sanitized[column].map(_sanitize_csv_value)
+    return sanitized
+
+
 def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
     """
     Save the dataframe
@@ -121,38 +142,188 @@ def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
     else:
         out.parent.mkdir(parents=True, exist_ok=True)
 
-    df.to_csv(out)
+    sanitized_df = sanitize_dataframe_for_csv(df)
+    sanitized_df.to_csv(out)
 
-def bit_inout_runner(inst, target, common, ins, outs, result_store: BitFlipResultStore, source_code):
-    """A helper to run a bit mutantion on the file, and test on the inputs."""
-    # Need to pad the left with zeroes
+
+def _derive_source_name(common) -> str:
+    """
+    Best effort at retrieving the experiment's source file name.
+    """
+    source_candidate = getattr(common, "program_source_code", None)
+    if source_candidate:
+        return Path(str(source_candidate)).name
+
+    program_file = getattr(common, "program_file", None)
+    if program_file:
+        return Path(str(program_file)).name
+
+    return ""
+
+
+def _existing_results_summary(
+    df: pd.DataFrame, common, delete_non_upsets: bool = False
+) -> None:
+    """
+    Print a short summary for cached experiment results.
+    """
+    source_name = _derive_source_name(common).lower()
+    upset_on_match = False if "fib" in source_name else True
+
+    normal_df, error_df, upset_df = parse_results(df, upset_on_match)
+    console.print(
+        f"[blue]Cached summary -> normal: {len(normal_df)}, upset: {len(upset_df)}, error: {len(error_df)}[/blue]"
+    )
+
+    if delete_non_upsets:
+        deleted = delete_mutated_binaries(normal_df, error_df)
+        print(f"Deleted {deleted} non-upset mutated binaries")
+
+
+def reuse_existing_results_if_available(
+    common, log_matching: bool = True, delete_non_upsets: bool = False
+) -> bool:
+    """
+    If results.csv already exists in the provided out_dir, load and display it.
+    Returns True when cached results were used so the caller can skip execution.
+    """
+    res_file = common.out_dir.joinpath("results.csv")
+    if not res_file.exists():
+        return False
+
+    console.print(
+        f"[yellow]Found existing results at {res_file}. Reusing them; delete the file to rerun the experiment.[/yellow]"
+    )
+    df = pd.read_csv(res_file)
+    show_results(common, df, other_returncodes)
+    _existing_results_summary(df, common, delete_non_upsets)
+    return True
+
+
+def _resolve_results_file(path: Path) -> Path:
+    """Return the concrete results.csv path for an experiment folder or CSV."""
+    expanded = path.expanduser()
+    if expanded.is_file():
+        return expanded
+
+    candidate = expanded / "results.csv"
+    if candidate.is_file():
+        return candidate
+
+    raise FileNotFoundError(
+        f"Could not locate a results.csv file at {expanded} or inside that directory."
+    )
+
+
+def _coerce_address_value(value) -> int | None:
+    """Normalize textual / numeric address representations into an int."""
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        base = 16 if text.lower().startswith("0x") else 10
+        try:
+            return int(text, base)
+        except ValueError:
+            try:
+                return int(float(text))
+            except ValueError:
+                return None
+
+    if isinstance(value, (int, np.integer)):  # type: ignore[arg-type]
+        return int(value)
+
+    if isinstance(value, float):
+        if math.isnan(value):
+            return None
+        return int(value)
+
+    return None
+
+
+def _load_address_filter(address_file: Path) -> set[int]:
+    """Load the JSON produced by parser.py and return a normalized address set."""
+    if not address_file.exists():
+        raise FileNotFoundError(f"Address file {address_file} does not exist.")
+
+    data = json.loads(address_file.read_text())
+    addresses = data.get("addresses")
+    if not isinstance(addresses, list):
+        raise ValueError(
+            f"{address_file} is missing the 'addresses' list produced by parser.py."
+        )
+
+    normalized: set[int] = set()
+    for raw in addresses:
+        parsed = _coerce_address_value(raw)
+        if parsed is not None:
+            normalized.add(parsed)
+
+    if not normalized:
+        raise ValueError(f"No valid addresses found inside {address_file}.")
+
+    return normalized
+
+
+def _filter_dataframe_by_addresses(
+    df: pd.DataFrame, addresses: set[int]
+) -> tuple[pd.DataFrame, str, set[int]]:
+    """Filter a results DataFrame down to only the provided addresses."""
+
+    address_columns = ("flipped_addr", "nopped_addr")
+    for column in address_columns:
+        if column not in df.columns:
+            continue
+        normalized = df[column].map(_coerce_address_value)
+        mask = normalized.isin(addresses)
+        filtered = df[mask].copy()
+        filtered.reset_index(drop=True, inplace=True)
+        matched = {int(value) for value in normalized[mask].dropna()}
+        return filtered, column, matched
+
+    raise KeyError(
+        "Results do not contain a recognized address column. "
+        f"Expected one of: {', '.join(address_columns)}."
+    )
+
+def bit_inout_runner(
+    inst,
+    target,
+    common,
+    result_store: BitFlipResultStore,
+    source_code,
+    completed_pairs: set[tuple[int, int]],
+    input_pairs: list[tuple[Path, str]],
+):
+    """Run bit flips for (addr, bit) pairs missing complete coverage."""
+
+    if not input_pairs:
+        return
+
     inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
-    # For every bit see if we get a valid opcode.
+
     for i in range(len(inst_bits)):
-        # Generate the mutated binary - If we did not generate a good one continue
+        bit_key = (inst.address, i)
+
+        if bit_key in completed_pairs:
+            continue
+
         out_file = generate_bit_mutated_file(i, inst_bits, target, inst, common)
 
         if out_file is None:
             continue
 
-        # Run all the possible inputs and outputs
         try:
-            for cur_in, cur_out in zip(ins, outs, strict=False):
-                cur_in = Path(cur_in)
-
-                if result_store.result_exists(out_file, cur_in):
-                    continue
-
-                # Test the binary
+            for input_path, expected_output in input_pairs:
                 status, stdout, _ = run_binary_w_calltime_input(
                     out_file,
-                    cur_in,
+                    input_path,
                     target=target,
                     timeout=common.timeout,
                 )
-
-                # Status is None when there is a Timeout or
-                # when there the input image does not exist
 
                 if status is not None:
                     status = shift_exit_code(status)
@@ -166,9 +337,9 @@ def bit_inout_runner(inst, target, common, ins, outs, result_store: BitFlipResul
                     flipped_addr=inst.address,
                     flipped_index=i,
                     return_code=status,
-                    program_input=cur_in,
+                    program_input=input_path,
                     program_stdout=stdout,
-                    expected_stdout=cur_out,
+                    expected_stdout=expected_output,
                     target=target,
                     expected_returncode=common.expected_returncode,
                     custom_returncodes=other_returncodes,
@@ -202,8 +373,25 @@ def bit_no_comp_inout(
         ("correct_prediction", 0),
     ]
 
+    if ins is None or outs is None:
+        raise ValueError("bit_no_comp_inout requires both inputs and outputs")
+
+    if len(ins) != len(outs):
+        raise ValueError("ins and outs must be the same length")
+
+    if expected_correct is None:
+        raise ValueError("bit_no_comp_inout requires expected_correct")
+
+    expected_correct = int(expected_correct)
+
     experiment_root = common.out_dir
     res_file = experiment_root.joinpath("results.csv")
+    intermediate_dir = experiment_root.joinpath("intermediate_results")
+    db_path = intermediate_dir.joinpath("bit_flip_results.db")
+    store: BitFlipResultStore | None = None
+    intermediate_dir = experiment_root.joinpath("intermediate_results")
+    db_path = intermediate_dir.joinpath("nop_results.db")
+    store: NopResultStore | None = None
 
     if not common.yes:
         num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -218,119 +406,138 @@ def bit_no_comp_inout(
         if cont.lower() != "y":
             return
 
+    summary_df: pd.DataFrame | None = None
+
     if res_file.exists():
-        # Gather the results
-        df = pd.read_csv(res_file)
-        print("Loading existing results")
+        summary_df = pd.read_csv(res_file)
+        print("Loading existing summarized results")
     else:
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True)
 
         # Intermediate results now live in a SQLite database
-        intermediate_dir = experiment_root.joinpath("intermediate_results")
         intermediate_dir.mkdir(exist_ok=True)
-        store = BitFlipResultStore(
-            intermediate_dir.joinpath("bit_flip_results.db")
-        )
+        store = BitFlipResultStore(db_path)
 
         # Adjust the out dir
         common.out_dir = experiment_root.joinpath("mutated_bins")
         common.out_dir.mkdir(exist_ok=True)
 
-        disasm = disassemble_text_section(common.program_file)
-        # Load the target type
-        target = detect_target(common.program_file)
+        input_pairs: list[tuple[Path, str]] = []
 
-        futures = []
+        for cur_in, cur_out in zip(ins, outs, strict=False):
+            resolved_input = Path(cur_in).resolve()
+            input_pairs.append((resolved_input, cur_out))
 
-        with ThreadPoolExecutor(max_workers=num_cpus) as executor:
-            # Run the threads
-            for inst in alive_it(disasm, title="Submitting tasks"):
-                future = executor.submit(
-                    bit_inout_runner,
-                    inst,
-                    target,
-                    common,
-                    ins,
-                    outs,
-                    store,
-                    source_code,
-                )
-                futures.append(future)
+        if input_pairs == []:
+            raise ValueError("bit_no_comp_inout requires at least one (input, output) pair")
 
-            with alive_bar(len(futures), title="Processing tasks") as bar:
-                for future in as_completed(futures):
-                    # Check the status codes
-                    future.result()
-                    bar()
+        total_inputs = len(input_pairs)
 
-        df = store.load_dataframe()
-        save_df(df, res_file)
+        disasm = list(disassemble_text_section(common.program_file))
+        total_candidate_pairs = sum(len(inst.bytes) * 8 for inst in disasm)
 
-    # Add a column for whetehr or not the output was correct and if the returncode indicates
-    # a binary failed to run.
-    df["correct"] = [
-        exp in prog
-        for exp, prog in zip(
-            df["expected_stdout"].astype(str), df["program_stdout"].astype(str), strict=False
-        )
-    ]
-    df["failed"] = df["return_code"] == -999
+        with console.status(
+            "Loading completed (addr, bit) pairs from SQLite...", spinner="dots"
+        ):
+            completed_pairs = store.load_completed_pairs(total_inputs)
 
-    # Build a MultiIndex of the bad (nopped_addr, index) pairs
-    bad_idx = pd.MultiIndex.from_frame(
-        df.loc[df["return_code"] == -999, ["flipped_addr", "flipped_index"]]
+        if completed_pairs:
+            print(
+                f"Skipping {len(completed_pairs)} (addr, bit) pairs that already processed all inputs"
+            )
+
+        needs_work = True
+        if total_candidate_pairs == 0:
+            needs_work = False
+        elif len(completed_pairs) >= total_candidate_pairs:
+            needs_work = False
+
+        if not needs_work:
+            print("All (addr, bit) pairs already processed. Skipping mutation run.")
+        else:
+            # Load the target type
+            target = detect_target(common.program_file)
+
+            futures = []
+
+            with ThreadPoolExecutor(max_workers=num_cpus) as executor:
+                # Run the threads
+                for inst in alive_it(disasm, title="Submitting tasks"):
+                    future = executor.submit(
+                        bit_inout_runner,
+                        inst,
+                        target,
+                        common,
+                        store,
+                        source_code,
+                        completed_pairs,
+                        input_pairs,
+                    )
+                    futures.append(future)
+
+                with alive_bar(len(futures), title="Processing tasks") as bar:
+                    for future in as_completed(futures):
+                        # Check the status codes
+                        future.result()
+                        bar()
+
+        summary_rows = store.summarize_bit_results(common.program_file)
+        summary_df = pd.DataFrame(summary_rows)
+        save_df(summary_df, res_file)
+
+    if summary_df is None or summary_df.empty:
+        print("No summarized results available yet")
+        return pd.DataFrame()
+
+    total_inputs = len(outs)
+
+    summary_df["total_failed"] = summary_df["total_failed"].fillna(0).astype(int)
+    summary_df["total_correct"] = summary_df["total_correct"].fillna(0).astype(int)
+    summary_df["total_runs"] = summary_df["total_runs"].fillna(0).astype(int)
+    summary_df["accuracy"] = summary_df["total_correct"] / total_inputs
+
+    error_df = summary_df[summary_df["total_failed"] > 0]
+    clean_df = summary_df[summary_df["total_failed"] == 0]
+    normal_df = clean_df[clean_df["total_correct"] == expected_correct]
+    upset_df = clean_df[clean_df["total_correct"] != expected_correct]
+
+    print(
+        f"Bit summary -> normal: {len(normal_df)}, upset: {len(upset_df)}, error: {len(error_df)}"
     )
 
-    # Filter out rows whose tuple is in bad_idx
-    df_no_fail = df[
-        ~pd.MultiIndex.from_frame(df[["flipped_addr", "flipped_index"]]).isin(bad_idx)
-    ]
-
-    print(f"The shape of the dataframe that HAS fails is {df.shape}")
-    print(f"The shape of the dataframe that dropped fails is {df_no_fail.shape}")
-
-    # Make a agg group based on fliopped addr and index
-    agg_df = (
-        df.groupby(["flipped_addr", "flipped_index"])
-        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-        .reset_index()
-    )
-
-    # Make a agg group based on fliopped addr and index and not allowing any
-    # groups that have atleast one failed index
-    agg_df_no_fail = (
-        df_no_fail.groupby(["flipped_addr", "flipped_index"])
-        # .filter(lambda g: not (g["failed"] == -999).any())
-        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-        .reset_index()
-    )
-
-    agg_df["accuracy"] = agg_df.apply(
-        lambda row: row["total_correct"] / len(outs), axis=1
-    )
-
-    agg_df_no_fail["accuracy"] = agg_df.apply(
-        lambda row: row["total_correct"] / len(outs), axis=1
-    )
+    agg_df = summary_df.copy()
+    agg_df_no_fail = agg_df[agg_df["total_failed"] == 0]
 
     plot_df = agg_df_no_fail[
-        agg_df_no_fail["total_correct"] != int(expected_correct)
+        agg_df_no_fail["total_correct"] != expected_correct
     ]
 
     console.print("Generating Plots")
+
+
+    plot_correct_predictions_pdf(
+        plot_df,
+        expected_correct,
+        common.out_dir.joinpath("pdf_plot.jpg"),
+        total_predictions=40,
+    )
+
+
     plot_desc_accuracy(
         plot_df,
         expected_correct / len(outs),
         common.out_dir.joinpath("bar_plot.jpg"),
         is_bit=True,
     )
+
     plot_accuracy_ecdf(
         plot_df,
         expected_correct / len(outs),
         common.out_dir.joinpath("ecdf_plot.jpg"),
         is_bit=True,
     )
+
     plot_accuracy_rank(
         plot_df,
         expected_correct / len(outs),
@@ -349,21 +556,56 @@ def bit_no_comp_inout(
     print("Histogram of #correct rows per (addr, idx):")
     print(agg_df_no_fail["total_correct"].value_counts().sort_index())
 
+    exit_hist_store = store
+    if exit_hist_store is None and db_path.exists():
+        exit_hist_store = BitFlipResultStore(db_path)
 
-    # Per (flipped addr, flipped index), get the number of correct predictions
-    grouped_df = df.groupby(["flipped_addr", "flipped_index"])
-    correct_per_mutated = grouped_df["correct"].sum()
+    if exit_hist_store:
+        exit_hist = exit_hist_store.exit_code_histogram(common.program_file)
+        if exit_hist:
+            print("Histogram of exit codes:")
+            for code, count in exit_hist:
+                print(f"{count:>8}  {code}")
+        else:
+            print("No exit codes recorded for this experiment.")
 
-    # Per (flipped addr, flipped index), get the number of correct predictions
-    grouped_df_no_fail = df_no_fail.groupby(["flipped_addr", "flipped_index"])
-    #correct_per_mutated_no_fail = grouped_df_no_fail["correct"].sum()
+    # Legacy pandas-heavy logic retained for reference (OOM-prone on large runs)
+    # legacy_df = store.load_dataframe()
+    # legacy_df["correct"] = [
+    #     exp in prog
+    #     for exp, prog in zip(
+    #         legacy_df["expected_stdout"].astype(str), legacy_df["program_stdout"].astype(str), strict=False
+    #     )
+    # ]
+    # legacy_df["failed"] = legacy_df["return_code"] == -999
+    # legacy_bad_idx = pd.MultiIndex.from_frame(
+    #     legacy_df.loc[legacy_df["return_code"] == -999, ["flipped_addr", "flipped_index"]]
+    # )
+    # legacy_df_no_fail = legacy_df[
+    #     ~pd.MultiIndex.from_frame(legacy_df[["flipped_addr", "flipped_index"]]).isin(legacy_bad_idx)
+    # ]
+    # legacy_agg_df = (
+    #     legacy_df.groupby(["flipped_addr", "flipped_index"])
+    #     .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
+    #     .reset_index()
+    # )
+    # legacy_agg_no_fail = (
+    #     legacy_df_no_fail.groupby(["flipped_addr", "flipped_index"])
+    #     .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
+    #     .reset_index()
+    # )
+    # legacy_agg_df["accuracy"] = legacy_agg_df.apply(
+    #     lambda row: row["total_correct"] / len(outs), axis=1
+    # )
+    # legacy_agg_no_fail["accuracy"] = legacy_agg_df.apply(
+    #     lambda row: row["total_correct"] / len(outs), axis=1
+    # )
+    # legacy_plot_df = legacy_agg_no_fail[
+    #     legacy_agg_no_fail["total_correct"] != int(expected_correct)
+    # ]
+    # show_results(common, legacy_df, other_returncodes)
 
-    print("The value counts of correct predictions:")
-    counts = correct_per_mutated.value_counts()
-    print(counts)
-
-    show_results(common, df, other_returncodes)
-    return df
+    return summary_df
 
 
 @app.command
@@ -599,8 +841,111 @@ def nn_inout_runner(common, inst, result_store: NopResultStore, target, ins, out
         out_file.unlink()
 
 
+def plot_correct_predictions_pdf(
+    df: pd.DataFrame,
+    golden_correct: int,
+    out: Path,
+    *,
+    correct_col: str = "num_correct",
+    total_predictions: int = None,
+    accuracy_col: str = "accuracy",
+    bar_width: float = 0.9,
+    title: str = None,
+) -> None:
+    """
+    PDF histogram:
+      x-axis (linear): number of correct predictions
+      y-axis (log): fraction of binaries achieving that score
+      vertical line at `golden_correct`
+    """
+
+    d = df.copy()
+
+    # ---- derive num_correct ----
+    if correct_col in d.columns:
+        d[correct_col] = pd.to_numeric(d[correct_col], errors="coerce")
+    else:
+        if accuracy_col not in d.columns or total_predictions is None:
+            raise ValueError(
+                f"Need '{correct_col}' OR '{accuracy_col}' + total_predictions."
+            )
+        acc = (
+            pd.to_numeric(d[accuracy_col], errors="coerce")
+            .fillna(0.0)
+            .clip(0.0, 1.0)
+        )
+        d[correct_col] = np.rint(acc * int(total_predictions)).astype(int)
+
+    # ---- clean ----
+    s = d[correct_col].dropna().astype(int)
+    if len(s) == 0:
+        raise ValueError("No valid correct-prediction counts to plot.")
+
+    # ---- exact integer histogram ----
+    min_c = int(min(s.min(), golden_correct))
+    max_c = int(max(s.max(), golden_correct))
+
+    bins = np.arange(min_c, max_c + 2) - 0.5
+    counts, edges = np.histogram(s, bins=bins)
+
+    # drop empty bins (log-scale safety)
+    mask = counts > 0
+    counts = counts[mask]
+    x_vals = (edges[:-1] + 0.5)[mask]
+
+    frac = counts / counts.sum()
+
+    # ---- plot ----
+    fig_w = min(24, max(10, len(x_vals) * 0.25))
+    fig, ax = plt.subplots(figsize=(fig_w, 5), dpi=150)
+
+    ax.bar(x_vals, frac, width=bar_width, linewidth=0, zorder=2)
+
+    ax.set_yscale("log")
+    ax.set_ylim(bottom=frac.min() * 0.8)
+
+    ax.set_xlabel("# correct predictions", fontsize=16, fontweight="bold")
+    ax.set_ylabel("Fraction of binaries (log scale)", fontsize=16, fontweight="bold")
+
+    if title:
+        ax.set_title(title, fontsize=16, fontweight="bold")
+
+    # ---- golden line ----
+    ax.axvline(golden_correct, color="red", linestyle="--", linewidth=4, zorder=3)
+    ax.text(
+        golden_correct,
+        ax.get_ylim()[1],
+        "Golden",
+        color="red",
+        ha="left",
+        va="top",
+        fontsize=14,
+        fontweight="bold",
+        rotation=90,
+    )
+
+    # ---- styling ----
+    ax.grid(axis="y", which="both", alpha=0.25, zorder=0)
+    for lbl in ax.get_xticklabels() + ax.get_yticklabels():
+        lbl.set_fontweight("bold")
+    for spine in ax.spines.values():
+        spine.set_linewidth(2.0)
+
+    fig.tight_layout()
+
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    if out.suffix.lower() != ".jpg":
+        out = out.with_suffix(".jpg")
+
+    fig.savefig(out)
+    plt.close(fig)
+
+    return
 
 def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False):
+
     d = df.copy()
     d["accuracy"] = pd.to_numeric(d["accuracy"], errors="coerce").fillna(0)
 
@@ -669,7 +1014,6 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
 
     # x tick labels (your real values)
     ax.set_xticks(x_pos)
-    #ax.set_xticklabels(x_labels, rotation=45, ha="right")
 
     # optional: thin crowded xticks
     if step > 1:
@@ -679,36 +1023,6 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     # put the bottom spine on y=0 (so slashes can cross the real axis)
     ax.spines["bottom"].set_position(("data", 0))
     ax.spines["bottom"].set_zorder(3)
-
-    # break through the x-axis, centered between the two zero blocks
-    # the two zero blocks are at positions len(nz) and len(nz)+1
-    #if zcount:
-    #    x_break = len(nz) + 0.5  # midpoint between the two condensed zeros
-    #    yr = ymax - 0
-    #    dx = 0.12  # half-width of each slash (x units)
-    #    dy = 0.045 * yr  # half-height so it clearly crosses the axis
-
-    #    ax.plot(
-    #        [x_break - dx, x_break],
-    #        [-dy, +dy],
-    #        color="k",
-    #        lw=1.6,
-    #        clip_on=False,
-    #        zorder=4,
-    #    )
-    #    ax.plot(
-    #        [x_break, x_break + dx],
-    #        [-dy, +dy],
-    #        color="k",
-    #        lw=1.6,
-    #        clip_on=False,
-    #        zorder=4,
-    #    )
-
-        # ax.annotate(f"{zcount} zeros condensed",
-        #            xy=(x_break, 0), xytext=(0, -10), textcoords="offset points",
-        #            ha="center", va="top", fontsize=8)
-
     ax.set_xticklabels(x_labels, rotation=60, ha="right", fontsize=10)
 
     ax.set_ylabel("Accuracy", fontsize=16, fontweight="bold")
@@ -724,6 +1038,8 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
 
     fig.tight_layout()
     fig.savefig(out, dpi=1_200)
+
+    return
 
 
 @app.command
@@ -745,149 +1061,148 @@ def nop_no_comp_inout(
     40 results in total.
     """
     other_returncodes = [
-        # ("critical_code_ran", 0),
-        # ("critical_code_did_not_run", 97),
         ("failed_to_run", -999),
         ("correct_prediction", 0),
     ]
 
-    res_file = common.out_dir.joinpath("results.csv")
+    if ins is None or outs is None:
+        raise ValueError("nop_no_comp_inout requires inputs and outputs")
+
+    if len(ins) != len(outs):
+        raise ValueError("ins and outs must be the same length")
+
+    if expected_correct is None:
+        raise ValueError("nop_no_comp_inout requires expected_correct")
+
+    expected_correct = int(expected_correct)
 
     experiment_root = common.out_dir
+    res_file = experiment_root.joinpath("results.csv")
+    intermediate_dir = experiment_root.joinpath("intermediate_results")
+    db_path = intermediate_dir.joinpath("nop_results.db")
+    store: NopResultStore | None = None
+
+    summary_df: pd.DataFrame | None = None
 
     if res_file.exists():
-        # Gather the results
-        df = pd.read_csv(res_file)
-        print("Loading existing results")
+        summary_df = pd.read_csv(res_file)
+        print("Loading existing summarized results")
     else:
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True, parents=True)
 
-        # Intermediate results now use SQLite
-        intermediate_dir = experiment_root.joinpath("intermediate_results")
         intermediate_dir.mkdir(exist_ok=True)
-        store = NopResultStore(intermediate_dir.joinpath("nop_results.db"))
+        store = NopResultStore(db_path)
 
-        # Adjust the out dir
         common.out_dir = experiment_root.joinpath("mutated_bins")
         common.out_dir.mkdir(exist_ok=True)
 
-        disasm = disassemble_text_section(common.program_file)
-        if not common.yes:
-            cont = str(input(f"Normal for {len(disasm)} instructions? (Yy/Nn)"))
+        total_inputs = len(outs)
+        disasm = list(disassemble_text_section(common.program_file))
 
-            if cont.lower() != "y":
-                return
+        with console.status(
+            "Loading completed nop addresses from SQLite...", spinner="dots"
+        ):
+            completed_addrs = store.load_completed_addrs(total_inputs)
 
-        # Load the target type
-        target = detect_target(common.program_file)
-        futures = []
+        if completed_addrs:
+            print(
+                f"Skipping {len(completed_addrs)} addresses that already processed all inputs"
+            )
 
-        with ThreadPoolExecutor(max_workers=num_cpus) as executor:
-            # Run the threads
-            for inst in disasm:
-                future = executor.submit(
-                    nn_inout_runner,
-                    common,
-                    inst,
-                    store,
-                    target,
-                    ins,
-                    outs,
-                    source_code,
-                )
-                futures.append(future)
+        pending_insts = [inst for inst in disasm if inst.address not in completed_addrs]
 
-            with alive_bar(len(futures), title="Processing tasks") as bar:
-                for future in as_completed(futures):
-                    # Ensure any exception bubbles up
-                    future.result()
+        if pending_insts == []:
+            print("All addresses already processed. Skipping nop mutation run.")
+        else:
+            if not common.yes:
+                cont = str(input(f"Normal for {len(disasm)} instructions? (Yy/Nn)"))
+                if cont.lower() != "y":
+                    return
 
-                    #if delete_non_upsets:
+            target = detect_target(common.program_file)
+            futures = []
 
-                        # Delete anything that is not an event upsets for space..
-                        #df = dataclass_to_dataframe(results)
+            with ThreadPoolExecutor(max_workers=num_cpus) as executor:
+                for inst in pending_insts:
+                    future = executor.submit(
+                        nn_inout_runner,
+                        common,
+                        inst,
+                        store,
+                        target,
+                        ins,
+                        outs,
+                        source_code,
+                    )
+                    futures.append(future)
 
-                        #normal, error, upsets = parse_results(df)
+                with alive_bar(len(futures), title="Processing tasks") as bar:
+                    for future in as_completed(futures):
+                        future.result()
+                        bar()
 
-                        #delete_mutated_binaries
+        summary_rows = store.summarize_nop_results(common.program_file)
+        summary_df = pd.DataFrame(summary_rows)
+        save_df(summary_df, res_file)
 
+    if summary_df is None or summary_df.empty:
+        print("No summarized results available yet")
+        return pd.DataFrame()
 
+    total_inputs = len(outs)
 
-                    bar()
+    summary_df["total_failed"] = summary_df["total_failed"].fillna(0).astype(int)
+    summary_df["total_correct"] = summary_df["total_correct"].fillna(0).astype(int)
+    summary_df["total_runs"] = summary_df["total_runs"].fillna(0).astype(int)
+    summary_df["accuracy"] = summary_df["total_correct"] / total_inputs
 
-        df = store.load_dataframe()
-        save_df(df, res_file)
+    error_df = summary_df[summary_df["total_failed"] > 0]
+    clean_df = summary_df[summary_df["total_failed"] == 0]
+    normal_df = clean_df[clean_df["total_correct"] == expected_correct]
+    upset_df = clean_df[clean_df["total_correct"] != expected_correct]
 
-    # Doing the analyiss.............................
-    print(df["return_code"].value_counts())
-
-    # Add a column to see if there was a match
-    df["correct"] = df.apply(
-        lambda row: str(row["expected_stdout"]) in str(row["program_stdout"]), axis=1
-    )
-    df["failed"] = df["return_code"] == -999
-
-    # Use this to get the number of mutated bines that
-    # got 0 correct BUT still ran correctly
-
-    addrs_with_failed = df.loc[df["return_code"] == -999, "nopped_addr"].unique()
-    df_no_fail = df[~df["nopped_addr"].isin(addrs_with_failed)]
-
-    # nopped addrs that have one failed ANY
-
-    # Grop by the addr and record the failed and correct
-    agg_df = (
-        df.groupby("nopped_addr")
-        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-        .reset_index()
+    print(
+        f"NOP summary -> normal: {len(normal_df)}, upset: {len(upset_df)}, error: {len(error_df)}"
     )
 
-    agg_df_no_fail = (
-        df_no_fail.groupby("nopped_addr")
-        .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-        .reset_index()
-    )
-
-    agg_df["accuracy"] = agg_df.apply(
-        lambda row: row["total_correct"] / len(outs), axis=1
-    )
+    agg_df = summary_df.copy()
+    agg_df_no_fail = agg_df[agg_df["total_failed"] == 0]
 
     plot_df = agg_df[agg_df["total_correct"] != expected_correct]
-    # plot_desc_accuracy(plot_df, expected_correct / len(outs),common.out_dir.joinpath("bar_plot.jpg"))
+
+    plot_correct_predictions_pdf(
+        plot_df,
+        expected_correct,
+        common.out_dir.joinpath("pdf_plot.jpg"),
+        total_predictions=40,
+    )
 
     plot_desc_accuracy(
-        plot_df, expected_correct / len(outs), common.out_dir.parent.joinpath("bar_plot.jpg")
+        plot_df, expected_correct / len(outs), experiment_root.joinpath("bar_plot.jpg")
     )
     plot_accuracy_ecdf(
-        plot_df, expected_correct / len(outs), common.out_dir.parent.joinpath("ecdf_plot.jpg")
+        plot_df, expected_correct / len(outs), experiment_root.joinpath("ecdf_plot.jpg")
     )
     plot_accuracy_rank(
-        plot_df, expected_correct / len(outs), common.out_dir.parent.joinpath("rank_plot.jpg")
+        plot_df, expected_correct / len(outs), experiment_root.joinpath("rank_plot.jpg")
     )
-    print(f"All plots are now in {common.out_dir}")
+    print(f"All plots are now in {experiment_root}")
 
     print(f"We have {agg_df.shape} shaped agg df")
     print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
 
-    # This is the count of number of corrects. Notice, that
-    # if the number of correct predictions is 0 it may
-    # or may not be a case where the model ran correctly
-    # and outputed zero.
     print(f"Counts of corrects:\n {agg_df['total_correct'].value_counts()}")
     print(f"Counts of failed:\n {agg_df['total_failed'].value_counts()}")
-
     print(
         f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}"
     )
 
-    # Overlapp of correct and failed
     mask = (agg_df["total_failed"] != 0) & (agg_df["total_correct"] != 0)
     print(
         f"Number of nonzero failed and nonzero correct:\n {agg_df[mask].value_counts()}"
     )
 
-    # See how many counts of correct == expected cont
     print(
         f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] == expected_correct).sum()} had the same number of correct predictions"
     )
@@ -898,9 +1213,44 @@ def nop_no_comp_inout(
         f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_failed'] >= 1).sum()} had atleast one sample that caused a failed experiment"
     )
 
-    show_results(common, df, other_returncodes)
+    upset_hist_store = store
 
-    return df
+    if upset_hist_store is None and db_path.exists():
+        upset_hist_store = NopResultStore(db_path)
+
+    if upset_hist_store and not upset_df.empty:
+        histogram = upset_hist_store.stdout_histogram(
+            common.program_file, upset_df["nopped_addr"].tolist()
+        )
+        if histogram:
+            print("Histogram of stdout values for upset binaries:")
+            for stdout, count in histogram:
+                print(f"{count:>8}  {stdout!r}")
+        else:
+            print("Upset binaries produced no stdout entries to summarize.")
+
+    exit_hist_store = store
+    if exit_hist_store is None and db_path.exists():
+        exit_hist_store = NopResultStore(db_path)
+
+    if exit_hist_store:
+        exit_hist = exit_hist_store.exit_code_histogram(common.program_file)
+        if exit_hist:
+            print("Histogram of exit codes:")
+            for code, count in exit_hist:
+                print(f"{count:>8}  {code}")
+        else:
+            print("No exit codes recorded for this experiment.")
+
+    # Legacy pandas-heavy logic retained for reference
+    # legacy_df = store.load_dataframe()
+    # legacy_df["correct"] = legacy_df.apply(
+    #     lambda row: str(row["expected_stdout"]) in str(row["program_stdout"]), axis=1
+    # )
+    # legacy_df["failed"] = legacy_df["return_code"] == -999
+    # show_results(common, legacy_df, other_returncodes)
+
+    return summary_df
 
 
 @app.command
@@ -973,6 +1323,86 @@ def read_results(inp: Path):
     print(f"The histogram for the contains hist: {contains_hist}\n\n")
     print(f"The histogram for the not contains hist: {not_contains_hist}\n\n")
 
+
+@app.command
+def filter_results(
+    experiment: Path,
+    addresses_json: Path,
+    out_csv: Path | None = None,
+    max_rows: int = 20,
+    upset_on_match: bool = True
+) -> None:
+    """
+    Filter an existing experiment's results.csv down to the provided addresses.
+
+    The addresses_json file should be the output of parser.py mutated-addresses.
+    """
+    try:
+        results_file = _resolve_results_file(experiment)
+    except FileNotFoundError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return
+
+    try:
+        address_filter = _load_address_filter(addresses_json)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        return
+
+    df = pd.read_csv(results_file)
+
+    try:
+        filtered_df, column, matched_addresses = _filter_dataframe_by_addresses(
+            df, address_filter
+        )
+    except KeyError as exc:
+        console.print(f"[red]{exc}[/red]")
+        return
+
+    total_rows = len(df)
+    matched_rows = len(filtered_df)
+    console.print(
+        f"[bold]Loaded[/bold] {total_rows} rows from {results_file} "
+        f"and filtered on {len(address_filter)} addresses from {addresses_json} "
+        f"using column '{column}'."
+    )
+    console.print(f"[bold]Matched rows:[/bold] {matched_rows}")
+
+    missing = address_filter - matched_addresses
+    if missing:
+        preview = ", ".join(hex(addr) for addr in sorted(missing)[:5])
+        if len(missing) > 5:
+            preview += ", ..."
+        console.print(
+            f"[yellow]{len(missing)} addresses were not present in the results "
+            f"(e.g., {preview}).[/yellow]"
+        )
+
+    if out_csv is not None:
+        out_csv.parent.mkdir(parents=True, exist_ok=True)
+        sanitized_filtered = sanitize_dataframe_for_csv(filtered_df)
+        sanitized_filtered.to_csv(out_csv, index=False)
+        console.print(f"[green]Wrote filtered results to {out_csv}[/green]")
+
+    if filtered_df.empty:
+        console.print("[red]No result rows matched the provided addresses.[/red]")
+        return
+
+    with pd.option_context("display.max_columns", None, "display.width", 200):
+        console.print(filtered_df.head(max_rows))
+
+
+    normal_df, error_df, upset_df = parse_results(df, upset_on_match)
+
+    print(
+        f"[PRE-FILT] NOP summary -> normal: {len(normal_df)}, upset: {len(upset_df)}, error: {len(error_df)}"
+    )
+    normal_df, error_df, upset_df = parse_results(filtered_df, upset_on_match)
+    print(
+        f"[POST-FILT] NOP summary -> normal: {len(normal_df)}, upset: {len(upset_df)}, error: {len(error_df)}"
+    )
+
+    return
 
 def instruction_hist(df):
     """Get a histogram of the instructions in the df."""
@@ -1910,6 +2340,11 @@ def x_bit(
                 f"The backend {backend} requires expected_stdout and expected_returncode"
             )
 
+        if reuse_existing_results_if_available(
+            common, log_matching, delete_non_upsets
+        ):
+            return
+
         if num_cpus == 1:
             # Sequantial
             x_bit_qemu_seq(
@@ -1973,6 +2408,11 @@ def x_nop(
             print(
                 f"The backend {backend} requires expected_stdout and expected_returncode"
             )
+
+        if reuse_existing_results_if_available(
+            common, log_matching, delete_non_upsets
+        ):
+            return
 
         if num_cpus == 1:
             # Sequantial
@@ -2676,7 +3116,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         }
 
         for exp_name, exp in experiments.items():
-            print(f"Running {exp_name}")
+            #print(f"Running {exp_name}")
 
             # Get the function itself
             command_name = exp.pop("command", None)
