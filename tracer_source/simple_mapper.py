@@ -62,30 +62,32 @@ def find_addresses_with_pyelftools(arch, binary_path, source_path):
         for k, v in addr_to_line.items():
             print(f"{hex(k)} -> {v}")
 
+        #TODO: Pretty mapping
         # Disassemble the .text section
-        for insn in md.disasm(text_data, text_vaddr):
-            candidate_lines = []
-            if insn.address in addr_to_line:
-                candidate_lines.append(addr_to_line[insn.address])
+        #for insn in md.disasm(text_data, text_vaddr):
+        #    candidate_lines = []
+        #    if insn.address in addr_to_line:
+        #        candidate_lines.append(addr_to_line[insn.address])
 
-            # Find the largest address in addr_to_line that is <= insn.address
-            best_line = None
-            best_addr = None
-            for addr, ln in addr_to_line.items():
-                if addr <= insn.address:
-                    if best_addr is None or addr > best_addr:
-                        best_addr = addr
-                        best_line = ln
-            if best_line is not None:
-                candidate_lines.append(best_line)
+        #    # Find the largest address in addr_to_line that is <= insn.address
+        #    best_line = None
+        #    best_addr = None
+        #    for addr, ln in addr_to_line.items():
+        #        if addr <= insn.address:
+        #            if best_addr is None or addr > best_addr:
+        #                best_addr = addr
+        #                best_line = ln
+        #    if best_line is not None:
+        #        candidate_lines.append(best_line)
 
-            if candidate_lines:
-                addresses[insn.address] = candidate_lines
+        #    if candidate_lines:
+        #        addresses[insn.address] = candidate_lines
 
-    if addresses == {}:
-        raise Exception("No map")
+    #if addresses == {}:
+    #    raise Exception("No map")
 
-    return addresses
+    #return addresses
+    return addr_to_line 
 
 def main():
     args = parse_args()
@@ -93,11 +95,12 @@ def main():
     # Get the map of ASM addresses to C source lines
     address_to_lines = find_addresses_with_pyelftools(args.arch, args.binary, args.source)
 
+    #TODO: Ryan 
     # Output the map
-    print("ASM Address -> C Source Line Mapping:")
-    for asm_addr, source_lines in address_to_lines.items():
-        source_line_str = ', '.join(str(line) for line in source_lines)
-        print(f"0x{asm_addr:x} -> {source_line_str}")
+    #print("ASM Address -> C Source Line Mapping:")
+    #for asm_addr, source_lines in address_to_lines.items():
+    #    #source_line_str = ', '.join(str(line) for line in source_lines)
+    #    print(f"0x{asm_addr:x} -> {source_lines}")
 
 if __name__ == "__main__":
     main()
