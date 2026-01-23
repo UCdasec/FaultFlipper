@@ -1868,7 +1868,7 @@ def x_bit_reg_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -2161,7 +2161,7 @@ def x_bit_reg_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -2316,7 +2316,7 @@ def x_bit_qemu_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     res_file = common.out_dir.joinpath("results.csv")
@@ -2490,7 +2490,7 @@ def x_bit_qemu_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -2642,7 +2642,7 @@ def x_nop_reg_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -2953,7 +2953,7 @@ def x_nop_reg_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -3075,9 +3075,9 @@ def x_nop_qemu_seq(
     common.out_dir.mkdir(exist_ok=True)
 
     # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target, optimization)
+    common.program_file = compile_program(source_code, bin_out, target, optimization, "")
 
-    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
+    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target, "")
 
     original_bin = common.program_file
 
@@ -3156,7 +3156,7 @@ def x_nop_qemu_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -3310,7 +3310,7 @@ def x_bit_qemu_parallel_data(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -3476,7 +3476,7 @@ def x_nop_qemu_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8

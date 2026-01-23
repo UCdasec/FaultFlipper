@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from faultflipper.cli_utils import BitFlipExperimentResult, NopExperimentResult
+from cli_utils import BitFlipExperimentResult, NopExperimentResult
 
 
 class _BaseResultStore:
@@ -88,7 +88,9 @@ class _BaseResultStore:
     def _serialize_result(self, result) -> Mapping[str, Any]:
         raise NotImplementedError
 
-    def exit_code_histogram(self, unmutated_binary: Path) -> list[tuple[int | None, int]]:
+    def exit_code_histogram(
+        self, unmutated_binary: Path
+    ) -> list[tuple[int | None, int]]:
         """Return (return_code, count) aggregated for a binary."""
         conn = self._get_conn()
         cursor = conn.execute(
@@ -133,9 +135,7 @@ class BitFlipResultStore(_BaseResultStore):
         )
     """
 
-    def _serialize_result(
-        self, result: BitFlipExperimentResult
-    ) -> Mapping[str, Any]:
+    def _serialize_result(self, result: BitFlipExperimentResult) -> Mapping[str, Any]:
         result_dict = result.to_dict()
         result_dict["custom_returncodes"] = json.dumps(
             result_dict["custom_returncodes"]
@@ -214,15 +214,12 @@ class NopResultStore(_BaseResultStore):
         )
     """
 
-    def _serialize_result(
-        self, result: NopExperimentResult
-    ) -> Mapping[str, Any]:
+    def _serialize_result(self, result: NopExperimentResult) -> Mapping[str, Any]:
         result_dict = result.to_dict()
         result_dict["custom_returncodes"] = json.dumps(
             result_dict["custom_returncodes"]
         )
         return result_dict
-
 
     def stdout_histogram(
         self, unmutated_binary: Path, addrs: Sequence[int]
