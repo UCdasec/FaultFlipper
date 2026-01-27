@@ -15,9 +15,12 @@ ML_RESULTS
 classifier_profiles
 logs
 
-# Test files
-test_files/
-test_packages/
-
 __pycache__/
 __pycache__
+
+.gdb_history/
+
+reg_exps/
+classifier_exps/
+
+riscv_gnu_toolchain/

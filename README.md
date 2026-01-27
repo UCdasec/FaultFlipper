@@ -99,9 +99,19 @@ python tracer_source/simple_mapper.py --binary experiments/1nop_arm32_opt0_passw
 
 Give a ⭐️ if you think this project is interesting!
 
-## Roadmap 
+## Roadmap  - First priority 
 
-- [ ] FIX RISC
+- [ ] Updated readme examples to minimally cover the experiments in the paper
+    - [ ] Generate classifier profile
+
+
+## Roadmap - Second priority
+
+- [ ] Adding clean install script (focus on handling non-pypi dependencies)
+- [ ] Modularizing the Experiment Runner from the Classifier of the results
+- [ ] Splitting code into seperate modules (angr, qemu, tracing, etc)
+- [ ] Move `angr-nop-nocomp-inout` to be incorporated as a backend to another command instead of being a standalone command
+
 
 ***
 _This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
