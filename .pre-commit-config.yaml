@@ -1,0 +1,21 @@
+repos:
+  # Ruff: linter + formatter (runs blazing fast)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Pin to a specific tag; bump as needed
+    rev: v0.12.9
+    hooks:
+      - id: ruff-check
+        args: [--fix]   # auto-fix what it safely can
+      - id: ruff-format
+
+  # Core hygiene hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: mixed-line-ending
+      - id: detect-private-key
+      - id: check-added-large-files

@@ -59,7 +59,7 @@ def list_tuple_table(column_names:list[str], data:list[tuple])->str:
 
 def generate_pdf_report(inp:Path, out:Path):
     """
-    genrate the report pdf
+    Genrate the report pdf
     """
     cmd = f"pandoc {inp} --pdf-engine=xelatex -V geometry:top=0.5in,left=0.125in,right=0.5in,bottom=0.5in -o {out} -V fontsize=8pt".split(" ")
     subprocess.run(cmd, check=False)

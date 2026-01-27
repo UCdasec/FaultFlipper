@@ -268,7 +268,6 @@ def _filter_dataframe_by_addresses(
     df: pd.DataFrame, addresses: set[int]
 ) -> tuple[pd.DataFrame, str, set[int]]:
     """Filter a results DataFrame down to only the provided addresses."""
-
     address_columns = ("flipped_addr", "nopped_addr")
     for column in address_columns:
         if column not in df.columns:
@@ -295,7 +294,6 @@ def bit_inout_runner(
     input_pairs: list[tuple[Path, str]],
 ):
     """Run bit flips for (addr, bit) pairs missing complete coverage."""
-
     if not input_pairs:
         return
 
@@ -444,9 +442,7 @@ def bit_no_comp_inout(
             )
 
         needs_work = True
-        if total_candidate_pairs == 0:
-            needs_work = False
-        elif len(completed_pairs) >= total_candidate_pairs:
+        if total_candidate_pairs == 0 or len(completed_pairs) >= total_candidate_pairs:
             needs_work = False
 
         if not needs_work:
@@ -854,7 +850,6 @@ def plot_correct_predictions_pdf(
       y-axis (log): fraction of binaries achieving that score
       vertical line at `golden_correct`
     """
-
     d = df.copy()
 
     # ---- derive num_correct ----
@@ -938,7 +933,6 @@ def plot_correct_predictions_pdf(
     fig.savefig(out)
     plt.close(fig)
 
-    return
 
 def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False):
 
@@ -1035,7 +1029,6 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     fig.tight_layout()
     fig.savefig(out, dpi=1_200)
 
-    return
 
 
 @app.command

@@ -38,7 +38,6 @@ def run_angr_insn_trace(
     """
     Concretely execute a binary in angr and count executed instruction addresses.
     """
-
     binary_path = str(Path(binary_path).expanduser().absolute())
     proj = angr.Project(binary_path, auto_load_libs=False)
     base_addr = proj.loader.main_object.min_addr
@@ -66,7 +65,6 @@ def fast_sim_binary_w_input(bin: Path, inp: str, func_names: str):
     """
     Execute target functions directly via angr/unicorn with automatic prototypes.
     """
-
     proj = angr.Project(bin, load_options={"auto_load_libs": False})
     extra_options = angr.options.unicorn | {angr.options.LAZY_SOLVES}
 
@@ -114,7 +112,6 @@ def sim_binary_w_calltime_input(
     """
     Simulate a binary with angr where the input is provided as a CLI argument.
     """
-
     proj = angr.Project(bin, load_options={"auto_load_libs": False})
     cfg = proj.analyses.CFGFast()
 
@@ -184,7 +181,6 @@ def sim_binary_w_input(
     """
     Simulate the binary with angr using stdin-based input.
     """
-
     proj = angr.Project(bin, load_options={"auto_load_libs": False})
     cfg = proj.analyses.CFGFast()
 
@@ -253,7 +249,6 @@ def get_program_rc(s):
     """
     Resolve the concrete exit code from an angr state.
     """
-
     if hasattr(s, "exit_code"):
         return s.solver.eval(s.exit_code)
 

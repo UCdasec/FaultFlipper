@@ -1,19 +1,22 @@
 import os
 import shutil
 import struct
-from typing import Any
 import subprocess
 from collections import Counter, defaultdict
-from collections.abc import Sequence, Iterable
+from collections.abc import Iterable, Sequence
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from random import sample
 from tempfile import NamedTemporaryFile
+from typing import Any
 
 import capstone
 import lief
 import pandas as pd
+from angr_backend import (
+    run_angr_insn_trace,
+)
 from capstone import (
     CS_ARCH_ARM,
     CS_ARCH_ARM64,
@@ -27,15 +30,6 @@ from capstone import (
 )
 from elftools.elf.elffile import ELFFile
 
-from angr_backend import (
-    MemLimiter,
-    fast_sim_binary_w_input,
-    get_program_rc,
-    run_angr_insn_trace,
-    sim_binary_w_calltime_input,
-    sim_binary_w_input,
-)
-
 
 class OptimizationLevel(Enum):
     O0 = "0"
@@ -47,6 +41,7 @@ class OptimizationLevel(Enum):
 
 class Target(Enum):
     """Support Targets."""
+
     X86_32 = 0
     RISCV = 2
     ARM_64 = 3
@@ -284,7 +279,7 @@ def build_executed_capstone_addrs_from_qemu(
     cap_addrs = [insn.address for insn in cap_insns]
 
     # Initialize hit map in Capstone space
-    hit_map: dict[int, int] = {addr: 0 for addr in cap_addrs}
+    hit_map: dict[int, int] = dict.fromkeys(cap_addrs, 0)
 
     print("Computing best offset with distnct")
 
@@ -525,7 +520,7 @@ def build_x86_hit_map_from_pcs(
     else:
         offset, support = 0, len(capstone_set)
 
-    hit_map: dict[int, int] = {addr: 0 for addr in capstone_set}
+    hit_map: dict[int, int] = dict.fromkeys(capstone_set, 0)
 
     for pc in qemu_pcs:
         a = pc - offset

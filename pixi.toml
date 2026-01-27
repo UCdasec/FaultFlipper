@@ -29,6 +29,8 @@ pip = ">=25.1.1,<26"
 pillow = ">=11.2.1,<12"
 pytest = ">=8.4.1,<9"
 pycparser = ">=2.22,<3"
+ruff = ">=0.14.14,<0.15"
+pre-commit = ">=4.5.1,<5"
 
 [pypi-dependencies]
 lief = ">=0.16.0, <0.17"
@@ -54,3 +56,30 @@ test = "pytest tests"
 #        "arm-linux-gnueabi-gcc"]}
 
 #[tool.pixi.scripts]
+
+# ALL ruff stuff .....
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+include = ["pyproject.toml", "src/**/*.py", "tests/**/*.py", "scripts/**/*.py"]
+
+[tool.ruff.lint]
+# Defaults: E/F (pycodestyle/pyflakes), I (isort), UP (pyupgrade),
+# B (bugbear), SIM (simplify), C4 (comprehensions), Q (quotes), PL (pylint-lite), RUF (extra rules), D (docstrings)
+select = ["E", "F", "I", "UP", "B", "SIM", "C4", "Q", "PL", "RUF", "D"]
+ignore = ["E501", "C901", "PLR0915", "PLR0912", "PLR0913", "PLR0917"]  # let the formatter manage line length
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004", "D"]  # magic numbers in tests are fine
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+
