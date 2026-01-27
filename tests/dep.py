@@ -1,6 +1,14 @@
-from faultflipper.binary_tools import generate_nops_mutated_bin, disassemble_text_section, detect_target, gen_nop_patch, get_target_nop
 import random
 from pathlib import Path
+
+from faultflipper.binary_tools import (
+    detect_target,
+    disassemble_text_section,
+    gen_nop_patch,
+    generate_nops_mutated_bin,
+    get_target_nop,
+)
+
 
 def test2():
     """
@@ -16,7 +24,7 @@ def test2():
     disasm = disassemble_text_section(compiled_file)
 
     # Select an instrcution 
-    target_idx= random.choice([i for i in range(len(disasm))])
+    target_idx= random.choice(list(range(len(disasm))))
     target_inst = [disasm[target_idx], disasm[target_idx+1]]
 
     target = detect_target(compiled_file)
@@ -38,7 +46,6 @@ def test2():
     else:
         # Run a slidding window over the patch
         nop_count = 0
-        #for i in range(0, len(patch)-len(nop.value), len(nop.value)):
         for i in range(0, len(patch), len(nop.value)):
             window = patch[i:i+len(nop.value)]
             if window == nop.value:
@@ -47,7 +54,7 @@ def test2():
     # Compare the out_file and orig
     mut_disasm = disassemble_text_section(out_file)
 
-    for i in range(len(mut_disasm)):
+    for _ in range(len(mut_disasm)):
         inst = disasm[0]
         mut_inst = mut_disasm[0]
 
@@ -65,7 +72,7 @@ def test2():
     # Now at the mutated instruction, make sure 
     # Now script over len(patch) instcrutions in the mutated 
     # and over the target inst, and keep comparing 
-    for i in range(nop_count):
+    for _ in range(nop_count):
         # Make sure its a nop 
         mut_disasm.pop(0)
 
@@ -78,9 +85,9 @@ def test2():
     assert len(disasm) == len(mut_disasm), "Non-matching remaining len"
 
     # From here out they should be the same
-    zipped =  zip(disasm, mut_disasm)
-    for i, (inst, mut_inst) in enumerate(zipped):
-        if not inst.bytes == mut_inst.bytes:
+    zipped =  zip(disasm, mut_disasm, strict=False)
+    for _, (inst, mut_inst) in enumerate(zipped):
+        if inst.bytes != mut_inst.bytes:
             print(f"{inst.bytes}  {mut_inst.byt}")
         assert inst.bytes == mut_inst.bytes, "Non-matching inst"
 
@@ -127,7 +134,7 @@ def test1():
     # Compare the out_file and orig
     mut_disasm = disassemble_text_section(out_file)
 
-    for i in range(len(mut_disasm)):
+    for _ in range(len(mut_disasm)):
         inst = disasm[0]
         mut_inst = mut_disasm[0]
 
@@ -145,21 +152,20 @@ def test1():
     # Now at the mutated instruction, make sure 
     # Now script over len(patch) instcrutions in the mutated 
     # and over the target inst, and keep comparing 
-    for i in range(nop_count):
+    for _ in range(nop_count):
         # Make sure its a nop 
          mut_disasm.pop(0)
 
     disasm.pop(0)
 
     # From here out they should be the same
-    zipped =  zip(disasm, mut_disasm)
-    for i, (inst, mut_inst) in enumerate(zipped):
-        if not inst.bytes == mut_inst.bytes:
+    zipped =  zip(disasm, mut_disasm, strict=False)
+    for _, (inst, mut_inst) in enumerate(zipped):
+        if inst.bytes != mut_inst.bytes:
             print(f"{inst.bytes}  {mut_inst.bytes}")
         assert inst.bytes == mut_inst.bytes, "Non-matching inst"
 
     print("Passed")
-    return
 
 if __name__ == "__main__":
     test1()

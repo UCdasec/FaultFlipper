@@ -1,14 +1,16 @@
 import random
 from pathlib import Path
+
+import pytest
+
 from faultflipper.binary_tools import (
-    generate_nops_mutated_bin,
-    disassemble_text_section,
     detect_target,
+    disassemble_text_section,
     gen_nop_patch,
+    generate_nops_mutated_bin,
     get_target_nop,
 )
 
-import pytest
 
 @pytest.fixture
 def compiled_file():
@@ -60,7 +62,7 @@ def test_single_nop_patch(compiled_file, output_dir):
 
     assert len(disasm) == len(mut_disasm), "Non-matching remaining len"
 
-    for inst, mut_inst in zip(disasm, mut_disasm):
+    for inst, mut_inst in zip(disasm, mut_disasm, strict=False):
         assert inst.bytes == mut_inst.bytes, "Non-matching inst"
 
 
@@ -101,7 +103,7 @@ def test_double_nop_patch(compiled_file, output_dir):
 
     assert len(disasm) == len(mut_disasm), "Non-matching remaining len"
 
-    for inst, mut_inst in zip(disasm, mut_disasm):
+    for inst, mut_inst in zip(disasm, mut_disasm, strict=False):
         assert inst.bytes == mut_inst.bytes, "Non-matching inst"
 
 #TODO: generalized nop test
