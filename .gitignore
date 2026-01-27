@@ -19,8 +19,13 @@ __pycache__/
 __pycache__
 
 .gdb_history/
+.gdb_history
 
 reg_exps/
 classifier_exps/
 
 riscv_gnu_toolchain/
+
+qemu/
+
+dep_exps/

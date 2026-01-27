@@ -61,10 +61,6 @@ from sklearn.model_selection import train_test_split
 console = Console()
 app = App()
 
-DEFAULT_LOGS = Path("faultsim_log")
-if not DEFAULT_LOGS.exists():
-    DEFAULT_LOGS.mkdir()
-
 
 other_returncodes = [
     # ("critical_code_ran", 0),
@@ -1222,12 +1218,14 @@ def nop_no_comp_inout(
         histogram = upset_hist_store.stdout_histogram(
             common.program_file, upset_df["nopped_addr"].tolist()
         )
-        if histogram:
-            print("Histogram of stdout values for upset binaries:")
-            for stdout, count in histogram:
-                print(f"{count:>8}  {stdout!r}")
-        else:
-            print("Upset binaries produced no stdout entries to summarize.")
+
+        #TODO: This blew up my termianl when I ran it 
+        #if histogram:
+        #    print("Histogram of stdout values for upset binaries:")
+        #    for stdout, count in histogram:
+        #        print(f"{count:>8}  {stdout!r}")
+        #else:
+        #    print("Upset binaries produced no stdout entries to summarize.")
 
     exit_hist_store = store
     if exit_hist_store is None and db_path.exists():
