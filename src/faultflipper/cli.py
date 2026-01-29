@@ -292,12 +292,15 @@ def bit_inout_runner(
     source_code,
     completed_pairs: set[tuple[int, int]],
     input_pairs: list[tuple[Path, str]],
+    use_store: bool,
 ):
     """Run bit flips for (addr, bit) pairs missing complete coverage."""
     if not input_pairs:
         return
 
     inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
+
+    results = []
 
     for i in range(len(inst_bits)):
         bit_key = (inst.address, i)
@@ -339,9 +342,13 @@ def bit_inout_runner(
                     custom_returncodes=other_returncodes,
                 )
 
-                result_store.upsert_result(result)
+                if use_store:
+                    result_store.upsert_result(result)
+                results.append(result)
         finally:
             out_file.unlink()
+
+    return results
 
 
 
@@ -353,6 +360,7 @@ def bit_no_comp_inout(
     outs: list[str] | None = None,
     expected_correct: int | None = None,
     num_cpus: int = 24,
+    use_store: bool = True
 ) -> pd.DataFrame:
     """Run a bit experiment on a already compiled binary with (in,out) tups.
 
@@ -362,10 +370,6 @@ def bit_no_comp_inout(
     inputs and labels. Then, EACH mutated binary will be checked against ALL
     40 pairs.
     """
-    other_returncodes = [
-        ("failed_to_run", -999),
-        ("correct_prediction", 0),
-    ]
 
     if ins is None or outs is None:
         raise ValueError("bit_no_comp_inout requires both inputs and outputs")
@@ -383,9 +387,6 @@ def bit_no_comp_inout(
     intermediate_dir = experiment_root.joinpath("intermediate_results")
     db_path = intermediate_dir.joinpath("bit_flip_results.db")
     store: BitFlipResultStore | None = None
-    intermediate_dir = experiment_root.joinpath("intermediate_results")
-    db_path = intermediate_dir.joinpath("nop_results.db")
-    store: NopResultStore | None = None
 
     if not common.yes:
         num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -445,6 +446,8 @@ def bit_no_comp_inout(
         if total_candidate_pairs == 0 or len(completed_pairs) >= total_candidate_pairs:
             needs_work = False
 
+        results = []
+
         if not needs_work:
             print("All (addr, bit) pairs already processed. Skipping mutation run.")
         else:
@@ -465,17 +468,28 @@ def bit_no_comp_inout(
                         source_code,
                         completed_pairs,
                         input_pairs,
+                        use_store,
                     )
                     futures.append(future)
 
                 with alive_bar(len(futures), title="Processing tasks") as bar:
                     for future in as_completed(futures):
                         # Check the status codes
-                        future.result()
+                        res = future.result()
+                        results.append(res)
                         bar()
 
-        summary_rows = store.summarize_bit_results(common.program_file)
-        summary_df = pd.DataFrame(summary_rows)
+        if use_store:
+            summary_rows = store.summarize_bit_results(common.program_file)
+            summary_df = pd.DataFrame(summary_rows)
+        else:
+            flat_results = [item for batch in results if batch for item in batch]
+            summary_df = (
+                dataclass_to_dataframe(flat_results)
+                if flat_results
+                else pd.DataFrame()
+            )
+
         save_df(summary_df, res_file)
 
     if summary_df is None or summary_df.empty:
@@ -626,12 +640,6 @@ def angr_nop_no_comp_inout(
     total_upset = 0
     total_error = 0
 
-    other_returncodes = [
-        # ("critical_code_ran", 0),
-        # ("critical_code_did_not_run", 97),
-        ("failed_to_run", -999),
-        ("correct_prediction", 0),
-    ]
 
     gold_data = {}
 
@@ -1039,6 +1047,7 @@ def nop_no_comp_inout(
     outs: list[str] | None = None,
     expected_correct: int | None = None,
     num_cpus: int = 24,
+    use_store: bool = True
 ) -> pd.DataFrame:
     """
     This version of the experiments takes tuples of:
@@ -1049,10 +1058,6 @@ def nop_no_comp_inout(
     So if we have 4 tuples, and 10 mutated programs, we get
     40 results in total.
     """
-    other_returncodes = [
-        ("failed_to_run", -999),
-        ("correct_prediction", 0),
-    ]
 
     if ins is None or outs is None:
         raise ValueError("nop_no_comp_inout requires inputs and outputs")
@@ -1069,6 +1074,7 @@ def nop_no_comp_inout(
     res_file = experiment_root.joinpath("results.csv")
     intermediate_dir = experiment_root.joinpath("intermediate_results")
     db_path = intermediate_dir.joinpath("nop_results.db")
+
     store: NopResultStore | None = None
 
     summary_df: pd.DataFrame | None = None
@@ -1088,6 +1094,8 @@ def nop_no_comp_inout(
 
         total_inputs = len(outs)
         disasm = list(disassemble_text_section(common.program_file))
+
+        results = []
 
         with console.status(
             "Loading completed nop addresses from SQLite...", spinner="dots"
@@ -1123,16 +1131,24 @@ def nop_no_comp_inout(
                         ins,
                         outs,
                         source_code,
+                        use_store,
                     )
                     futures.append(future)
 
                 with alive_bar(len(futures), title="Processing tasks") as bar:
                     for future in as_completed(futures):
-                        future.result()
+                        res = future.result()
+                        results.append(res)
                         bar()
 
-        summary_rows = store.summarize_nop_results(common.program_file)
-        summary_df = pd.DataFrame(summary_rows)
+        if use_store:
+            summary_rows = store.summarize_nop_results(common.program_file)
+            summary_df = pd.DataFrame(summary_rows)
+        else:
+            summary_df = dataclass_to_dataframe(results[0])
+            for res in results[1:]:
+                summary_df = pd.concat( summary_df, dataclass_to_dataframe(res))
+            
         save_df(summary_df, res_file)
 
     if summary_df is None or summary_df.empty:
@@ -1191,6 +1207,17 @@ def nop_no_comp_inout(
     print(
         f"Number of nonzero failed and nonzero correct:\n {agg_df[mask].value_counts()}"
     )
+
+    mask = (agg_df["total_failed"] == 0) & (agg_df["total_correct"] != 0)
+    print(
+        f"Number of zero failed and nonzero correct:\n {agg_df[mask].value_counts()}"
+    )
+
+    mask = (agg_df["total_correct"] == 0)
+    print(
+        f"Number of zero failed and zero correct:\n {agg_df[mask].value_counts()}"
+    )
+
 
     print(
         f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] == expected_correct).sum()} had the same number of correct predictions"
@@ -1511,7 +1538,6 @@ def x_bit_reg_seq(
     df = dataclass_to_dataframe(results)
     save_df(df, res_file)
 
-    # show_results(common, df, other_returncodes)
 
     # Lastly save the experiment parameters
     params = common.to_dict()
@@ -2891,7 +2917,6 @@ def x_bit_qemu_parallel_data(
     save_df(df, res_file)
 
 
-    #show_results(common, df, other_returncodes)
 
     # Lastly save the experiment parameters
     params = common.to_dict()
@@ -3194,10 +3219,11 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
                 _ = formated.pop("no_compile")
+                use_store = formated.pop("use_store")
                 expected_correct = int(formated.pop("expected_correct"))
                 params = CommandParameters(**formated)
                 cmd_func(
-                    params, ins=ins, outs=outs, expected_correct=expected_correct, num_cpus=num_cpus
+                    params, ins=ins, outs=outs, expected_correct=expected_correct, num_cpus=num_cpus, use_store=use_store
                 )  # , target=target, num_cpus=num_cpus)
 
             elif command_name in ["angr_nop_no_comp_inout"]:
@@ -3392,8 +3418,8 @@ def generate_exp_file(
     out_dir: Path,
     target: Target,
     timeout: int,
-    expected_stdouts: str,
-    program_inputs: str,
+    expected_stdouts: list[str],
+    program_inputs: list[str],
     program_file: Path,
     expected_correct: int,
 ):
@@ -3843,10 +3869,8 @@ def create_single_plot(
     ax.legend(
         handles=handles,
         fontsize=22,
-        ncol=len(handles),          # <-- horizontal
-        #loc="upper center",
+        ncol=len(handles),
         loc="lower center",
-        #bbox_to_anchor=(0.5, 1.25), # put it above the plot; adjust if you like
         bbox_to_anchor=(0.5, 1.02), # put it above the plot; adjust if you like
         frameon=True,
     )
