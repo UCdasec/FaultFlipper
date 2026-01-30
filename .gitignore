@@ -29,3 +29,5 @@ riscv_gnu_toolchain/
 qemu/
 
 dep_exps/
+
+test_packages/emlearn_example/40image_dataset/
