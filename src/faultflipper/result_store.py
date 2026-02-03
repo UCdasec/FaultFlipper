@@ -9,7 +9,7 @@ from typing import Any
 
 import pandas as pd
 
-from cli_utils import BitFlipExperimentResult, NopExperimentResult
+from faultflipper.cli_utils import BitFlipExperimentResult, NopExperimentResult
 
 
 class _BaseResultStore:
