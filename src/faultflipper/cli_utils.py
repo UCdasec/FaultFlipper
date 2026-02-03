@@ -4,9 +4,10 @@ from dataclasses import dataclass, fields
 from enum import Enum
 from pathlib import Path
 from typing import Literal
+from collections import defaultdict
 
 import pandas as pd
-from binary_tools import Nop, Target, disasm, generate_run_cmd, map_asm_to_c
+from binary_tools import Nop, Target, disasm, generate_run_cmd, map_asm_to_c, extract_instr_type
 from cyclopts import Parameter
 from enums import LinuxExitCodes
 from report_utils import generate_pdf_report, list_tuple_table
@@ -541,7 +542,6 @@ def save_report(
     c_source_lines: list[int] = []
 
     # So in we have 
-
     for name in upset_names:
         if is_bit:
             mut_addr = name.replace(f"{common.program_file.name}_", "")
@@ -566,7 +566,9 @@ def save_report(
                 # Now last key will be the last address tha
                 root_cause += f"| {hex(mut_addr)} | {address_to_lines[last_key]}|\n"
             except Exception:
-                pass
+                # In cases where the address of a fualt doesn't line up to C code, still report
+                root_cause += f"| {hex(mut_addr)} | N/A |\n"
+
 
     # Save the json:
     with open(report_path.parent.joinpath("vuln_c_lines.json"), "w") as f:
@@ -578,6 +580,21 @@ def save_report(
     pad = 10
     bins = [Path(x) for x in list(upset_df["binary_path"])]
 
+    # Tally the vulnerable instructions in a json file
+    invulnerable_instr_counts = defaultdict(int)
+    for bin in bins:
+        if is_bit:
+            mut_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            mut_addr = mut_addr.split("_")[0]
+            mut_addr = int(mut_addr, 16)
+        else:
+            mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+        instr_type: str = extract_instr_type(bin, mut_addr)
+        invulnerable_instr_counts[instr_type] += 1
+
+    # Save vulnerable instruction json file
+    with open(report_path.parent.joinpath("instruction_count.json"), "w") as f:
+        json.dump(dict(invulnerable_instr_counts), f, indent=4)
 
     disassems = ""
     for i, bin in enumerate(bins):

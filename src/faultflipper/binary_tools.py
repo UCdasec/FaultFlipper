@@ -2423,6 +2423,17 @@ def compile_program(
         raise e
 
 
+# TODO: sync with disasm to avoid disassembling the same binaries multiple times
+def extract_instr_type(bin: Path, address: int) -> str:
+    disassembly = disassemble_text_section(bin)
+
+    for instr in disassembly:
+        if instr.address == address:
+            return instr.mnemonic
+
+    raise Exception(f"Did not find instruction address 0x{address:x}")
+
+
 def disasm(
     binary: list[Path],
     start_addr: int,
