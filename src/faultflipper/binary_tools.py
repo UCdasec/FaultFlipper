@@ -1,4 +1,5 @@
 import os
+import signal
 import shutil
 import struct
 import subprocess
@@ -14,7 +15,7 @@ from typing import Any
 import capstone
 import lief
 import pandas as pd
-from angr_backend import (
+from faultflipper.angr_backend import (
     run_angr_insn_trace,
 )
 from capstone import (
@@ -1131,6 +1132,33 @@ def build_aligned_trace(binary_path: Path, trace_path: Path, disasm, target:Targ
     return map, offset
 
 
+def _terminate_process_group(process: subprocess.Popen) -> None:
+    """Forcefully terminate a subprocess and any children it spawned."""
+    if process.poll() is not None:
+        return
+
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            return
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                return
+    else:
+        try:
+            process.kill()
+        except Exception:
+            return
+
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def run_qemu_trace(
     path: Path,
     target: Target,
@@ -1198,8 +1226,7 @@ def run_qemu_trace(
         call_time_program_input=program_input,
     )
 
-    # Wrap with timeout(1) like your existing function
-    full_cmd = ["timeout", f"{timeout}s"] + cmd
+    full_cmd = cmd
     print(f"The golden run command is {full_cmd}")
 
     process = subprocess.Popen(
@@ -1207,6 +1234,7 @@ def run_qemu_trace(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        start_new_session=True,
     )
 
     try:
@@ -1216,14 +1244,14 @@ def run_qemu_trace(
 
             # Gather the outputs
             stdout_b, stderr_b = process.communicate(
-                input=runtime_input.encode(), timeout=timeout + 0.5
+                input=runtime_input.encode(), timeout=timeout
             )
         else:
-            stdout_b, stderr_b = process.communicate(timeout=timeout + 0.5)
+            stdout_b, stderr_b = process.communicate(timeout=timeout)
 
         returncode = process.returncode
     except subprocess.TimeoutExpired:
-        process.kill()
+        _terminate_process_group(process)
         stdout_b, stderr_b = b"TIMEOUT", b"timeout expired"
         returncode = None
 
@@ -1320,7 +1348,13 @@ class Nop(Enum):
     RISCV_32_COMPACT = [0x01, 0x00]
 
 
-def disassemble_text_section(binary_path: Path, always_skip_data:bool = True):
+def disassemble_text_section(
+    binary_path: Path,
+    always_skip_data: bool = True,
+    *,
+    binary=None,
+    target: Target | None = None,
+):
 #def disassemble_text_section(binary_path: Path, always_skip_data:bool = False):
     """Disassemble the .text section of the binary and output instructions.
 
@@ -1330,15 +1364,17 @@ def disassemble_text_section(binary_path: Path, always_skip_data:bool = True):
     if not binary_path.exists():
         raise Exception("No bin")
 
-    # Parse the binary
-    binary = lief.parse(binary_path)
+    # Parse the binary if one is not provided
+    if binary is None:
+        binary = lief.parse(binary_path)
 
     # Find the .text section
     text_section = binary.get_section(".text")
     if not text_section:
         raise ValueError(".text section not found in the binary.")
 
-    target = detect_target(binary_path)
+    if target is None:
+        target = detect_target(binary_path)
 
     match target:
 
@@ -1719,7 +1755,19 @@ def generate_x_bits_mutated_file(
     return out_file
 
 
-def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None, Path]:
+def generate_bit_mutated_file(
+    i,
+    inst_bits,
+    target,
+    inst,
+    common,
+    *,
+    binary=None,
+    original_patch=None,
+    out_dir: Path | None = None,
+    base_bytes: bytes | None = None,
+    patch_offset: int | None = None,
+) -> tuple[None, Path]:
     """
     Flip a single bit within an instruction and write the patched binary to disk.
 
@@ -1735,6 +1783,12 @@ def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None,
         Capstone instruction describing the location being patched.
     common : CommandParameters
         Experiment settings with output directory and reference binary.
+    out_dir : Path | None
+        Override destination directory for mutated binaries.
+    base_bytes : bytes | None
+        Raw bytes for the reference binary, used to avoid reparsing with LIEF.
+    patch_offset : int | None
+        File offset for the instruction to patch when using base_bytes.
 
     Returns
     -------
@@ -1742,7 +1796,8 @@ def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None,
         ``None`` when the flipped bit produces an invalid instruction, otherwise the
         path to the mutated binary.
     """
-    binary = lief.parse(common.program_file)
+    if out_dir is None:
+        out_dir = common.out_dir
 
     original_bits = [x for x in inst_bits]
     if original_bits[i] == "0":
@@ -1770,15 +1825,30 @@ def generate_bit_mutated_file(i, inst_bits, target, inst, common) -> tuple[None,
         for i in range(0, len(bit_flipped_inst), 8)
     ]
 
+    out_file = out_dir.joinpath(common.program_file.name + f"_{hex(inst.address)}_{i}")
+
+    if base_bytes is not None and patch_offset is not None:
+        patch_len = len(patch)
+        if patch_offset < 0 or patch_offset + patch_len > len(base_bytes):
+            return None
+        mutated = bytearray(base_bytes)
+        mutated[patch_offset : patch_offset + patch_len] = bytes(patch)
+        out_file.write_bytes(mutated)
+        out_file.chmod(0o755)
+        return out_file
+
+    if binary is None:
+        binary = lief.parse(common.program_file)
+    if original_patch is None:
+        original_patch = list(inst.bytes)
+
     # If we get here the instruction is good
-
     binary.patch_address(inst.address, patch)
-    out_file = common.out_dir.joinpath(
-        common.program_file.name + f"_{hex(inst.address)}_{i}"
-    )
-    binary.write(str(out_file.resolve()))
-
-    out_file.chmod(0o755)
+    try:
+        binary.write(str(out_file.resolve()))
+        out_file.chmod(0o755)
+    finally:
+        binary.patch_address(inst.address, original_patch)
     return out_file
 
 
@@ -1867,13 +1937,42 @@ def generate_data_bit_flip(
 
 
 def generate_nops_mutated_bin(
-    binary: Path, target, instructions: list, output: Path
+    binary: Path,
+    target,
+    instructions: list,
+    output: Path,
+    *,
+    base_bytes: bytes | None = None,
+    text_section_offset: int | None = None,
+    text_section_vaddr: int | None = None,
 ) -> Path:
     """Geneate a single mutated binary.
 
     Replace all the instructions with the nop patch for this target
     architecture.
     """
+    if (
+        base_bytes is not None
+        and text_section_offset is not None
+        and text_section_vaddr is not None
+    ):
+        # Run the new method that resuses the same bytes
+        mutated = bytearray(base_bytes)
+        for inst in instructions:
+            nop_patch = gen_nop_patch(inst, target=target)
+            patch_offset = text_section_offset + (inst.address - text_section_vaddr)
+            patch_len = len(nop_patch)
+            if patch_offset < 0 or patch_offset + patch_len > len(mutated):
+                raise ValueError(
+                    f"Computed file offset {patch_offset} is out of range for {binary}"
+                )
+            mutated[patch_offset : patch_offset + patch_len] = bytes(nop_patch)
+        output.write_bytes(mutated)
+        output.chmod(0o755)
+        return output
+
+    # Otherwise run the wold method 
+
     shutil.copy(binary, output)
 
     # Run many patches - patching in place so they all get applied
@@ -1886,14 +1985,11 @@ def generate_nops_mutated_bin(
     return output
 
 
-def detect_target(bin: Path) -> Target:
+def detect_target_from_binary(binary) -> Target:
     """
-    Detect the target of the binary
+    Detect the target of a parsed LIEF binary.
     """
-    # parsed = lief.parse(bin)
-    lief_arch = get_lief_arch(bin)
-
-    binary = lief.parse(bin)
+    lief_arch = binary.header.machine_type
 
     match lief_arch:
         case lief.ELF.ARCH.X86_64:
@@ -1905,20 +2001,24 @@ def detect_target(bin: Path) -> Target:
         case lief.ELF.ARCH.RISCV:
             is_64 = binary.header.identity_class == lief.ELF.Header.CLASS.ELF64
             return Target.RISCV if is_64 else Target.RISCV_32
-            # return Target.RISCV
-
-        # case lief.ELF.ARCH.RISC:
-        #    return Target.RISCV_32
 
         case lief.ELF.ARCH.ARM:
             return Target.ARM_32
 
         case lief.ELF.ARCH.AARCH64:
             return Target.ARM_64
+
         case _:
             msg = f"The target architecture of {lief_arch} is unknown."
             raise ValueError(msg)
-    return
+
+
+def detect_target(bin: Path) -> Target:
+    """
+    Detect the target of the binary
+    """
+    binary = lief.parse(bin)
+    return detect_target_from_binary(binary)
 
 
 def count_bit_differences(bytes_1, bytes_2):
@@ -1948,7 +2048,6 @@ def timed_run_binary_w_input(
         program_input += "\n"
 
     cmd = generate_run_cmd(path, target)
-    cmd = ["timeout", f"{timeout}s"] + cmd
 
     # Verify that the path exists and is a file
     if not path.is_file():
@@ -1963,6 +2062,7 @@ def timed_run_binary_w_input(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        start_new_session=True,
     )
 
     try:
@@ -1971,7 +2071,7 @@ def timed_run_binary_w_input(
             input=program_input.encode(), timeout=timeout
         )
     except subprocess.TimeoutExpired:
-        process.kill()
+        _terminate_process_group(process)
         stdout, stderr = b"", b"timeout expired"
     if process.returncode is None:
         process.returncode = LinuxExitCodes.EX_SIGSEGV
@@ -1998,7 +2098,6 @@ def run_binary_w_calltime_input(
     ```
     """
     cmd = generate_run_cmd(path, target)
-    cmd = ["timeout", f"{timeout}s"] + cmd
     cmd.append(program_input)
 
     # Verify that the path exists and is a file
@@ -2012,13 +2111,14 @@ def run_binary_w_calltime_input(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        start_new_session=True,
     )
 
     try:
         # Gather the outputs
-        stdout, stderr = process.communicate(timeout=timeout + 0.5)
+        stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        process.kill()
+        _terminate_process_group(process)
         stdout, stderr = b"TIMEOUT", b"timeout expired"
         return None, stdout.decode(), stderr.decode()
 
@@ -2045,7 +2145,6 @@ def run_binary_w_input(
         program_input += "\n"
 
     cmd = generate_run_cmd(path, target)
-    cmd = ["timeout", f"{timeout}s"] + cmd
 
     # Verify that the path exists and is a file
     if not path.is_file():
@@ -2058,6 +2157,7 @@ def run_binary_w_input(
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        start_new_session=True,
     )
 
     try:
@@ -2066,7 +2166,7 @@ def run_binary_w_input(
             input=program_input.encode(), timeout=timeout
         )
     except subprocess.TimeoutExpired:
-        process.kill()
+        _terminate_process_group(process)
         stdout, stderr = b"TIMEOUT", b"timeout expired"
         return None, stdout.decode(), stderr.decode()
     return process.returncode, stdout.decode(), stderr.decode()
