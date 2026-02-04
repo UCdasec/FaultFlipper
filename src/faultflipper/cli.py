@@ -6,6 +6,7 @@ from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated
 
 import dynaconf
 import lief
@@ -20,6 +21,7 @@ from binary_tools import (
     Target,
     compile_program,
     delete_mutated_binaries,
+    detect_target_from_binary,
     detect_target,
     disasm,
     disassemble_text_section,
@@ -46,7 +48,7 @@ from cli_utils import (
     save_report,
     show_results,
 )
-from cyclopts import App
+from cyclopts import App, Parameter
 from parallel_runner import (
     x_bit_angr_helper,
     x_bit_para_run_helper,
@@ -284,6 +286,62 @@ def _filter_dataframe_by_addresses(
         f"Expected one of: {', '.join(address_columns)}."
     )
 
+
+def _summarize_nop_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    cleaned = df.copy()
+    unnamed = [col for col in cleaned.columns if str(col).startswith("Unnamed:")]
+    if unnamed:
+        cleaned = cleaned.drop(columns=unnamed)
+
+    if "nopped_addr" not in cleaned.columns and isinstance(
+        cleaned.columns, pd.RangeIndex
+    ):
+        expected_cols = [
+            "source_file",
+            "unmutated_binary",
+            "binary_path",
+            "return_code",
+            "program_input",
+            "program_stdout",
+            "target",
+            "expected_stdout",
+            "expected_returncode",
+            "custom_returncodes",
+            "nopped_addr",
+            "mutation",
+            "source_code",
+        ]
+        if cleaned.shape[1] == len(expected_cols) + 1:
+            cleaned = cleaned.iloc[:, 1:]
+        if cleaned.shape[1] == len(expected_cols):
+            cleaned.columns = expected_cols
+
+    required_raw = {"nopped_addr", "return_code", "program_stdout", "expected_stdout"}
+    if not required_raw.issubset(cleaned.columns):
+        return pd.DataFrame()
+
+    cleaned["__return_code"] = pd.to_numeric(cleaned["return_code"], errors="coerce")
+    cleaned["__failed"] = cleaned["__return_code"] == -999
+    cleaned["__expected"] = cleaned["expected_stdout"].astype(str)
+    cleaned["__stdout"] = cleaned["program_stdout"].astype(str)
+    cleaned["__correct"] = cleaned["__stdout"].str.contains(
+        cleaned["__expected"], na=False, regex=False
+    )
+
+    summary_df = (
+        cleaned.groupby("nopped_addr", dropna=False)
+        .agg(
+            total_runs=("nopped_addr", "size"),
+            total_failed=("__failed", "sum"),
+            total_correct=("__correct", "sum"),
+        )
+        .reset_index()
+    )
+    return summary_df
+
 def bit_inout_runner(
     inst,
     target,
@@ -293,6 +351,11 @@ def bit_inout_runner(
     completed_pairs: set[tuple[int, int]],
     input_pairs: list[tuple[Path, str]],
     use_store: bool,
+    out_dir: Path,
+    delete_bins: bool,
+    base_bytes: bytes,
+    text_section_offset: int,
+    text_section_vaddr: int,
 ):
     """Run bit flips for (addr, bit) pairs missing complete coverage."""
     if not input_pairs:
@@ -301,6 +364,9 @@ def bit_inout_runner(
     inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
 
     results = []
+    patch_offset = text_section_offset + (inst.address - text_section_vaddr)
+    if patch_offset < 0 or patch_offset + len(inst.bytes) > len(base_bytes):
+        return results
 
     for i in range(len(inst_bits)):
         bit_key = (inst.address, i)
@@ -308,7 +374,16 @@ def bit_inout_runner(
         if bit_key in completed_pairs:
             continue
 
-        out_file = generate_bit_mutated_file(i, inst_bits, target, inst, common)
+        out_file = generate_bit_mutated_file(
+            i,
+            inst_bits,
+            target,
+            inst,
+            common,
+            out_dir=out_dir,
+            base_bytes=base_bytes,
+            patch_offset=patch_offset,
+        )
 
         if out_file is None:
             continue
@@ -346,7 +421,11 @@ def bit_inout_runner(
                     result_store.upsert_result(result)
                 results.append(result)
         finally:
-            out_file.unlink()
+            if delete_bins:
+                try:
+                    out_file.unlink()
+                except FileNotFoundError:
+                    pass
 
     return results
 
@@ -360,7 +439,8 @@ def bit_no_comp_inout(
     outs: list[str] | None = None,
     expected_correct: int | None = None,
     num_cpus: int = 24,
-    use_store: bool = True
+    use_store: bool = True,
+    delete_bins: Annotated[bool, Parameter(name="del")] = True,
 ) -> pd.DataFrame:
     """Run a bit experiment on a already compiled binary with (in,out) tups.
 
@@ -388,19 +468,6 @@ def bit_no_comp_inout(
     db_path = intermediate_dir.joinpath("bit_flip_results.db")
     store: BitFlipResultStore | None = None
 
-    if not common.yes:
-        num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
-        num_bytes = len(lief.parse(common.program_file).get_section(".text").content)
-        num_insns = len(disassemble_text_section(common.program_file))
-        cont = str(
-            input(
-                f"Run with {num_bits} bits, {num_bytes} bytes, {num_insns} insns? (Yy/Nn)"
-            )
-        )
-
-        if cont.lower() != "y":
-            return
-
     summary_df: pd.DataFrame | None = None
 
     if res_file.exists():
@@ -410,6 +477,32 @@ def bit_no_comp_inout(
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True)
 
+        binary = lief.parse(common.program_file)
+        text_section = binary.get_section(".text")
+        if not text_section:
+            raise ValueError(".text section not found in the binary.")
+        target = detect_target_from_binary(binary)
+        disasm = list(
+            disassemble_text_section(
+                common.program_file,
+                binary=binary,
+                target=target,
+            )
+        )
+        num_bits = len(text_section.content) * 8
+        num_bytes = len(text_section.content)
+        num_insns = len(disasm)
+
+        if not common.yes:
+            cont = str(
+                input(
+                    f"Run with {num_bits} bits, {num_bytes} bytes, {num_insns} insns? (Yy/Nn)"
+                )
+            )
+
+            if cont.lower() != "y":
+                return
+
         # Intermediate results now live in a SQLite database
         intermediate_dir.mkdir(exist_ok=True)
         store = BitFlipResultStore(db_path)
@@ -417,6 +510,19 @@ def bit_no_comp_inout(
         # Adjust the out dir
         common.out_dir = experiment_root.joinpath("mutated_bins")
         common.out_dir.mkdir(exist_ok=True)
+        mutated_bin_dir = common.out_dir
+        shm_dir = None
+        if delete_bins:
+            shm_root = Path("/dev/shm")
+            if shm_root.is_dir():
+                shm_dir = shm_root.joinpath(
+                    f"faultflipper_{common.program_file.stem}_{datetime.now():%Y%m%d_%H%M%S_%f}"
+                )
+                try:
+                    shm_dir.mkdir(parents=True, exist_ok=True)
+                    mutated_bin_dir = shm_dir
+                except OSError:
+                    shm_dir = None
 
         input_pairs: list[tuple[Path, str]] = []
 
@@ -429,7 +535,9 @@ def bit_no_comp_inout(
 
         total_inputs = len(input_pairs)
 
-        disasm = list(disassemble_text_section(common.program_file))
+        text_section_offset = text_section.offset
+        text_section_vaddr = text_section.virtual_address
+        base_bytes = common.program_file.read_bytes()
         total_candidate_pairs = sum(len(inst.bytes) * 8 for inst in disasm)
 
         with console.status(
@@ -451,9 +559,6 @@ def bit_no_comp_inout(
         if not needs_work:
             print("All (addr, bit) pairs already processed. Skipping mutation run.")
         else:
-            # Load the target type
-            target = detect_target(common.program_file)
-
             futures = []
 
             with ThreadPoolExecutor(max_workers=num_cpus) as executor:
@@ -469,6 +574,11 @@ def bit_no_comp_inout(
                         completed_pairs,
                         input_pairs,
                         use_store,
+                        mutated_bin_dir,
+                        delete_bins,
+                        base_bytes,
+                        text_section_offset,
+                        text_section_vaddr,
                     )
                     futures.append(future)
 
@@ -478,6 +588,12 @@ def bit_no_comp_inout(
                         res = future.result()
                         results.append(res)
                         bar()
+
+        if shm_dir is not None:
+            try:
+                shm_dir.rmdir()
+            except OSError:
+                pass
 
         if use_store:
             summary_rows = store.summarize_bit_results(common.program_file)
@@ -495,6 +611,20 @@ def bit_no_comp_inout(
     if summary_df is None or summary_df.empty:
         print("No summarized results available yet")
         return pd.DataFrame()
+
+    required_cols = {"total_failed", "total_correct", "total_runs"}
+    if not required_cols.issubset(summary_df.columns):
+        summary_df = _summarize_nop_results_from_raw(summary_df)
+        if summary_df.empty:
+            fallback_store = store
+            if fallback_store is None and db_path.exists():
+                fallback_store = NopResultStore(db_path)
+            if fallback_store is not None:
+                summary_rows = fallback_store.summarize_nop_results(common.program_file)
+                summary_df = pd.DataFrame(summary_rows)
+        if summary_df.empty:
+            print("No summarized results available yet")
+            return pd.DataFrame()
 
     total_inputs = len(outs)
 
@@ -666,15 +796,27 @@ def angr_nop_no_comp_inout(
         common.out_dir = common.out_dir.joinpath("mutated_bins")
         common.out_dir.mkdir(exist_ok=True)
 
-        disasm = disassemble_text_section(common.program_file)
+        binary = lief.parse(common.program_file)
+        text_section = binary.get_section(".text")
+        if not text_section:
+            raise ValueError(".text section not found in the binary.")
+        target = detect_target_from_binary(binary)
+        disasm = list(
+            disassemble_text_section(
+                common.program_file,
+                binary=binary,
+                target=target,
+            )
+        )
+        text_section_offset = text_section.offset
+        text_section_vaddr = text_section.virtual_address
+        base_bytes = common.program_file.read_bytes()
         if not common.yes:
             cont = str(input(f"Normal for {len(disasm)} instructions? (Yy/Nn)"))
 
             if cont.lower() != "y":
                 return
 
-        # Load the target type
-        target = detect_target(common.program_file)
         logger.debug(f"Detected Target: {target}")
 
         results: list[RegNopExperimentResult] = []
@@ -700,7 +842,13 @@ def angr_nop_no_comp_inout(
                 common.program_file.name + f"_{hex(insts[0].address)}"
             )
             out_file = generate_nops_mutated_bin(
-                common.program_file, target, insts, out_path
+                common.program_file,
+                target,
+                insts,
+                out_path,
+                base_bytes=base_bytes,
+                text_section_offset=text_section_offset,
+                text_section_vaddr=text_section_vaddr,
             )
 
             # out_file = generate_nops_mutated_bin(common, target, [inst])
@@ -783,22 +931,44 @@ def angr_nop_no_comp_inout(
 
     return
 
-def nn_inout_runner(common, inst, result_store: NopResultStore, target, ins, outs, source_code):
+def nn_inout_runner(
+    common,
+    inst,
+    result_store: NopResultStore,
+    target,
+    ins,
+    outs,
+    source_code,
+    use_store: bool,
+    out_dir: Path,
+    delete_bins: bool,
+    base_bytes: bytes,
+    text_section_offset: int,
+    text_section_vaddr: int,
+):
     """Function to help with running parallel neural network in outs.
 
     That is. This function, given one instruction, will rewrite it with a
     nop, then test the mutant binary on all the in files.
     """
     insts = [inst]
-    out_path = common.out_dir.joinpath(
+    out_path = out_dir.joinpath(
         common.program_file.name + f"_{hex(insts[0].address)}"
     )
 
-    # TODO - This is the old function
-    out_file = generate_nops_mutated_bin(common.program_file, target, insts, out_path)
+    out_file = generate_nops_mutated_bin(
+        common.program_file,
+        target,
+        insts,
+        out_path,
+        base_bytes=base_bytes,
+        text_section_offset=text_section_offset,
+        text_section_vaddr=text_section_vaddr,
+    )
 
     # out_file = generate_nops_mutated_bin(common, target, [inst])
 
+    results = []
     try:
         # Run all the possible inputs and outputs
         for cur_in, cur_out in zip(ins, outs, strict=False):
@@ -836,9 +1006,16 @@ def nn_inout_runner(common, inst, result_store: NopResultStore, target, ins, out
                 expected_stdout=cur_out,
                 custom_returncodes=other_returncodes,
             )
-            result_store.upsert_result(result)
+            if use_store:
+                result_store.upsert_result(result)
+            results.append(result)
     finally:
-        out_file.unlink()
+        if delete_bins:
+            try:
+                out_file.unlink()
+            except FileNotFoundError:
+                pass
+    return results
 
 
 def plot_correct_predictions_pdf(
@@ -1047,7 +1224,8 @@ def nop_no_comp_inout(
     outs: list[str] | None = None,
     expected_correct: int | None = None,
     num_cpus: int = 24,
-    use_store: bool = True
+    use_store: bool = True,
+    delete_bins: Annotated[bool, Parameter(name="del")] = True,
 ) -> pd.DataFrame:
     """
     This version of the experiments takes tuples of:
@@ -1086,14 +1264,43 @@ def nop_no_comp_inout(
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True, parents=True)
 
+        binary = lief.parse(common.program_file)
+        text_section = binary.get_section(".text")
+        if not text_section:
+            raise ValueError(".text section not found in the binary.")
+        target = detect_target_from_binary(binary)
+        disasm = list(
+            disassemble_text_section(
+                common.program_file,
+                binary=binary,
+                target=target,
+            )
+        )
+        text_section_offset = text_section.offset
+        text_section_vaddr = text_section.virtual_address
+        base_bytes = common.program_file.read_bytes()
+
         intermediate_dir.mkdir(exist_ok=True)
-        store = NopResultStore(db_path)
+
+        store = NopResultStore(db_path) 
 
         common.out_dir = experiment_root.joinpath("mutated_bins")
         common.out_dir.mkdir(exist_ok=True)
+        mutated_bin_dir = common.out_dir
+        shm_dir = None
+        if delete_bins:
+            shm_root = Path("/dev/shm")
+            if shm_root.is_dir():
+                shm_dir = shm_root.joinpath(
+                    f"faultflipper_{common.program_file.stem}_{datetime.now():%Y%m%d_%H%M%S_%f}"
+                )
+                try:
+                    shm_dir.mkdir(parents=True, exist_ok=True)
+                    mutated_bin_dir = shm_dir
+                except OSError:
+                    shm_dir = None
 
         total_inputs = len(outs)
-        disasm = list(disassemble_text_section(common.program_file))
 
         results = []
 
@@ -1117,7 +1324,6 @@ def nop_no_comp_inout(
                 if cont.lower() != "y":
                     return
 
-            target = detect_target(common.program_file)
             futures = []
 
             with ThreadPoolExecutor(max_workers=num_cpus) as executor:
@@ -1132,6 +1338,11 @@ def nop_no_comp_inout(
                         outs,
                         source_code,
                         use_store,
+                        mutated_bin_dir,
+                        delete_bins,
+                        base_bytes,
+                        text_section_offset,
+                        text_section_vaddr,
                     )
                     futures.append(future)
 
@@ -1141,19 +1352,56 @@ def nop_no_comp_inout(
                         results.append(res)
                         bar()
 
+        if shm_dir is not None:
+            try:
+                shm_dir.rmdir()
+            except OSError:
+                pass
+
         if use_store:
             summary_rows = store.summarize_nop_results(common.program_file)
             summary_df = pd.DataFrame(summary_rows)
         else:
-            summary_df = dataclass_to_dataframe(results[0])
-            for res in results[1:]:
-                summary_df = pd.concat( summary_df, dataclass_to_dataframe(res))
+            flat_results = [item for batch in results if batch for item in batch]
+            summary_df = (
+                dataclass_to_dataframe(flat_results)
+                if flat_results
+                else pd.DataFrame()
+            )
             
         save_df(summary_df, res_file)
 
     if summary_df is None or summary_df.empty:
         print("No summarized results available yet")
         return pd.DataFrame()
+
+    required_cols = {"total_failed", "total_correct", "total_runs"}
+    if not required_cols.issubset(summary_df.columns):
+        fallback_store = store
+
+        if not use_store:
+            df = summary_df.copy()
+            df["__return_code"] = pd.to_numeric(df["return_code"], errors="coerce")
+            df["__failed"] = df["__return_code"] == -999
+            df["__expected"] = df["expected_stdout"].astype(str)
+            df["__stdout"] = df["program_stdout"].astype(str)
+            df["__correct"] = df["__stdout"].str.contains(
+                df["__expected"], na=False, regex=False
+            )
+            summary_df = (
+                df.groupby("nopped_addr", dropna=False)
+                .agg(
+                    total_runs=("nopped_addr", "size"),
+                    total_failed=("__failed", "sum"),
+                    total_correct=("__correct", "sum"),
+                )
+                .reset_index()
+            )
+
+        else:
+            summary_rows = fallback_store.summarize_nop_results(common.program_file)
+            summary_df = pd.DataFrame(summary_rows)
+
 
     total_inputs = len(outs)
 
@@ -3219,12 +3467,30 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
                 _ = formated.pop("no_compile")
-                use_store = formated.pop("use_store")
+                use_store = formated.pop("use_store", True)
                 expected_correct = int(formated.pop("expected_correct"))
+                delete_bins = formated.pop("del", True)
                 params = CommandParameters(**formated)
-                cmd_func(
-                    params, ins=ins, outs=outs, expected_correct=expected_correct, num_cpus=num_cpus, use_store=use_store
-                )  # , target=target, num_cpus=num_cpus)
+                if command_name == "bit_no_comp_inout":
+                    cmd_func(
+                        params,
+                        ins=ins,
+                        outs=outs,
+                        expected_correct=expected_correct,
+                        num_cpus=num_cpus,
+                        use_store=use_store,
+                        delete_bins=delete_bins,
+                    )  # , target=target, num_cpus=num_cpus)
+                else:
+                    cmd_func(
+                        params,
+                        ins=ins,
+                        outs=outs,
+                        expected_correct=expected_correct,
+                        num_cpus=num_cpus,
+                        use_store=use_store,
+                        delete_bins=delete_bins,
+                    )  # , target=target, num_cpus=num_cpus)
 
             elif command_name in ["angr_nop_no_comp_inout"]:
                 ins = formated.pop("ins")
