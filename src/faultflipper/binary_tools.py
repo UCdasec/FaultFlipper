@@ -2424,10 +2424,8 @@ def compile_program(
 
 
 # TODO: sync with disasm to avoid disassembling the same binaries multiple times
-def extract_instr_type(bin: Path, address: int) -> str:
-    disassembly = disassemble_text_section(bin)
-
-    for instr in disassembly:
+def extract_instr_type(disasm, address: int) -> str:
+    for instr in disasm:
         if instr.address == address:
             return instr.mnemonic
 

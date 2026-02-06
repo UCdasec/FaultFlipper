@@ -7,7 +7,15 @@ from typing import Literal
 from collections import defaultdict
 
 import pandas as pd
-from binary_tools import Nop, Target, disasm, generate_run_cmd, map_asm_to_c, extract_instr_type
+from binary_tools import (
+    Nop,
+    Target,
+    disasm,
+    disassemble_text_section,
+    generate_run_cmd,
+    map_asm_to_c,
+    extract_instr_type,
+)
 from cyclopts import Parameter
 from enums import LinuxExitCodes
 from report_utils import generate_pdf_report, list_tuple_table
@@ -78,9 +86,11 @@ class CommandParameters:
     program_source_code: Path | None = None
     dynamic_filter: bool = False
     comp: bool = True
-    opts: str | None = None # compilation options
-    trace_backend: Literal["angr", "best"] = "best" # Use best fit by defualt, otherwise force the capstone if possible
-    # If the program is alread compiled don't try to recompile it 
+    opts: str | None = None  # compilation options
+    trace_backend: Literal["angr", "best"] = (
+        "best"  # Use best fit by defualt, otherwise force the capstone if possible
+    )
+    # If the program is alread compiled don't try to recompile it
 
     def to_dict(self):
         if self.save_results is None:
@@ -96,10 +106,15 @@ class CommandParameters:
             "timeout": self.timeout,
             "save_results": str(self.save_results.absolute()),
             "yes": self.yes,
-            "program_source_code": str(self.program_source_code.absolute()) if self.program_source_code else "",
+            "program_source_code": (
+                str(self.program_source_code.absolute())
+                if self.program_source_code
+                else ""
+            ),
         }
 
-def str_in_col(df: pd.DataFrame, inp: str, col: str)->pd.DataFrame:
+
+def str_in_col(df: pd.DataFrame, inp: str, col: str) -> pd.DataFrame:
     """
     Filter the df to get a sub-df where inp in string in col.
     """
@@ -147,24 +162,32 @@ def show_results(
     print_histogram(new_freqs)
 
 
-def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def parse_results(
+    df: pd.DataFrame, upset_on_match: bool = True
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Returns the split of (Normal, Error, upset).
 
-    Success only occurs when the returncode is 0. In some cases, if the 
-    expected STDOUT is found, this is a successful attack, however in other cases 
-    if it is found, this is a failed attack. 
+    Success only occurs when the returncode is 0. In some cases, if the
+    expected STDOUT is found, this is a successful attack, however in other cases
+    if it is found, this is a failed attack.
     """
     expected = df["expected_stdout"][0]
 
     # If a program does not return 0, it must be an error case
-    return_is_0 = df[df["return_code"] ==0]
+    return_is_0 = df[df["return_code"] == 0]
     error = df[df["return_code"] != 0]
 
     print(f"The expected out is {expected}, and upset on match is {upset_on_match}")
 
-    # Get the expected and not expected 
-    out_is_expected =     return_is_0[ return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)]
-    out_is_not_expected = return_is_0[~return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)]
+    # Get the expected and not expected
+    out_is_expected = return_is_0[
+        return_is_0["program_stdout"].str.contains(str(expected), na=False, regex=False)
+    ]
+    out_is_not_expected = return_is_0[
+        ~return_is_0["program_stdout"].str.contains(
+            str(expected), na=False, regex=False
+        )
+    ]
 
     print(f"Num out is expected: {len(out_is_expected)}")
     print(f"Num out is not expected: {len(out_is_not_expected)}")
@@ -172,21 +195,23 @@ def parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataF
     upset = out_is_expected if upset_on_match else out_is_not_expected
     normal = out_is_expected if not upset_on_match else out_is_not_expected
 
-    # - Temporary code for debugging 
-    #print(f"[ IN PARSE ] Had {len(return_is_0['program_stdout'])} programs return 0, and {len(out_is_not_expected['return_code'])} programs return 0 and not have exepcte output, and {len(out_is_expected['return_code'])} return 0 and have expected")
-    #tmp = error[error["program_stdout"].str.contains(expected, na=False)]
-    #print(f"[ IN PARSE ] Had {len(tmp['program_stdout'])} programs return non 0 and have expected output")
+    # - Temporary code for debugging
+    # print(f"[ IN PARSE ] Had {len(return_is_0['program_stdout'])} programs return 0, and {len(out_is_not_expected['return_code'])} programs return 0 and not have exepcte output, and {len(out_is_expected['return_code'])} return 0 and have expected")
+    # tmp = error[error["program_stdout"].str.contains(expected, na=False)]
+    # print(f"[ IN PARSE ] Had {len(tmp['program_stdout'])} programs return non 0 and have expected output")
 
     # - Tempoary code done
     return normal, error, upset
 
 
-def orig_parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def orig_parse_results(
+    df: pd.DataFrame, upset_on_match: bool = True
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Returns the split of (Normal, Error, upset).
 
-    Success only occurs when the returncode is 0. In some cases, if the 
-    expected STDOUT is found, this is a successful attack, however in other cases 
-    if it is found, this is a failed attack. 
+    Success only occurs when the returncode is 0. In some cases, if the
+    expected STDOUT is found, this is a successful attack, however in other cases
+    if it is found, this is a failed attack.
     """
     expected = df["expected_stdout"][0]
 
@@ -198,46 +223,45 @@ def orig_parse_results(df: pd.DataFrame, upset_on_match: bool = True)->tuple[pd.
     # reamining will be split into nromal and error
     if upset_on_match:
         # If the upset is on a match then the definition is easy...
-        upset = out_is_expected 
-        #remaining = out_is_not_expected
+        upset = out_is_expected
+        # remaining = out_is_not_expected
         normal = out_is_not_expected[out_is_not_expected["return_code"] == 0]
-        error =  out_is_not_expected[out_is_not_expected["return_code"] != 0]
+        error = out_is_not_expected[out_is_not_expected["return_code"] != 0]
     else:
         # If the upset is on a non-match, the definition is harder...
-        # That is we need the program to returncode 0 AND have an 
+        # That is we need the program to returncode 0 AND have an
         # stdout that is not match.
         upset = out_is_not_expected[out_is_not_expected["return_code"] == 0]
         error1 = out_is_not_expected[out_is_not_expected["return_code"] != 0]
-        #upset = out_is_not_expected
+        # upset = out_is_not_expected
 
         error2 = out_is_expected[out_is_expected["return_code"] != 0]
         normal = out_is_expected[out_is_expected["return_code"] == 0]
 
-        error = pd.concat([error1, error2],axis=1)
+        error = pd.concat([error1, error2], axis=1)
     return normal, error, upset
 
-    #out_is_expected = returncode_is_0[returncode_is_0["program_stdout"].str.contains(expected, na=False)]
-    #out_is_not_expected = returncode_is_0[~returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+    # out_is_expected = returncode_is_0[returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+    # out_is_not_expected = returncode_is_0[~returncode_is_0["program_stdout"].str.contains(expected, na=False)]
 
-    #if upset_on_match:
-        
+    # if upset_on_match:
 
-        #TODO: This contradicts with the paper.
-    #upset = out_is_expected if upset_on_match else out_is_not_expected
-    #remaining= out_is_expected if not upset_on_match else out_is_not_expected
+    # TODO: This contradicts with the paper.
+    # upset = out_is_expected if upset_on_match else out_is_not_expected
+    # remaining= out_is_expected if not upset_on_match else out_is_not_expected
 
-    #normal = remaining[remaining['return_code'] == 0]
-    #error = remaining[remaining['return_code'] != 0]
+    # normal = remaining[remaining['return_code'] == 0]
+    # error = remaining[remaining['return_code'] != 0]
 
-    #return normal, error, upset
+    # return normal, error, upset
 
-    #out_is_expected = returncode_is_0[returncode_is_0["program_stdout"].str.contains(expected, na=False)]
-    #out_is_not_expected = returncode_is_0[~returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+    # out_is_expected = returncode_is_0[returncode_is_0["program_stdout"].str.contains(expected, na=False)]
+    # out_is_not_expected = returncode_is_0[~returncode_is_0["program_stdout"].str.contains(expected, na=False)]
 
-    #if upset_on_match:
+    # if upset_on_match:
     #    return out_is_not_expected, returncode_means_error, out_is_expected
 
-    #return  returncode_means_error, out_is_not_expected, out_is_expected
+    # return  returncode_means_error, out_is_not_expected, out_is_expected
 
 
 def print_histogram(results):
@@ -266,7 +290,6 @@ def print_histogram(results):
     console.print(table)
 
 
-
 def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
     """Get the frequencies of returncdoes.
 
@@ -283,7 +306,9 @@ def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
             ret_is_0["program_stdout"].str.contains(expected_stdout, na=False)
         ]
 
-    print(f"[ IN CALC ] had {len(correct_stdouts)} correct stdout but {freqs[0]} programs return 0" )
+    print(
+        f"[ IN CALC ] had {len(correct_stdouts)} correct stdout but {freqs[0]} programs return 0"
+    )
 
     new_freqs = {}
     weird_codes = {}
@@ -424,7 +449,7 @@ def save_report(
     false the disasseblies will include all the cases where the expected
     STDOUT was no observed.
     """
-    #TODO: This is bad code but fixes for exps:
+    # TODO: This is bad code but fixes for exps:
     log_matching = True if "pass" in common.program_file.name else False
 
     # . The title
@@ -495,8 +520,7 @@ def save_report(
     table_str = list_tuple_table(["Exit code", "Frequency"], freqs)
     table += table_str
 
-
-    # 2.9 - TLDR of results 
+    # 2.9 - TLDR of results
     tldr = "## Results at a Glance\n"
     tldr += f"- **Normal:** {normal_df.shape[0]}\n"
     tldr += f"- **Error:** {error_df.shape[0]}\n"
@@ -505,31 +529,23 @@ def save_report(
     # 3. List of programs that had the expected stdout
     list_of_progs = "## List of Event Upset Mutations:\n"
 
-    #matching_info = df[
+    # matching_info = df[
     #    df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    #]
-    #non_matching_info = df[
+    # ]
+    # non_matching_info = df[
     #    ~df["program_stdout"].str.contains(common.expected_stdout, na=False)
-    #]
+    # ]
 
-    upset_names = [Path(x).name for x in list(upset_df["binary_path"])]
-    #non_match_names = [Path(x).name for x in list(non_matching_info["binary_path"])]
+    # non_match_names = [Path(x).name for x in list(non_matching_info["binary_path"])]
 
-    #list_of_progs += f"**{len(match_names)}** programs had the expected STDOUT **{len(df)}** mutated binaries\n\n"
-    #list_of_progs += f"**{len(non_match_names)}** programs did not have the expected STDOUT **{len(df)}** mutated binaries\n"
+    # list_of_progs += f"**{len(match_names)}** programs had the expected STDOUT **{len(df)}** mutated binaries\n\n"
+    # list_of_progs += f"**{len(non_match_names)}** programs did not have the expected STDOUT **{len(df)}** mutated binaries\n"
 
     list_of_progs += "\n"
     if log_matching:
         list_of_progs += "The binaries **with** the expected STDOUT were:\n\n"
     else:
         list_of_progs += "The binaries **without** the expected STDOUT were:\n\n"
-
-    names_str = ""
-    for name in upset_names: #match_names if log_matching else non_match_names:
-        names_str += f"- {name} \n\n"
-
-    list_of_progs += names_str
-
 
     # Pre 4: Root Cause Analysis
     root_cause = "## Root Cause Analysis\n"
@@ -541,62 +557,24 @@ def save_report(
     # Aggregate the json info whie mapping root cause.
     c_source_lines: list[int] = []
 
-    # So in we have 
-    for name in upset_names:
-        if is_bit:
-            mut_addr = name.replace(f"{common.program_file.name}_", "")
-            mut_addr = mut_addr.split("_")[0]
-            mut_addr = int(mut_addr, 16)
-        else:
-            mut_addr = int(name.replace(f"{common.program_file.name}_", ""), 16)
+    # Tally the vulnerable instructions in a json file
+    invulnerable_instr_counts = defaultdict(int)
 
-        if mut_addr in address_to_lines.keys():
-            c_line = address_to_lines[mut_addr]
-            root_cause += f"| {hex(mut_addr)} | {c_line}|\n"
-            c_source_lines.append(c_line)
-        else:
-            # Find the Next smallest addr that is a key.
-            last_key = None
-            for addr, v in address_to_lines.items():
-                if mut_addr > addr:
-                    last_key = addr 
-                else:
-                    break
-            try:
-                # Now last key will be the last address tha
-                root_cause += f"| {hex(mut_addr)} | {address_to_lines[last_key]}|\n"
-            except Exception:
-                # In cases where the address of a fualt doesn't line up to C code, still report
-                root_cause += f"| {hex(mut_addr)} | N/A |\n"
-
-
-    # Save the json:
-    with open(report_path.parent.joinpath("vuln_c_lines.json"), "w") as f:
-        json.dump({"c_line_numbers" : c_source_lines}, f)
-
+    bins = [Path(x) for x in list(upset_df["binary_path"])]
 
     # 4. Disassembly of the files that ran critical code
     # 10 bytes on either side will be included
     pad = 10
-    bins = [Path(x) for x in list(upset_df["binary_path"])]
 
-    # Tally the vulnerable instructions in a json file
-    invulnerable_instr_counts = defaultdict(int)
-    for bin in bins:
-        if is_bit:
-            mut_addr = bin.name.replace(f"{common.program_file.name}_", "")
-            mut_addr = mut_addr.split("_")[0]
-            mut_addr = int(mut_addr, 16)
-        else:
-            mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
-        instr_type: str = extract_instr_type(bin, mut_addr)
-        invulnerable_instr_counts[instr_type] += 1
+    names_str = ""
+    for bin_file in bins:  # match_names if log_matching else non_match_names:
+        names_str += f"- {bin_file.name} \n\n"
 
-    # Save vulnerable instruction json file
-    with open(report_path.parent.joinpath("instruction_count.json"), "w") as f:
-        json.dump(dict(invulnerable_instr_counts), f, indent=4)
+    list_of_progs += names_str
 
+    source_disasm = disassemble_text_section(common.program_file.absolute())
     disassems = ""
+    repeat_addr = -1
     for i, bin in enumerate(bins):
         if is_bit:
             mut_addr = bin.name.replace(f"{common.program_file.name}_", "")
@@ -605,9 +583,35 @@ def save_report(
         else:
             mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
+        if repeat_addr != mut_addr:
+            repeat_addr = mut_addr
+            # Assemble root cause in C code
+            if mut_addr in address_to_lines:
+                c_line = address_to_lines[mut_addr]
+                root_cause += f"| {hex(mut_addr)} | {c_line}|\n"
+                c_source_lines.append(c_line)
+            else:
+                # Find the Next smallest addr that is a key.
+                last_key = None
+                for addr in address_to_lines:
+                    if mut_addr > addr:
+                        last_key = addr
+                    else:
+                        break
+                try:
+                    # Now last key will be the last address tha
+                    root_cause += f"| {hex(mut_addr)} | {address_to_lines[last_key]}|\n"
+                except Exception:
+                    # In cases where the address of a fault doesn't line up to C code, still report
+                    root_cause += f"| {hex(mut_addr)} | N/A |\n"
+
+        # Count instructions
+        instr_type: str = extract_instr_type(source_disasm, mut_addr)
+        invulnerable_instr_counts[instr_type] += 1
+
+        # Count disassembled instructions
         start_addr = mut_addr - pad
         end_addr = mut_addr + pad
-
         ret = disasm(
             [common.program_file.absolute(), bin],
             start_addr,
@@ -622,14 +626,12 @@ def save_report(
         disassems += "```\n"
         disassems += "\n\n"
 
+    # Program file source code:
     lines = "## Source Code Lines\n"
     lines += "```c\n"
-
-    # Program file source code:
     with open(source_code) as f:
         for v in f.readlines():
             lines = lines + v
-
     lines += "```\n"
 
     with open(report_path, "w") as f:
@@ -651,12 +653,19 @@ def save_report(
         f.write("\n\n")
         f.write(lines)
 
+    # Save vulnerable lines json
+    with open(report_path.parent.joinpath("vuln_c_lines.json"), "w") as f:
+        json.dump({"c_line_numbers": c_source_lines}, f)
+
+    # Save vulnerable instruction json
+    with open(report_path.parent.joinpath("instruction_count.json"), "w") as f:
+        json.dump(dict(invulnerable_instr_counts), f, indent=4)
+
     # Generate the pdf version
     generate_pdf_report(
         report_path.absolute(),
         report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
-
 
 
 def save_reg_report(
@@ -841,7 +850,3 @@ def save_reg_report(
         report_path.absolute(),
         report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
-
-
-
-
