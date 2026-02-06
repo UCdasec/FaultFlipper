@@ -15,10 +15,28 @@ def visualize(filename: str):
     df = pd.DataFrame(list(loaded_data.items()), columns=["Instruction", "Count"])
     df = df.sort_values(by="Count", ascending=False)
 
-    plt.bar(df["Instruction"], df["Count"], color="skyblue", edgecolor="navy")
+    # Calculate total for percentage calculation
+    total_counts = df["Count"].sum()
+
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(df["Instruction"], df["Count"], color="skyblue", edgecolor="navy")
+
+    # Add percentage labels on top of each bar
+    for bar in bars:
+        height = bar.get_height()
+        percentage = (height / total_counts) * 100
+        plt.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height + 0.1,
+            f"{percentage:.1f}%",
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+
     plt.xlabel("Instruction")
     plt.ylabel("Count")
-    plt.title("Instruction Frequency")
+    plt.title("Instruction Frequency and Percentage")
     plt.xticks(rotation=45)
     plt.tight_layout()
 

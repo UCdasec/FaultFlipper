@@ -30,13 +30,16 @@ ENV MPLCONFIGDIR=/tmp/matplotlib_cache
 
 # Install packages
 RUN apt-get update && apt-get install -y \
-	python3-pip build-essential qemu-user-static gcc-arm-linux-gnueabi && \
+	python3-pip build-essential qemu-user-static gcc-arm-linux-gnueabi pandoc && \
 	apt-get clean && \
 	rm -rf /var/lib/apt/lists/*
 
-RUN ulimit -c 0
-RUN chmod 777 /shell-hook.sh
 RUN pip3 install py-spy 
+
+RUN ulimit -c 0
+
+RUN chmod 777 /shell-hook.sh
+RUN chmod -R 777 /code/.pixi
 
 WORKDIR /code/FaultFlipper
 
