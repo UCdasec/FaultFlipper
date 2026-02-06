@@ -1,6 +1,5 @@
 # pixi environments
 .pixi
-pixi.lock
 *.egg-info
 
 # results 
@@ -30,4 +29,3 @@ qemu/
 
 dep_exps/
 
-test_packages/emlearn_example/40image_dataset/
