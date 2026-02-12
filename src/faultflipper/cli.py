@@ -287,6 +287,16 @@ def _filter_dataframe_by_addresses(
     )
 
 
+def _elementwise_stdout_contains(stdout: pd.Series, expected: pd.Series) -> pd.Series:
+    """Return True when each stdout contains its paired expected value."""
+    stdout_vals = stdout.fillna("").astype(str)
+    expected_vals = expected.fillna("").astype(str)
+    matches = [
+        exp in out for exp, out in zip(expected_vals, stdout_vals, strict=False)
+    ]
+    return pd.Series(matches, index=stdout.index)
+
+
 def _summarize_nop_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -327,14 +337,77 @@ def _summarize_nop_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
     cleaned["__failed"] = cleaned["__return_code"] == -999
     cleaned["__expected"] = cleaned["expected_stdout"].astype(str)
     cleaned["__stdout"] = cleaned["program_stdout"].astype(str)
-    cleaned["__correct"] = cleaned["__stdout"].str.contains(
-        cleaned["__expected"], na=False, regex=False
+    cleaned["__correct"] = _elementwise_stdout_contains(
+        cleaned["__stdout"], cleaned["__expected"]
     )
 
     summary_df = (
         cleaned.groupby("nopped_addr", dropna=False)
         .agg(
             total_runs=("nopped_addr", "size"),
+            total_failed=("__failed", "sum"),
+            total_correct=("__correct", "sum"),
+        )
+        .reset_index()
+    )
+    return summary_df
+
+
+def _summarize_bit_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+
+    cleaned = df.copy()
+    unnamed = [col for col in cleaned.columns if str(col).startswith("Unnamed:")]
+    if unnamed:
+        cleaned = cleaned.drop(columns=unnamed)
+
+    if "flipped_addr" not in cleaned.columns and isinstance(
+        cleaned.columns, pd.RangeIndex
+    ):
+        expected_cols = [
+            "source_file",
+            "unmutated_binary",
+            "binary_path",
+            "return_code",
+            "program_input",
+            "program_stdout",
+            "target",
+            "expected_stdout",
+            "expected_returncode",
+            "custom_returncodes",
+            "flipped_addr",
+            "flipped_index",
+            "mutation",
+            "source_code",
+        ]
+        if cleaned.shape[1] == len(expected_cols) + 1:
+            cleaned = cleaned.iloc[:, 1:]
+        if cleaned.shape[1] == len(expected_cols):
+            cleaned.columns = expected_cols
+
+    required_raw = {
+        "flipped_addr",
+        "flipped_index",
+        "return_code",
+        "program_stdout",
+        "expected_stdout",
+    }
+    if not required_raw.issubset(cleaned.columns):
+        return pd.DataFrame()
+
+    cleaned["__return_code"] = pd.to_numeric(cleaned["return_code"], errors="coerce")
+    cleaned["__failed"] = cleaned["__return_code"] == -999
+    cleaned["__expected"] = cleaned["expected_stdout"].astype(str)
+    cleaned["__stdout"] = cleaned["program_stdout"].astype(str)
+    cleaned["__correct"] = _elementwise_stdout_contains(
+        cleaned["__stdout"], cleaned["__expected"]
+    )
+
+    summary_df = (
+        cleaned.groupby(["flipped_addr", "flipped_index"], dropna=False)
+        .agg(
+            total_runs=("flipped_addr", "size"),
             total_failed=("__failed", "sum"),
             total_correct=("__correct", "sum"),
         )
@@ -473,6 +546,10 @@ def bit_no_comp_inout(
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
+        if summary_df.empty and db_path.exists():
+            store = BitFlipResultStore(db_path)
+            summary_rows = store.summarize_bit_results(common.program_file)
+            summary_df = pd.DataFrame(summary_rows)
     else:
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True)
@@ -614,13 +691,13 @@ def bit_no_comp_inout(
 
     required_cols = {"total_failed", "total_correct", "total_runs"}
     if not required_cols.issubset(summary_df.columns):
-        summary_df = _summarize_nop_results_from_raw(summary_df)
+        summary_df = _summarize_bit_results_from_raw(summary_df)
         if summary_df.empty:
             fallback_store = store
             if fallback_store is None and db_path.exists():
-                fallback_store = NopResultStore(db_path)
+                fallback_store = BitFlipResultStore(db_path)
             if fallback_store is not None:
-                summary_rows = fallback_store.summarize_nop_results(common.program_file)
+                summary_rows = fallback_store.summarize_bit_results(common.program_file)
                 summary_df = pd.DataFrame(summary_rows)
         if summary_df.empty:
             print("No summarized results available yet")
@@ -1385,8 +1462,8 @@ def nop_no_comp_inout(
             df["__failed"] = df["__return_code"] == -999
             df["__expected"] = df["expected_stdout"].astype(str)
             df["__stdout"] = df["program_stdout"].astype(str)
-            df["__correct"] = df["__stdout"].str.contains(
-                df["__expected"], na=False, regex=False
+            df["__correct"] = _elementwise_stdout_contains(
+                df["__stdout"], df["__expected"]
             )
             summary_df = (
                 df.groupby("nopped_addr", dropna=False)
@@ -2130,6 +2207,7 @@ def x_bit_qemu_seq(
     log_matching: bool,
     optimization: OptimizationLevel,
     delete_non_upsets: bool = False,
+    addresses_json: Path | None = None,
 ):
     """Run the x bit mutation scheme with a qemu backend.
 
@@ -2160,20 +2238,38 @@ def x_bit_qemu_seq(
     # Compile the binary for the target
     common.program_file = compile_program(source_code, bin_out, target, optimization)
 
-    if not common.yes:
-        cont = str(
-            input(
-                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content) * 8} mutated binaries, continue? (Yy/Nn)"
-            )
-        )
-        if cont.lower() != "y":
-            return
-
     disasm = disassemble_text_section(common.program_file)
 
     # Filter 
     if common.dynamic_filter:
         disasm = dyna_detect_insns(common,  target, disasm)
+
+    if addresses_json is not None:
+        address_filter = _load_address_filter(addresses_json)
+        filtered = [inst for inst in disasm if inst.address in address_filter]
+        if not filtered:
+            print("No instructions matched the provided address filter.")
+            return
+        matched = {inst.address for inst in filtered}
+        missing = address_filter - matched
+        if missing:
+            preview = ", ".join(hex(addr) for addr in sorted(missing)[:5])
+            if len(missing) > 5:
+                preview += ", ..."
+            print(
+                f"{len(missing)} addresses were not present in the disassembly (e.g., {preview})."
+            )
+        disasm = filtered
+
+    if not common.yes:
+        candidate_bits = sum(len(inst.bytes) * 8 for inst in disasm)
+        cont = str(
+            input(
+                f"Will _attempt_ to make {candidate_bits} mutated binaries, continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
 
     results: list[BitFlipExperimentResult] = []
     start = datetime.now()
@@ -2261,6 +2357,7 @@ def x_bit_qemu_parallel(
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
+    addresses_json: Path | None = None,
 ):
     """Run the x bit mutation scheme with a parallel qemu backend.
 
@@ -2294,15 +2391,6 @@ def x_bit_qemu_parallel(
         # Compile the binary for the target
         common.program_file = compile_program(source_code, bin_out, target, optimization, common.opts)
 
-    if not common.yes:
-        cont = str(
-            input(
-                f"Will _attempt_ to make {len(lief.parse(common.program_file).get_section('.text').content) * 8} mutated binaries, continue? (Yy/Nn)"
-            )
-        )
-        if cont.lower() != "y":
-            return
-
     disasm = disassemble_text_section(common.program_file)
 
     # Filter 
@@ -2312,6 +2400,33 @@ def x_bit_qemu_parallel(
         print(f"after filter we had: {len(disasm)} insns")
         #for x in disasm:
         #    print(f"Addr: {hex(x.address)}")
+
+    if addresses_json is not None:
+        address_filter = _load_address_filter(addresses_json)
+        filtered = [inst for inst in disasm if inst.address in address_filter]
+        if not filtered:
+            print("No instructions matched the provided address filter.")
+            return
+        matched = {inst.address for inst in filtered}
+        missing = address_filter - matched
+        if missing:
+            preview = ", ".join(hex(addr) for addr in sorted(missing)[:5])
+            if len(missing) > 5:
+                preview += ", ..."
+            print(
+                f"{len(missing)} addresses were not present in the disassembly (e.g., {preview})."
+            )
+        disasm = filtered
+
+    if not common.yes:
+        candidate_bits = sum(len(inst.bytes) * 8 for inst in disasm)
+        cont = str(
+            input(
+                f"Will _attempt_ to make {candidate_bits} mutated binaries, continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
 
 
     futures = []
@@ -2578,6 +2693,7 @@ def x_bit(
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
+    addresses_json: Path | None = None,
 ):
     """
     Run the bit experiemnt with either the qemu backend
@@ -2619,6 +2735,7 @@ def x_bit(
                 log_matching,
                 optimization,
                 delete_non_upsets=delete_non_upsets,
+                addresses_json=addresses_json,
             )
         else:
             # Parallel
@@ -2630,6 +2747,7 @@ def x_bit(
                 log_matching,
                 optimization,
                 delete_non_upsets=delete_non_upsets,
+                addresses_json=addresses_json,
             )
     return
 
@@ -2646,6 +2764,7 @@ def x_nop(
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
+    addresses_json: Path | None = None,
 ):
     """
     Command to run NOP experiments. Set delete_non_upsets to remove mutated
@@ -2689,6 +2808,7 @@ def x_nop(
                 log_matching,
                 optimization,
                 delete_non_upsets=delete_non_upsets,
+                addresses_json=addresses_json,
             )
         else:
             # Parallel
@@ -2701,6 +2821,7 @@ def x_nop(
                 log_matching,
                 optimization=optimization,
                 delete_non_upsets=delete_non_upsets,
+                addresses_json=addresses_json,
             )
 
     return
@@ -2926,6 +3047,7 @@ def x_nop_qemu_seq(
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
+    addresses_json: Path | None = None,
 ):
     """
     Take c source code as input, compile it, mutate it, and test
@@ -2960,23 +3082,41 @@ def x_nop_qemu_seq(
     original_bin = common.program_file
 
     disasm = disassemble_text_section(common.program_file)
-    num_instructions = len(disasm)
-    if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
-            )
-        )
-        if cont.lower() != "y":
-            return
-
     target = detect_target(common.program_file)
 
     results: list[NopExperimentResult] = []
 
     start_time = datetime.now()
 
-    for i in alive_it(range(len(disasm) - (num_nops) + 1)):
+    max_start = len(disasm) - num_nops + 1
+    indices = list(range(max_start))
+    if addresses_json is not None:
+        address_filter = _load_address_filter(addresses_json)
+        indices = [i for i in indices if disasm[i].address in address_filter]
+        if not indices:
+            print("No instructions matched the provided address filter.")
+            return
+        matched = {disasm[i].address for i in indices}
+        missing = address_filter - matched
+        if missing:
+            preview = ", ".join(hex(addr) for addr in sorted(missing)[:5])
+            if len(missing) > 5:
+                preview += ", ..."
+            print(
+                f"{len(missing)} addresses were not present in the disassembly (e.g., {preview})."
+            )
+
+    num_instructions = len(indices)
+    if not common.yes:
+        cont = str(
+            input(
+                f"FaultSim will _attempt_ to generate {len(indices)}. Continue? (Yy/Nn)"
+            )
+        )
+        if cont.lower() != "y":
+            return
+
+    for i in alive_it(indices):
         insts = [disasm[i + x] for x in range(num_nops)]
 
         out_file, returncode, insts, common, target, stdout, stderr = (
@@ -3218,6 +3358,7 @@ def x_nop_qemu_parallel(
     comp: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
+    addresses_json: Path | None = None,
 ):
     """Run an experiment that gernerates mutant binaries with num_nops, and tests them with QEMU.
 
@@ -3260,12 +3401,30 @@ def x_nop_qemu_parallel(
     original_bin = common.program_file
 
     disasm = disassemble_text_section(common.program_file)
-    num_instructions = len(disasm)
+    max_start = len(disasm) - num_nops + 1
+    indices = list(range(max_start))
+    if addresses_json is not None:
+        address_filter = _load_address_filter(addresses_json)
+        indices = [i for i in indices if disasm[i].address in address_filter]
+        if not indices:
+            print("No instructions matched the provided address filter.")
+            return
+        matched = {disasm[i].address for i in indices}
+        missing = address_filter - matched
+        if missing:
+            preview = ", ".join(hex(addr) for addr in sorted(missing)[:5])
+            if len(missing) > 5:
+                preview += ", ..."
+            print(
+                f"{len(missing)} addresses were not present in the disassembly (e.g., {preview})."
+            )
+
+    num_instructions = len(indices)
 
     if not common.yes:
         cont = str(
             input(
-                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
+                f"FaultSim will _attempt_ to generate {len(indices)}. Continue? (Yy/Nn)"
             )
         )
         if cont.lower() != "y":
@@ -3279,7 +3438,7 @@ def x_nop_qemu_parallel(
     start_time = datetime.now()
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for i in range(len(disasm) - (num_nops) + 1):
+        for i in indices:
             insts = [disasm[i + x] for x in range(num_nops)]
             future = executor.submit(x_nop_para_run_helper, common, insts, target)
             futures.append(future)
@@ -3403,17 +3562,28 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 num_cpus = formated.pop("num_cpus")
                 num_nops = formated.get("num_nops")
                 func_names = formated.get("func_names")
+                addresses_json = formated.pop("addresses_json", None)
+                if addresses_json is not None:
+                    addresses_json = Path(addresses_json)
 
                 if num_nops:
                     formated.pop("num_nops")
                     params = CommandParameters(**formated)
                     cmd_func(
-                        params, target=target, num_cpus=num_cpus, num_nops=num_nops
+                        params,
+                        target=target,
+                        num_cpus=num_cpus,
+                        num_nops=num_nops,
+                        addresses_json=addresses_json,
                     )
                 else:
                     params = CommandParameters(**formated)
                     cmd_func(
-                        params, target=target, num_cpus=num_cpus, func_names=func_names
+                        params,
+                        target=target,
+                        num_cpus=num_cpus,
+                        func_names=func_names,
+                        addresses_json=addresses_json,
                     )
 
             elif command_name in ["x_bit"]:
@@ -3421,6 +3591,9 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 num_cpus = formated.pop("num_cpus")
                 num_bits = formated.get("num_bits")
                 func_names = formated.get("func_names")
+                addresses_json = formated.pop("addresses_json", None)
+                if addresses_json is not None:
+                    addresses_json = Path(addresses_json)
 
                 if num_bits:
                     formated.pop("num_bits")
@@ -3431,11 +3604,16 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                         num_cpus=num_cpus,
                         num_bits=num_bits,
                         func_names=func_names,
+                        addresses_json=addresses_json,
                     )
                 else:
                     params = CommandParameters(**formated)
                     cmd_func(
-                        params, target=target, num_cpus=num_cpus, func_names=func_names
+                        params,
+                        target=target,
+                        num_cpus=num_cpus,
+                        func_names=func_names,
+                        addresses_json=addresses_json,
                     )
 
             elif command_name in ["x_nop_reg"]:
