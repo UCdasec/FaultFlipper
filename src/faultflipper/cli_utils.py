@@ -558,60 +558,90 @@ def save_report(
     c_source_lines: list[int] = []
 
     # Tally the vulnerable instructions in a json file
-    invulnerable_instr_counts = defaultdict(int)
+    vulnerable_instr_counts = defaultdict(int)
+    unique_vulnerable_instr_counts = defaultdict(int)
+    instr_counts = defaultdict(int)
+    unique_instr_counts = defaultdict(int)
 
-    bins = [Path(x) for x in list(upset_df["binary_path"])]
+    upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
+    bins = [Path(x) for x in list(df["binary_path"])]
 
     # 4. Disassembly of the files that ran critical code
     # 10 bytes on either side will be included
     pad = 10
 
+    # integer value to cache repeat addresses
+    repeat_addr = -1
+
     names_str = ""
-    for bin_file in bins:  # match_names if log_matching else non_match_names:
+    for bin_file in upset_bins:  # match_names if log_matching else non_match_names:
         names_str += f"- {bin_file.name} \n\n"
+
+    source_disasm = disassemble_text_section(common.program_file.absolute())
+
+    # Get mapping for each instruction count
+    for bin in bins:
+        if is_bit:
+            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            cur_addr = cur_addr.split("_")[0]
+            cur_addr = int(cur_addr, 16)
+        else:
+            cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+
+        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+
+        # Only execute if address is unique (BIT)
+        if repeat_addr != cur_addr:
+            repeat_addr = cur_addr
+            unique_instr_counts[instr_type] += 1
+
+        instr_counts[instr_type] += 1
 
     list_of_progs += names_str
 
-    source_disasm = disassemble_text_section(common.program_file.absolute())
     disassems = ""
-    repeat_addr = -1
-    for i, bin in enumerate(bins):
+    for i, bin in enumerate(upset_bins):
         if is_bit:
-            mut_addr = bin.name.replace(f"{common.program_file.name}_", "")
-            mut_addr = mut_addr.split("_")[0]
-            mut_addr = int(mut_addr, 16)
+            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            cur_addr = cur_addr.split("_")[0]
+            cur_addr = int(cur_addr, 16)
         else:
-            mut_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+            cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
-        if repeat_addr != mut_addr:
-            repeat_addr = mut_addr
+        # Count instructions
+        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+        vulnerable_instr_counts[instr_type] += 1
+
+        # Only execute if address is unique (BIT)
+        if repeat_addr != cur_addr:
+            repeat_addr = cur_addr
+
+            # Count unique instructions
+            unique_vulnerable_instr_counts[instr_type] += 1
+
             # Assemble root cause in C code
-            if mut_addr in address_to_lines:
-                c_line = address_to_lines[mut_addr]
-                root_cause += f"| {hex(mut_addr)} | {c_line}|\n"
+            if cur_addr in address_to_lines:
+                c_line = address_to_lines[cur_addr]
+                root_cause += f"| {hex(cur_addr)} | {c_line}|\n"
                 c_source_lines.append(c_line)
             else:
                 # Find the Next smallest addr that is a key.
                 last_key = None
                 for addr in address_to_lines:
-                    if mut_addr > addr:
+                    if cur_addr > addr:
                         last_key = addr
                     else:
                         break
                 try:
                     # Now last key will be the last address tha
-                    root_cause += f"| {hex(mut_addr)} | {address_to_lines[last_key]}|\n"
+                    root_cause += f"| {hex(cur_addr)} | {address_to_lines[last_key]}|\n"
                 except Exception:
                     # In cases where the address of a fault doesn't line up to C code, still report
-                    root_cause += f"| {hex(mut_addr)} | N/A |\n"
-
-        # Count instructions
-        instr_type: str = extract_instr_type(source_disasm, mut_addr)
-        invulnerable_instr_counts[instr_type] += 1
+                    root_cause += f"| {hex(cur_addr)} | N/A |\n"
 
         # Count disassembled instructions
-        start_addr = mut_addr - pad
-        end_addr = mut_addr + pad
+        start_addr = cur_addr - pad
+        end_addr = cur_addr + pad
         ret = disasm(
             [common.program_file.absolute(), bin],
             start_addr,
@@ -659,7 +689,13 @@ def save_report(
 
     # Save vulnerable instruction json
     with open(report_path.parent.joinpath("instruction_count.json"), "w") as f:
-        json.dump(dict(invulnerable_instr_counts), f, indent=4)
+        data_to_save = {
+            "vulnerable": dict(vulnerable_instr_counts),
+            "total": dict(instr_counts),
+            "unique_total": dict(unique_instr_counts),
+            "unique_vul": dict(unique_vulnerable_instr_counts),
+        }
+        json.dump(data_to_save, f, indent=4)
 
     # Generate the pdf version
     generate_pdf_report(
