@@ -1,4 +1,5 @@
 import json
+import random
 import logging
 import math
 import shutil
@@ -34,6 +35,7 @@ from binary_tools import (
     run_binary_w_calltime_input,
     shift_exit_code,
     timed_run_binary_w_input,
+    extract_model
 )
 from cli_utils import (
     Backends,
@@ -2271,10 +2273,13 @@ def x_bit_qemu_seq(
         if cont.lower() != "y":
             return
 
+    instr_probs = extract_model(target, common.probability_model)
+
     results: list[BitFlipExperimentResult] = []
     start = datetime.now()
     for inst in alive_it(disasm):
-        bin_res = x_bit_para_run_helper(common, inst, target, num_bits)
+
+        bin_res = x_bit_para_run_helper(common, inst, target, num_bits, instr_probs)
 
         for (
             out_file,
@@ -2428,6 +2433,8 @@ def x_bit_qemu_parallel(
         if cont.lower() != "y":
             return
 
+    instr_probs = extract_model(target, common.probability_model)
+
 
     futures = []
     results: list[BitFlipExperimentResult] = []
@@ -2437,8 +2444,9 @@ def x_bit_qemu_parallel(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
         for inst in disasm:
+
             future = executor.submit(
-                x_bit_para_run_helper, common, inst, target, num_bits 
+                x_bit_para_run_helper, common, inst, target, num_bits, instr_probs
             )
             futures.append(future)
 
@@ -3116,8 +3124,19 @@ def x_nop_qemu_seq(
         if cont.lower() != "y":
             return
 
+    # Extract probability model from configuration file
+    instr_probs = extract_model(target, common.probability_model)
+
     for i in alive_it(indices):
         insts = [disasm[i + x] for x in range(num_nops)]
+
+        if instr_probs:
+            # probabilistically choose to skip faulting that instruction
+            instr_prob = instr_probs.get(insts[0].mnemonic, 1)
+            # instr_prob is the probability that we SHOULD fault the instruction
+            # if statement is the probability that we DO NOT fault the instruction
+            if random.random() < (1 - instr_prob):
+                continue
 
         out_file, returncode, insts, common, target, stdout, stderr = (
             x_nop_para_run_helper(common, insts, target)
@@ -3431,6 +3450,9 @@ def x_nop_qemu_parallel(
             return
 
     target = detect_target(common.program_file)
+    
+    # Extract probability model from configuration file
+    instr_probs = extract_model(target, common.probability_model)
 
     futures = []
     results: list[NopExperimentResult] = []
@@ -3440,6 +3462,15 @@ def x_nop_qemu_parallel(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for i in indices:
             insts = [disasm[i + x] for x in range(num_nops)]
+
+            if instr_probs:
+                # probabilistically choose to skip faulting that instruction
+                instr_prob = instr_probs.get(insts[0].mnemonic, 0)
+                # instr_prob is the probability that we SHOULD fault the instruction
+                # if statement is the probability that we DO NOT fault the instruction
+                if random.random() < (1 - instr_prob):
+                    continue
+
             future = executor.submit(x_nop_para_run_helper, common, insts, target)
             futures.append(future)
 
@@ -3550,6 +3581,9 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             formated = {k.replace("-", "_"): v for k, v in exp.items()}
             formated["program_file"] = Path(formated["program_file"])
             formated["out_dir"] = Path(formated["out_dir"])
+
+            if "probability_model" in formated:
+                    formated["probability_model"] = Path(formated["probability_model"])
 
             if "save_results" in formated:
                 formated["save_results"] = Path(formated["save_results"])

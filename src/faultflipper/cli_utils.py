@@ -49,6 +49,7 @@ class RegCommandParameters:
     list_expected: bool = False
     timeout: int = 5
     save_results: Path | None = None
+    probability_model: Path | None = None
     yes: bool = False
     expected_returncode: int | None = None
     expected_stdout: str | None = None
@@ -67,6 +68,9 @@ class RegCommandParameters:
             "expected_stdout": self.expected_stdout,
             "timeout": self.timeout,
             "save_results": str(self.save_results.absolute()),
+            "probability_model": str(
+                self.probability_model.absolute() if self.probability_model else ""
+            ),
             "yes": self.yes,
         }
 
@@ -84,6 +88,7 @@ class CommandParameters:
     save_results: Path | None = None
     yes: bool = False
     program_source_code: Path | None = None
+    probability_model: Path | None = None
     dynamic_filter: bool = False
     comp: bool = True
     opts: str | None = None  # compilation options
@@ -110,6 +115,9 @@ class CommandParameters:
                 str(self.program_source_code.absolute())
                 if self.program_source_code
                 else ""
+            ),
+            "probability_model": (
+                str(self.probability_model.absolute()) if self.probability_model else ""
             ),
         }
 
@@ -690,6 +698,8 @@ def save_report(
     # Save vulnerable instruction json
     with open(report_path.parent.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {
+            "target": str(results[0].target),
+            "fault_model": str(results[0].mutation),
             "vulnerable": dict(vulnerable_instr_counts),
             "total": dict(instr_counts),
             "unique_total": dict(unique_instr_counts),

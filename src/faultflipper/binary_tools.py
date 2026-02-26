@@ -1,4 +1,5 @@
 import os
+import json
 import signal
 import shutil
 import struct
@@ -1736,6 +1737,8 @@ def generate_x_bits_mutated_file(
     if not good_inst:
         return None
 
+    # If we employ probabilistic model, decide whether to include instr or not
+
     # Re-adjust the patch so that it is a list of ints
     patch = [
         int("".join(bit_flipped_inst[i : i + 8]), 2)
@@ -2225,6 +2228,40 @@ def is_valid_instruction(opcode_bytes, target):
         print(f"Could not validate correct instruction {e}")
         return False, None
 
+
+def extract_model(target, model_config: Path | None) -> dict[str, float] | None:
+    """
+    Produce dictionary consisting of instruction-probability pairs.
+    i.e., the 'add' instruction might be paired with a 0.75 fault probability
+    """
+    if model_config is None:
+        return None
+
+    try:
+        with open(model_config, "r") as file:
+            loaded_data = json.load(file)
+
+    except FileNotFoundError:
+        print(f"Error: The file '{model_config}' was not found.")
+        # Handle the missing file (e.g., use default settings)
+        loaded_data = {} 
+        return None
+
+    except json.JSONDecodeError:
+        print(f"Error: '{model_config}' is not a valid JSON file.")
+        loaded_data = {}
+        return None
+
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
+
+    model_target = loaded_data.get("target") 
+    if model_target != target:
+        raise Exception(f"Attempting to load probability model with target {model_target} while using target {target}")
+
+    probabilities: dict[str, float] = loaded_data.get("instruction_probabilities", {})
+    return probabilities
 
 
 class Target(Enum):
