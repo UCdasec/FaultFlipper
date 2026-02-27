@@ -12,6 +12,7 @@ from binary_tools import (
     run_binary_w_input,
     shift_exit_code,
 )
+from cli_utils import skip_fault
 
 
 def x_bit_angr_helper(common, inst, target: Target, num_bits: int, func_names, timeout):
@@ -75,11 +76,16 @@ def x_bit_para_run_helper(
     inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
     results = []
 
-    inst_bits = list("".join([str(bin(byte)[2:]).zfill(8) for byte in inst.bytes]))
-    results = []
-
     # For every bit see if we get a valid opcode.
     for i in range(len(inst_bits) - num_bits + 1):
+        if instr_probs:
+            # probabilistically choose to skip faulting that instruction
+            instr_prob = instr_probs.get(inst.mnemonic, 1)
+            # instr_prob is the probability that we SHOULD fault the instruction
+            # if statement represents probability that we DO NOT fault the instruction
+            if skip_fault(instr_prob):
+                continue
+
         out_file = generate_x_bits_mutated_file(
             i, inst_bits, target, inst, common, num_bits
         )
@@ -98,14 +104,6 @@ def x_bit_para_run_helper(
 
         if number_of_different_bits != num_bits:
             raise Exception("Mutated wrong")
-
-        if instr_probs:
-            # probabilistically choose to skip faulting that instruction
-            instr_prob = instr_probs.get(inst.mnemonic, 1)
-            # instr_prob is the probability that we SHOULD fault the instruction
-            # if statement represents probability that we DO NOT fault the instruction
-            if random.random() < (1 - instr_prob):
-                continue
 
         try:
             returncode, stdout, stderr = run_binary_w_input(

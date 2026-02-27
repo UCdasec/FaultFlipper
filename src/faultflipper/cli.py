@@ -49,6 +49,7 @@ from cli_utils import (
     save_reg_report,
     save_report,
     show_results,
+    skip_fault,
 )
 from cyclopts import App, Parameter
 from parallel_runner import (
@@ -3135,7 +3136,7 @@ def x_nop_qemu_seq(
             instr_prob = instr_probs.get(insts[0].mnemonic, 1)
             # instr_prob is the probability that we SHOULD fault the instruction
             # if statement is the probability that we DO NOT fault the instruction
-            if random.random() < (1 - instr_prob):
+            if skip_fault(instr_prob):
                 continue
 
         out_file, returncode, insts, common, target, stdout, stderr = (
@@ -3468,7 +3469,7 @@ def x_nop_qemu_parallel(
                 instr_prob = instr_probs.get(insts[0].mnemonic, 0)
                 # instr_prob is the probability that we SHOULD fault the instruction
                 # if statement is the probability that we DO NOT fault the instruction
-                if random.random() < (1 - instr_prob):
+                if skip_fault(instr_prob):
                     continue
 
             future = executor.submit(x_nop_para_run_helper, common, insts, target)

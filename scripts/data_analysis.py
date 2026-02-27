@@ -111,6 +111,7 @@ def get_instruction_data(filename: str):
 
     # json keys used to categorize data
     return {
+        "target": loaded_data.get("target", {}),
         "vulnerable": loaded_data.get("vulnerable", {}),
         "total": loaded_data.get("total", {}),
         "unique_vul": loaded_data.get("unique_vul", {}),

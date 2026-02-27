@@ -2257,7 +2257,7 @@ def extract_model(target, model_config: Path | None) -> dict[str, float] | None:
         return None
 
     model_target = loaded_data.get("target") 
-    if model_target != target:
+    if str(model_target) != str(target):
         raise Exception(f"Attempting to load probability model with target {model_target} while using target {target}")
 
     probabilities: dict[str, float] = loaded_data.get("instruction_probabilities", {})

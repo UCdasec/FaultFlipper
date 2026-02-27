@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 from dataclasses import dataclass, fields
 from enum import Enum
 from pathlib import Path
@@ -896,3 +897,7 @@ def save_reg_report(
         report_path.absolute(),
         report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
+
+
+def skip_fault(prob: float) -> bool:
+    return random.random() < (1 - prob)
