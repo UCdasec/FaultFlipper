@@ -1,0 +1,90 @@
+
+#ifndef EML_BENCHMARK_H
+#define EML_BENCHMARK_H
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#include "eml_common.h"
+
+#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+// Unix-like system
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 199309L
+#endif
+#define EML_HAVE_SYS_TIME 1
+#endif
+
+
+#ifdef EML_HAVE_SYS_TIME
+#include <sys/time.h>
+int64_t eml_benchmark_micros() {
+    struct timeval spec;
+    gettimeofday(&spec, NULL);
+    //struct timespec spec; 
+    //clock_gettime(CLOCK_MONOTONIC, &spec);
+    const int64_t micros = (int64_t)(spec.tv_sec)*1000LL*1000LL + spec.tv_usec;
+    return micros;
+}
+#endif
+
+#ifdef _WIN32
+#include <windows.h>
+int64_t eml_benchmark_micros(void)
+{
+    LARGE_INTEGER t, f;
+    QueryPerformanceCounter(&t);
+    QueryPerformanceFrequency(&f);
+    double sec = (double)t.QuadPart/(double)f.QuadPart;
+    return (int64_t)(sec * 1000000LL);
+}
+#endif
+
+#ifdef ARDUINO
+int64_t eml_benchmark_micros() {
+    return micros();
+}
+#endif
+
+#ifdef __ZEPHYR__
+#include <zephyr/kernel.h>
+
+int64_t eml_benchmark_micros() {
+
+    //int64_t cycles =
+    int64_t ticks = k_uptime_ticks();
+    int64_t micros = k_ticks_to_us_ceil64(ticks);
+    return micros;
+}
+#endif
+
+// https://en.wikipedia.org/wiki/Lehmer_random_number_generator#Parameters_in_common_use
+static uint32_t
+eml_lcg_parkmiller(uint32_t *state) {
+    const uint32_t N = 0x7fffffff;
+    const uint32_t G = 48271u;
+
+    uint32_t div = *state / (N / G);
+    uint32_t rem = *state % (N / G);
+
+    uint32_t a = rem * G;
+    uint32_t b = div * (N % G);
+
+    return *state = (a > b) ? (a - b) : (a + (N - b));
+}
+
+EmlError
+eml_benchmark_fill(float *values, int features) {
+    uint32_t rng_state = 1;    
+
+    for (int i=0; i<features; i++) {
+        values[i] = (float)eml_lcg_parkmiller(&rng_state);
+    }
+    return EmlOk;
+}
+
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
+#endif // EML_BENCHMARK_H
