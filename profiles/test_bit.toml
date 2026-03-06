@@ -1,0 +1,18 @@
+####################
+# 4-BIT 
+####################
+
+[experiment.bit4_arm32_opt0_fib]
+command = "x_bit"
+program-file = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0 
+expected-stdout = "6765"
+list-expected = false 
+timeout = 4 
+out-dir = "experiments/test_output"
+yes= true
+target = "arm_32"
+num_cpus=24
+num_bits=1
+

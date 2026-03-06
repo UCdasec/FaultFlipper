@@ -29,3 +29,4 @@ qemu/
 
 dep_exps/
 
+tests/tmp_artifacts

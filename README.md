@@ -51,7 +51,7 @@ that can be run to analyze a binary. To see a list of commands run:
 python src/cli.py --help
 ```
 
-## Example Experiments
+## Example Experiments - Password Check
 
 An example experiment that will (1) compile the binary `test_files/password_check.c`
 (2) Generate ***mutated*** binaries with the NOP mutation (3) Run the files 
@@ -87,6 +87,32 @@ To obtain a trace that maps all asm address to source lines, here is an example:
 python tracer_source/simple_mapper.py --binary experiments/1nop_arm32_opt0_password_check/password_check.o --source test_files/password_check.c --arch arm32
 ```
 
+## Example Experiments - MLP 
+
+This section shows how to generate a neural-network experiment config and run
+it on the face dataset images bundled in `test_packages/emlearn_example/`.
+
+1. Generate the NN experiment config (this writes a TOML profile):
+```sh
+pixi run cli nn-generate-exp-files \
+  --exp-file profiles/face_mlp.toml \
+  --binary test_packages/emlearn_example/STATI_face_mlp_x86.o \
+  --timeout 4 \
+  --out-dir experiments/face_mlp_nop \
+  --input-dir test_packages/emlearn_example/image_dir/test/faces \
+  --expected-correct <CORRECT_COUNT>
+```
+
+`<CORRECT_COUNT>` should be the number of correct predictions produced by the
+unmutated binary on the dataset (you can compute this with
+`test_packages/emlearn_example/c_model_tester.py`).
+
+2. Run the NN experiment using the generated config:
+```sh
+pixi run cli run profiles/face_mlp.toml
+```
+
+
 ## Author
 
 👤 **UcDasec Lab**
@@ -115,4 +141,3 @@ Give a ⭐️ if you think this project is interesting!
 
 ***
 _This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
-

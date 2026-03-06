@@ -241,7 +241,6 @@ def run_angr_concrete(binary_path: str, stdin_data: Optional[str] = None) -> tup
     else:
         state = proj.factory.full_init_state()
 
-    #hit_map = {addr: 0 for addr in critical_addrs}
     hit_map = {}
 
     def block_callback(st):
@@ -297,6 +296,8 @@ def main():
 
 
     hit_map, base_addr = run_angr_concrete(args.binary,  stdin_data=args.stdin)
+    print(hit_map)
+    print(base_addr)
 
     # Determine the set of "critical" addresses to monitor
     if args.critical_asm is not None:
@@ -330,9 +331,11 @@ def main():
     if not critical_addresses:
         print("No critical addresses resolved. Exiting.")
         return
+
     #new_map = {k: 0 for k in critical_addresses}
     new_map = {}
     for val in critical_addresses:
+
         if (x:=val+base_addr) in hit_map.keys():
             new_map[val] = hit_map[x]
         else:
