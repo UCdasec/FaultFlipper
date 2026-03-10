@@ -665,9 +665,14 @@ def bit_no_comp_inout(
                 with alive_bar(len(futures), title="Processing tasks") as bar:
                     for future in as_completed(futures):
                         # Check the status codes
-                        res = future.result()
-                        results.append(res)
-                        bar()
+                        try: 
+                            res = future.result()
+                            results.append(res)
+                        except Exception as e:
+                            #print(f"[Exception]: {e}")
+                            pass
+                        finally:
+                            bar()
 
         if shm_dir is not None:
             try:
@@ -1094,7 +1099,7 @@ def nn_inout_runner(
             try:
                 out_file.unlink()
             except FileNotFoundError:
-                pass
+                print("FileNotFoundError")
     return results
 
 
@@ -1428,9 +1433,14 @@ def nop_no_comp_inout(
 
                 with alive_bar(len(futures), title="Processing tasks") as bar:
                     for future in as_completed(futures):
-                        res = future.result()
-                        results.append(res)
-                        bar()
+                        try: 
+                            res = future.result()
+                            results.append(res)
+                        except Exception as e:
+                            #print(f"[Exception]: {e}")
+                            pass
+                        finally:
+                            bar()
 
         if shm_dir is not None:
             try:
