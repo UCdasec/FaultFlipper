@@ -7,6 +7,8 @@ from collections import defaultdict
 import pandas as pd
 import matplotlib.pyplot as plt
 
+plt.style.use("dark_background")
+
 
 def plot_instruction_percentage(df):
     total_sum = df["Count"].sum()

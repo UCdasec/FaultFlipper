@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!../.venv/bin/python
 
 import sys
 import json
@@ -31,6 +31,10 @@ def analyze_MMR(data) -> dict:
     )
     merged["Vul_Count"] = merged["Vul_Count"].fillna(0)
     merged["Vul_Rate"] = merged["Vul_Count"] / merged["Total_Count"]
+
+    # temporary, if greather than threshold, set rate to 100%
+    threshold = 0.10
+    merged.loc[merged["Vul_Rate"] > threshold, "Vul_Rate"] = 1
 
     return dict(zip(merged["Instruction"], merged["Vul_Rate"]))
 
