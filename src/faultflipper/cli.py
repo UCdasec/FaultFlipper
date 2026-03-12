@@ -35,7 +35,8 @@ from binary_tools import (
     run_binary_w_calltime_input,
     shift_exit_code,
     timed_run_binary_w_input,
-    extract_model
+    extract_model,
+    extract_instr_type,
 )
 from cli_utils import (
     Backends,
@@ -1342,6 +1343,9 @@ def nop_no_comp_inout(
 
     summary_df: pd.DataFrame | None = None
 
+    binary = lief.parse(common.program_file)
+    target = detect_target_from_binary(binary)
+
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
@@ -1349,11 +1353,9 @@ def nop_no_comp_inout(
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True, parents=True)
 
-        binary = lief.parse(common.program_file)
         text_section = binary.get_section(".text")
         if not text_section:
             raise ValueError(".text section not found in the binary.")
-        target = detect_target_from_binary(binary)
         disasm = list(
             disassemble_text_section(
                 common.program_file,
@@ -1605,6 +1607,55 @@ def nop_no_comp_inout(
     # )
     # legacy_df["failed"] = legacy_df["return_code"] == -999
     # show_results(common, legacy_df, other_returncodes)
+
+    vulnerable_instr_counts = defaultdict(int)
+    unique_vulnerable_instr_counts = defaultdict(int)
+    instr_counts = defaultdict(int)
+    unique_instr_counts = defaultdict(int)
+
+    upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
+    bins = [Path(x) for x in list(summary_df["binary_path"])]
+    source_disasm = disassemble_text_section(common.program_file.absolute())
+
+    #repeat_addr = -1
+    for bin in bins:
+        # if is_bit:
+        #     cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+        #     cur_addr = cur_addr.split("_")[0]
+        #     cur_addr = int(cur_addr, 16)
+        # else:
+        #     cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+        cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+
+        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+
+        # Only execute if address is unique (BIT)
+        # if repeat_addr != cur_addr:
+        #     repeat_addr = cur_addr
+        #     unique_instr_counts[instr_type] += 1
+        unique_instr_counts[instr_type] += 1
+
+        instr_counts[instr_type] += 1
+
+    for bin in upset_bins:
+        cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+
+        # Count instructions
+        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+        vulnerable_instr_counts[instr_type] += 1
+        unique_vulnerable_instr_counts[instr_type] += 1
+
+    with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
+        data_to_save = {
+            "target": str(target),
+            "fault_model": "NOP",
+            "vulnerable": dict(vulnerable_instr_counts),
+            "total": dict(instr_counts),
+            "unique_total": dict(unique_instr_counts),
+            "unique_vul": dict(unique_vulnerable_instr_counts),
+        }
+        json.dump(data_to_save, f, indent=4)
+
 
     return summary_df
 
