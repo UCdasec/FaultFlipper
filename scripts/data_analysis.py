@@ -128,6 +128,4 @@ if __name__ == "__main__":
         results = analyze(data1=data1, data2=data2)
         print_results(results)
     else:
-        print(
-            "Error: No file provided. Usage: python instruction_visualizer.py <filename>"
-        )
+        print("Error: No file provided. Usage: python data_analysis.py <filename>")
