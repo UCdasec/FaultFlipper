@@ -274,10 +274,11 @@ class NopResultStore(_BaseResultStore):
                              AND program_stdout LIKE '%' || expected_stdout || '%'
                         THEN 1 ELSE 0
                     END
-                ) AS total_correct
+                ) AS total_correct,
+                binary_path
             FROM {self.TABLE_NAME}
             WHERE unmutated_binary = ?
-            GROUP BY nopped_addr
+            GROUP BY nopped_addr, binary_path
             ORDER BY nopped_addr
             """,
             (self._normalize_path(unmutated_binary),),

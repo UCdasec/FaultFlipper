@@ -3,7 +3,7 @@ import random
 import logging
 import math
 import shutil
-from collections import Counter
+from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -1467,7 +1467,7 @@ def nop_no_comp_inout(
         print("No summarized results available yet")
         return pd.DataFrame()
 
-    required_cols = {"total_failed", "total_correct", "total_runs"}
+    required_cols = {"total_failed", "total_correct", "total_runs", "binary_path"}
     if not required_cols.issubset(summary_df.columns):
         fallback_store = store
 
@@ -1481,7 +1481,7 @@ def nop_no_comp_inout(
                 df["__stdout"], df["__expected"]
             )
             summary_df = (
-                df.groupby("nopped_addr", dropna=False)
+                df.groupby(["nopped_addr", "binary_path"], dropna=False)
                 .agg(
                     total_runs=("nopped_addr", "size"),
                     total_failed=("__failed", "sum"),
