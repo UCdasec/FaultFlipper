@@ -1411,10 +1411,17 @@ def nop_no_comp_inout(
                 if cont.lower() != "y":
                     return
 
+            instr_probs = extract_model(target, common.probability_model)
             futures = []
+            start = datetime.now()
 
             with ThreadPoolExecutor(max_workers=num_cpus) as executor:
                 for inst in pending_insts:
+                    if instr_probs:
+                        instr_prob = instr_probs.get(inst.mnemonic, 1)
+                        if skip_fault(instr_prob):
+                            continue
+
                     future = executor.submit(
                         nn_inout_runner,
                         common,
@@ -1443,6 +1450,9 @@ def nop_no_comp_inout(
                             pass
                         finally:
                             bar()
+
+            runtime = datetime.now() - start
+            print(runtime)
 
         if shm_dir is not None:
             try:

@@ -62,6 +62,10 @@ def plot_upset_prob(vulnerable, unique_vulnerable):
     vulnerable = vulnerable.sort_values(by="Count", ascending=False)
     unique_vulnerable = unique_vulnerable.sort_values(by="Count", ascending=False)
 
+    # Get top 20
+    vulnerable = vulnerable.head(20)
+    unique_vulnerable = unique_vulnerable.head(20)
+
     # Create subplots (2 rows, 1 column)
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 12))
 

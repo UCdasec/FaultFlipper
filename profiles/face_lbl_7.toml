@@ -1,0 +1,16 @@
+[experiment.nop_no_comp_inout]
+command = 'nop_no_comp_inout'
+expected-stdout = ''
+num_cpus=16
+no_compile=true
+program-input= ''
+program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0000_lbl_7.png']
+expected-returncode = ''
+outs = ['7']
+list-expected = false
+timeout = 4
+out-dir = '/home/brendan/FaultFlipper/experiments/face_lbl_7'
+yes = true 
+target = 'ARM_32' 
+expected-correct = '1' 
