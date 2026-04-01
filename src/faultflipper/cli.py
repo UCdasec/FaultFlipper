@@ -547,6 +547,9 @@ def bit_no_comp_inout(
 
     summary_df: pd.DataFrame | None = None
 
+    binary = lief.parse(common.program_file)
+    target = detect_target_from_binary(binary)
+
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
@@ -558,11 +561,9 @@ def bit_no_comp_inout(
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True)
 
-        binary = lief.parse(common.program_file)
         text_section = binary.get_section(".text")
         if not text_section:
             raise ValueError(".text section not found in the binary.")
-        target = detect_target_from_binary(binary)
         disasm = list(
             disassemble_text_section(
                 common.program_file,
