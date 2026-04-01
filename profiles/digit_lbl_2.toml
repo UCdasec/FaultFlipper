@@ -1,5 +1,5 @@
-[experiment.nop_no_comp_inout]
-command = 'nop_no_comp_inout'
+[experiment.bit_no_comp_inout]
+command = 'bit_no_comp_inout'
 expected-stdout = ''
 num_cpus=16
 no_compile=true
@@ -10,7 +10,7 @@ expected-returncode = ''
 outs = ['2']
 list-expected = false
 timeout = 4
-out-dir = '/home/brendan/FaultFlipper/experiments/digit_lbl_2'
+out-dir = '/home/brendan/FaultFlipper/experiments/digit_lbl_2_BIT'
 yes= true 
 target = 'ARM_32' 
 expected-correct= '1' 

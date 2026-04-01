@@ -872,7 +872,7 @@ def bit_no_comp_inout(
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {
             "target": str(target),
-            "fault_model": "NOP",
+            "fault_model": "BIT",
             "vulnerable": dict(vulnerable_instr_counts),
             "total": dict(instr_counts),
             "unique_total": dict(unique_instr_counts),
