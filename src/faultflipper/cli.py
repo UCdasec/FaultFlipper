@@ -698,7 +698,7 @@ def bit_no_comp_inout(
         print("No summarized results available yet")
         return pd.DataFrame()
 
-    required_cols = {"total_failed", "total_correct", "total_runs"}
+    required_cols = {"total_failed", "total_correct", "total_runs", "binary_path"}
     if not required_cols.issubset(summary_df.columns):
         summary_df = _summarize_bit_results_from_raw(summary_df)
         if summary_df.empty:
@@ -826,6 +826,58 @@ def bit_no_comp_inout(
     #     legacy_agg_no_fail["total_correct"] != int(expected_correct)
     # ]
     # show_results(common, legacy_df, other_returncodes)
+
+    vulnerable_instr_counts = defaultdict(int)
+    unique_vulnerable_instr_counts = defaultdict(int)
+    instr_counts = defaultdict(int)
+    unique_instr_counts = defaultdict(int)
+
+    upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
+    bins = [Path(x) for x in list(summary_df["binary_path"])]
+    source_disasm = disassemble_text_section(common.program_file.absolute())
+
+    repeat_addr = -1
+    with alive_bar(len(bins), title="Processing total bins") as bar:
+        for bin in bins:
+            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            cur_addr = cur_addr.split("_")[0]
+            cur_addr = int(cur_addr, 16)
+
+            #print(f'0x{cur_addr:x}')
+            #print(f'0x{source_disasm[0].address:x} to 0x{source_disasm[len(source_disasm)-1].address:x}')
+            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+
+            # Only execute if address is unique (BIT)
+            if repeat_addr != cur_addr:
+                repeat_addr = cur_addr
+                unique_instr_counts[instr_type] += 1
+            unique_instr_counts[instr_type] += 1
+
+            instr_counts[instr_type] += 1
+            bar()
+
+    with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
+        for bin in upset_bins:
+            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            cur_addr = cur_addr.split("_")[0]
+            cur_addr = int(cur_addr, 16)
+
+            # Count instructions
+            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            vulnerable_instr_counts[instr_type] += 1
+            unique_vulnerable_instr_counts[instr_type] += 1
+            bar()
+
+    with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
+        data_to_save = {
+            "target": str(target),
+            "fault_model": "NOP",
+            "vulnerable": dict(vulnerable_instr_counts),
+            "total": dict(instr_counts),
+            "unique_total": dict(unique_instr_counts),
+            "unique_vul": dict(unique_vulnerable_instr_counts),
+        }
+        json.dump(data_to_save, f, indent=4)
 
     return summary_df
 
@@ -1411,10 +1463,17 @@ def nop_no_comp_inout(
                 if cont.lower() != "y":
                     return
 
+            instr_probs = extract_model(target, common.probability_model)
             futures = []
+            start = datetime.now()
 
             with ThreadPoolExecutor(max_workers=num_cpus) as executor:
                 for inst in pending_insts:
+                    if instr_probs:
+                        instr_prob = instr_probs.get(inst.mnemonic, 1)
+                        if skip_fault(instr_prob):
+                            continue
+
                     future = executor.submit(
                         nn_inout_runner,
                         common,
@@ -1443,6 +1502,9 @@ def nop_no_comp_inout(
                             pass
                         finally:
                             bar()
+
+            runtime = datetime.now() - start
+            print(runtime)
 
         if shm_dir is not None:
             try:
@@ -1618,32 +1680,36 @@ def nop_no_comp_inout(
     source_disasm = disassemble_text_section(common.program_file.absolute())
 
     #repeat_addr = -1
-    for bin in bins:
-        # if is_bit:
-        #     cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
-        #     cur_addr = cur_addr.split("_")[0]
-        #     cur_addr = int(cur_addr, 16)
-        # else:
-        #     cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
-        cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+    with alive_bar(len(bins), title="Processing total bins") as bar:
+        for bin in bins:
+            # if is_bit:
+            #     cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            #     cur_addr = cur_addr.split("_")[0]
+            #     cur_addr = int(cur_addr, 16)
+            # else:
+            #     cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+            cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
-        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            instr_type: str = extract_instr_type(source_disasm, cur_addr)
 
-        # Only execute if address is unique (BIT)
-        # if repeat_addr != cur_addr:
-        #     repeat_addr = cur_addr
-        #     unique_instr_counts[instr_type] += 1
-        unique_instr_counts[instr_type] += 1
+            # Only execute if address is unique (BIT)
+            # if repeat_addr != cur_addr:
+            #     repeat_addr = cur_addr
+            #     unique_instr_counts[instr_type] += 1
+            unique_instr_counts[instr_type] += 1
 
-        instr_counts[instr_type] += 1
+            instr_counts[instr_type] += 1
+            bar()
 
-    for bin in upset_bins:
-        cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+    with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
+        for bin in upset_bins:
+            cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
-        # Count instructions
-        instr_type: str = extract_instr_type(source_disasm, cur_addr)
-        vulnerable_instr_counts[instr_type] += 1
-        unique_vulnerable_instr_counts[instr_type] += 1
+            # Count instructions
+            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            vulnerable_instr_counts[instr_type] += 1
+            unique_vulnerable_instr_counts[instr_type] += 1
+            bar()
 
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {

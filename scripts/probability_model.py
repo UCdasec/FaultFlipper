@@ -33,7 +33,7 @@ def analyze_MMR(data) -> dict:
     merged["Vul_Rate"] = merged["Vul_Count"] / merged["Total_Count"]
 
     # temporary, if greather than threshold, set rate to 100%
-    threshold = 0.10
+    threshold = 0.025
     merged.loc[merged["Vul_Rate"] > threshold, "Vul_Rate"] = 1
 
     return dict(zip(merged["Instruction"], merged["Vul_Rate"]))
