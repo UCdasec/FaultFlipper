@@ -21,14 +21,14 @@ from binary_tools import (
     Target,
     compile_program,
     delete_mutated_binaries,
-    detect_target_from_binary,
     detect_target,
+    detect_target_from_binary,
     disasm,
     disassemble_text_section,
     dyna_detect_insns,
     generate_bit_mutated_file,
     generate_compile_cmd,
-    #_generate_nop_mutated_bin,
+    # _generate_nop_mutated_bin,
     generate_nops_mutated_bin,
     get_return_reg,
     run_binary_w_calltime_input,
@@ -129,8 +129,7 @@ def save_df(df: pd.DataFrame, out: tuple[Path, None]) -> None:
     """
     if out is None:
         log_indices = [
-            int(x.name.replace(".log", "").split("_")[-1])
-            for x in list(DEFAULT_LOGS.glob("*"))
+            int(x.name.replace(".log", "").split("_")[-1]) for x in list(DEFAULT_LOGS.glob("*"))
         ]
         if log_indices == []:
             last_log = -1
@@ -159,9 +158,7 @@ def _derive_source_name(common) -> str:
     return ""
 
 
-def _existing_results_summary(
-    df: pd.DataFrame, common, delete_non_upsets: bool = False
-) -> None:
+def _existing_results_summary(df: pd.DataFrame, common, delete_non_upsets: bool = False) -> None:
     """
     Print a short summary for cached experiment results.
     """
@@ -250,9 +247,7 @@ def _load_address_filter(address_file: Path) -> set[int]:
     data = json.loads(address_file.read_text())
     addresses = data.get("addresses")
     if not isinstance(addresses, list):
-        raise ValueError(
-            f"{address_file} is missing the 'addresses' list produced by parser.py."
-        )
+        raise ValueError(f"{address_file} is missing the 'addresses' list produced by parser.py.")
 
     normalized: set[int] = set()
     for raw in addresses:
@@ -291,9 +286,7 @@ def _elementwise_stdout_contains(stdout: pd.Series, expected: pd.Series) -> pd.S
     """Return True when each stdout contains its paired expected value."""
     stdout_vals = stdout.fillna("").astype(str)
     expected_vals = expected.fillna("").astype(str)
-    matches = [
-        exp in out for exp, out in zip(expected_vals, stdout_vals, strict=False)
-    ]
+    matches = [exp in out for exp, out in zip(expected_vals, stdout_vals, strict=False)]
     return pd.Series(matches, index=stdout.index)
 
 
@@ -306,9 +299,7 @@ def _summarize_nop_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
     if unnamed:
         cleaned = cleaned.drop(columns=unnamed)
 
-    if "nopped_addr" not in cleaned.columns and isinstance(
-        cleaned.columns, pd.RangeIndex
-    ):
+    if "nopped_addr" not in cleaned.columns and isinstance(cleaned.columns, pd.RangeIndex):
         expected_cols = [
             "source_file",
             "unmutated_binary",
@@ -337,9 +328,7 @@ def _summarize_nop_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
     cleaned["__failed"] = cleaned["__return_code"] == -999
     cleaned["__expected"] = cleaned["expected_stdout"].astype(str)
     cleaned["__stdout"] = cleaned["program_stdout"].astype(str)
-    cleaned["__correct"] = _elementwise_stdout_contains(
-        cleaned["__stdout"], cleaned["__expected"]
-    )
+    cleaned["__correct"] = _elementwise_stdout_contains(cleaned["__stdout"], cleaned["__expected"])
 
     summary_df = (
         cleaned.groupby("nopped_addr", dropna=False)
@@ -362,9 +351,7 @@ def _summarize_bit_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
     if unnamed:
         cleaned = cleaned.drop(columns=unnamed)
 
-    if "flipped_addr" not in cleaned.columns and isinstance(
-        cleaned.columns, pd.RangeIndex
-    ):
+    if "flipped_addr" not in cleaned.columns and isinstance(cleaned.columns, pd.RangeIndex):
         expected_cols = [
             "source_file",
             "unmutated_binary",
@@ -400,9 +387,7 @@ def _summarize_bit_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
     cleaned["__failed"] = cleaned["__return_code"] == -999
     cleaned["__expected"] = cleaned["expected_stdout"].astype(str)
     cleaned["__stdout"] = cleaned["program_stdout"].astype(str)
-    cleaned["__correct"] = _elementwise_stdout_contains(
-        cleaned["__stdout"], cleaned["__expected"]
-    )
+    cleaned["__correct"] = _elementwise_stdout_contains(cleaned["__stdout"], cleaned["__expected"])
 
     summary_df = (
         cleaned.groupby(["flipped_addr", "flipped_index"], dropna=False)
@@ -414,6 +399,7 @@ def _summarize_bit_results_from_raw(df: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     return summary_df
+
 
 def bit_inout_runner(
     inst,
@@ -503,7 +489,6 @@ def bit_inout_runner(
     return results
 
 
-
 @app.command
 def bit_no_comp_inout(
     common: CommandParameters,
@@ -523,7 +508,6 @@ def bit_no_comp_inout(
     inputs and labels. Then, EACH mutated binary will be checked against ALL
     40 pairs.
     """
-
     if ins is None or outs is None:
         raise ValueError("bit_no_comp_inout requires both inputs and outputs")
 
@@ -572,9 +556,7 @@ def bit_no_comp_inout(
 
         if not common.yes:
             cont = str(
-                input(
-                    f"Run with {num_bits} bits, {num_bytes} bytes, {num_insns} insns? (Yy/Nn)"
-                )
+                input(f"Run with {num_bits} bits, {num_bytes} bytes, {num_insns} insns? (Yy/Nn)")
             )
 
             if cont.lower() != "y":
@@ -617,9 +599,7 @@ def bit_no_comp_inout(
         base_bytes = common.program_file.read_bytes()
         total_candidate_pairs = sum(len(inst.bytes) * 8 for inst in disasm)
 
-        with console.status(
-            "Loading completed (addr, bit) pairs from SQLite...", spinner="dots"
-        ):
+        with console.status("Loading completed (addr, bit) pairs from SQLite...", spinner="dots"):
             completed_pairs = store.load_completed_pairs(total_inputs)
 
         if completed_pairs:
@@ -677,11 +657,7 @@ def bit_no_comp_inout(
             summary_df = pd.DataFrame(summary_rows)
         else:
             flat_results = [item for batch in results if batch for item in batch]
-            summary_df = (
-                dataclass_to_dataframe(flat_results)
-                if flat_results
-                else pd.DataFrame()
-            )
+            summary_df = dataclass_to_dataframe(flat_results) if flat_results else pd.DataFrame()
 
         save_df(summary_df, res_file)
 
@@ -722,12 +698,9 @@ def bit_no_comp_inout(
     agg_df = summary_df.copy()
     agg_df_no_fail = agg_df[agg_df["total_failed"] == 0]
 
-    plot_df = agg_df_no_fail[
-        agg_df_no_fail["total_correct"] != expected_correct
-    ]
+    plot_df = agg_df_no_fail[agg_df_no_fail["total_correct"] != expected_correct]
 
     console.print("Generating Plots")
-
 
     plot_correct_predictions_pdf(
         plot_df,
@@ -735,7 +708,6 @@ def bit_no_comp_inout(
         common.out_dir.joinpath("pdf_plot.jpg"),
         total_predictions=40,
     )
-
 
     plot_desc_accuracy(
         plot_df,
@@ -846,7 +818,6 @@ def angr_nop_no_comp_inout(
     total_normal = 0
     total_upset = 0
     total_error = 0
-
 
     gold_data = {}
 
@@ -979,9 +950,7 @@ def angr_nop_no_comp_inout(
                 results.append(result)
 
             # print(f"THIRD ARG: {[x[2] for x in gold_data.values()]}")
-            good_res, bad_res, error_case = analyze_reg_results(
-                results, func_names, gold_data
-            )
+            good_res, bad_res, error_case = analyze_reg_results(results, func_names, gold_data)
 
             tot_good_res.extend(good_res)
             tot_bad_res.extend(bad_res)
@@ -1008,6 +977,7 @@ def angr_nop_no_comp_inout(
 
     return
 
+
 def nn_inout_runner(
     common,
     inst,
@@ -1029,9 +999,7 @@ def nn_inout_runner(
     nop, then test the mutant binary on all the in files.
     """
     insts = [inst]
-    out_path = out_dir.joinpath(
-        common.program_file.name + f"_{hex(insts[0].address)}"
-    )
+    out_path = out_dir.joinpath(common.program_file.name + f"_{hex(insts[0].address)}")
 
     out_file = generate_nops_mutated_bin(
         common.program_file,
@@ -1119,14 +1087,8 @@ def plot_correct_predictions_pdf(
         d[correct_col] = pd.to_numeric(d[correct_col], errors="coerce")
     else:
         if accuracy_col not in d.columns or total_predictions is None:
-            raise ValueError(
-                f"Need '{correct_col}' OR '{accuracy_col}' + total_predictions."
-            )
-        acc = (
-            pd.to_numeric(d[accuracy_col], errors="coerce")
-            .fillna(0.0)
-            .clip(0.0, 1.0)
-        )
+            raise ValueError(f"Need '{correct_col}' OR '{accuracy_col}' + total_predictions.")
+        acc = pd.to_numeric(d[accuracy_col], errors="coerce").fillna(0.0).clip(0.0, 1.0)
         d[correct_col] = np.rint(acc * int(total_predictions)).astype(int)
 
     # ---- clean ----
@@ -1197,16 +1159,13 @@ def plot_correct_predictions_pdf(
 
 
 def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False):
-
     d = df.copy()
     d["accuracy"] = pd.to_numeric(d["accuracy"], errors="coerce").fillna(0)
 
     # pick x label column
     if is_bit:
         if "lbl" not in d.columns:
-            d["lbl"] = (
-                d["flipped_addr"].astype(str) + ":" + d["flipped_index"].astype(str)
-            )
+            d["lbl"] = d["flipped_addr"].astype(str) + ":" + d["flipped_index"].astype(str)
         xkey = "lbl"
     else:
         xkey = "nopped_addr"
@@ -1241,10 +1200,12 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
         height = bar.get_height()
         ax.text(
             bar.get_x() + bar.get_width() / 2,  # x position (center of bar)
-            height,                             # y position (top of bar)
-            f"{height}",                        # text (value)
-            ha="center", va="bottom",           # alignment
-            fontsize=12, fontweight="bold"      # styling
+            height,  # y position (top of bar)
+            f"{height}",  # text (value)
+            ha="center",
+            va="bottom",  # alignment
+            fontsize=12,
+            fontweight="bold",  # styling
         )
 
     ax.set_ylim(0, 1.0)
@@ -1292,7 +1253,6 @@ def plot_desc_accuracy(df, baseline, out: Path, step=1, width=0.8, is_bit=False)
     fig.savefig(out, dpi=1_200)
 
 
-
 @app.command
 def nop_no_comp_inout(
     common: CommandParameters,
@@ -1313,7 +1273,6 @@ def nop_no_comp_inout(
     So if we have 4 tuples, and 10 mutated programs, we get
     40 results in total.
     """
-
     if ins is None or outs is None:
         raise ValueError("nop_no_comp_inout requires inputs and outputs")
 
@@ -1359,7 +1318,7 @@ def nop_no_comp_inout(
 
         intermediate_dir.mkdir(exist_ok=True)
 
-        store = NopResultStore(db_path) 
+        store = NopResultStore(db_path)
 
         common.out_dir = experiment_root.joinpath("mutated_bins")
         common.out_dir.mkdir(exist_ok=True)
@@ -1381,15 +1340,11 @@ def nop_no_comp_inout(
 
         results = []
 
-        with console.status(
-            "Loading completed nop addresses from SQLite...", spinner="dots"
-        ):
+        with console.status("Loading completed nop addresses from SQLite...", spinner="dots"):
             completed_addrs = store.load_completed_addrs(total_inputs)
 
         if completed_addrs:
-            print(
-                f"Skipping {len(completed_addrs)} addresses that already processed all inputs"
-            )
+            print(f"Skipping {len(completed_addrs)} addresses that already processed all inputs")
 
         pending_insts = [inst for inst in disasm if inst.address not in completed_addrs]
 
@@ -1440,12 +1395,8 @@ def nop_no_comp_inout(
             summary_df = pd.DataFrame(summary_rows)
         else:
             flat_results = [item for batch in results if batch for item in batch]
-            summary_df = (
-                dataclass_to_dataframe(flat_results)
-                if flat_results
-                else pd.DataFrame()
-            )
-            
+            summary_df = dataclass_to_dataframe(flat_results) if flat_results else pd.DataFrame()
+
         save_df(summary_df, res_file)
 
     if summary_df is None or summary_df.empty:
@@ -1462,9 +1413,7 @@ def nop_no_comp_inout(
             df["__failed"] = df["__return_code"] == -999
             df["__expected"] = df["expected_stdout"].astype(str)
             df["__stdout"] = df["program_stdout"].astype(str)
-            df["__correct"] = _elementwise_stdout_contains(
-                df["__stdout"], df["__expected"]
-            )
+            df["__correct"] = _elementwise_stdout_contains(df["__stdout"], df["__expected"])
             summary_df = (
                 df.groupby("nopped_addr", dropna=False)
                 .agg(
@@ -1478,7 +1427,6 @@ def nop_no_comp_inout(
         else:
             summary_rows = fallback_store.summarize_nop_results(common.program_file)
             summary_df = pd.DataFrame(summary_rows)
-
 
     total_inputs = len(outs)
 
@@ -1524,25 +1472,16 @@ def nop_no_comp_inout(
 
     print(f"Counts of corrects:\n {agg_df['total_correct'].value_counts()}")
     print(f"Counts of failed:\n {agg_df['total_failed'].value_counts()}")
-    print(
-        f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}"
-    )
+    print(f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}")
 
     mask = (agg_df["total_failed"] != 0) & (agg_df["total_correct"] != 0)
-    print(
-        f"Number of nonzero failed and nonzero correct:\n {agg_df[mask].value_counts()}"
-    )
+    print(f"Number of nonzero failed and nonzero correct:\n {agg_df[mask].value_counts()}")
 
     mask = (agg_df["total_failed"] == 0) & (agg_df["total_correct"] != 0)
-    print(
-        f"Number of zero failed and nonzero correct:\n {agg_df[mask].value_counts()}"
-    )
+    print(f"Number of zero failed and nonzero correct:\n {agg_df[mask].value_counts()}")
 
-    mask = (agg_df["total_correct"] == 0)
-    print(
-        f"Number of zero failed and zero correct:\n {agg_df[mask].value_counts()}"
-    )
-
+    mask = agg_df["total_correct"] == 0
+    print(f"Number of zero failed and zero correct:\n {agg_df[mask].value_counts()}")
 
     print(
         f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] == expected_correct).sum()} had the same number of correct predictions"
@@ -1564,12 +1503,12 @@ def nop_no_comp_inout(
             common.program_file, upset_df["nopped_addr"].tolist()
         )
 
-        #TODO: This blew up my termianl when I ran it 
-        #if histogram:
+        # TODO: This blew up my termianl when I ran it
+        # if histogram:
         #    print("Histogram of stdout values for upset binaries:")
         #    for stdout, count in histogram:
         #        print(f"{count:>8}  {stdout!r}")
-        #else:
+        # else:
         #    print("Upset binaries produced no stdout entries to summarize.")
 
     exit_hist_store = store
@@ -1655,9 +1594,7 @@ def read_results(inp: Path):
     print(df.columns)
 
     expected_stdout = str(list(df["expected_stdout"])[0])
-    contains_df: pd.DataFrame = df[
-        df["program_stdout"].str.contains(expected_stdout, na=False)
-    ]
+    contains_df: pd.DataFrame = df[df["program_stdout"].str.contains(expected_stdout, na=False)]
     not_contains_df = df.drop(contains_df.index)
 
     contains_hist = instruction_hist(contains_df)
@@ -1673,7 +1610,7 @@ def filter_results(
     addresses_json: Path,
     out_csv: Path | None = None,
     max_rows: int = 20,
-    upset_on_match: bool = True
+    upset_on_match: bool = True,
 ) -> None:
     """
     Filter an existing experiment's results.csv down to the provided addresses.
@@ -1695,9 +1632,7 @@ def filter_results(
     df = pd.read_csv(results_file)
 
     try:
-        filtered_df, column, matched_addresses = _filter_dataframe_by_addresses(
-            df, address_filter
-        )
+        filtered_df, column, matched_addresses = _filter_dataframe_by_addresses(df, address_filter)
     except KeyError as exc:
         console.print(f"[red]{exc}[/red]")
         return
@@ -1734,7 +1669,6 @@ def filter_results(
     with pd.option_context("display.max_columns", None, "display.width", 200):
         console.print(filtered_df.head(max_rows))
 
-
     normal_df, error_df, upset_df = parse_results(df, upset_on_match)
 
     print(
@@ -1746,6 +1680,7 @@ def filter_results(
     )
 
     return
+
 
 def instruction_hist(df):
     """Get a histogram of the instructions in the df."""
@@ -1823,9 +1758,7 @@ def x_bit_reg_seq(
 
     # Run the threads
     for inst in alive_it(disasm):
-        result = x_bit_angr_helper(
-            common, inst, target, num_bits, func_names, common.timeout * 60
-        )
+        result = x_bit_angr_helper(common, inst, target, num_bits, func_names, common.timeout * 60)
 
         for (
             out_file,
@@ -1863,7 +1796,6 @@ def x_bit_reg_seq(
     df = dataclass_to_dataframe(results)
     save_df(df, res_file)
 
-
     # Lastly save the experiment parameters
     params = common.to_dict()
     params["target"] = target.value
@@ -1877,9 +1809,7 @@ def x_bit_reg_seq(
         common.program_file, common.program_input, func_names, common.timeout * 60
     )
 
-    good_res, bad_res, error_case = analyze_reg_results(
-        results, func_names, golden_register_info
-    )
+    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
 
     save_reg_report(
         report_path,
@@ -1923,30 +1853,22 @@ def smol_analyze_reg_results(reg_infos, func_names, golden_register_info, bin: P
 
         # If we are missing the reg_info this is an error case
         # or if the func name is missing from reg info
-        if reg_info is None or not all(
-            [name in reg_info.keys() for name in func_names]
-        ):
+        if reg_info is None or not all([name in reg_info.keys() for name in func_names]):
             error_case.append(cur_bin)
             continue
 
         # See if the two match for all functions
         all_golden_rets = [
-            collect_all_reg_calls(golden_register_info, register, name)
-            for name in func_names
+            collect_all_reg_calls(golden_register_info, register, name) for name in func_names
         ]
-        all_mut_rets = [
-            collect_all_reg_calls(reg_info, register, name) for name in func_names
-        ]
+        all_mut_rets = [collect_all_reg_calls(reg_info, register, name) for name in func_names]
         is_correct = all_golden_rets == all_mut_rets
 
         if is_correct:
             normal_case.append(cur_bin)
         # These are the error conditions
         elif not all(
-            [
-                len(all_golden_rets[i]) == len(all_mut_rets[i])
-                for i in range(len(all_golden_rets))
-            ]
+            [len(all_golden_rets[i]) == len(all_mut_rets[i]) for i in range(len(all_golden_rets))]
         ):
             error_case.append(cur_bin)
         else:
@@ -1969,10 +1891,7 @@ def norm_v_upset_v_error(all_golden_rets, all_mut_rets):
         normal_case = True
     # These are the error conditions
     elif not all(
-        [
-            len(all_golden_rets[i]) == len(all_mut_rets[i])
-            for i in range(len(all_golden_rets))
-        ]
+        [len(all_golden_rets[i]) == len(all_mut_rets[i]) for i in range(len(all_golden_rets))]
     ):
         error_case = True
     else:
@@ -2008,12 +1927,10 @@ def analyze_reg_results(results, func_names, golden_register_info):
 
         # See if the two match for all functions
         all_golden_rets = [
-            collect_all_reg_calls(golden_register_info, register, name)
-            for name in func_names
+            collect_all_reg_calls(golden_register_info, register, name) for name in func_names
         ]
         all_mut_rets = [
-            collect_all_reg_calls(result.reg_info, register, name)
-            for name in func_names
+            collect_all_reg_calls(result.reg_info, register, name) for name in func_names
         ]
         is_correct = all_golden_rets == all_mut_rets
 
@@ -2021,10 +1938,7 @@ def analyze_reg_results(results, func_names, golden_register_info):
             normal_case.append(result)
         # These are the error conditions
         elif not all(
-            [
-                len(all_golden_rets[i]) == len(all_mut_rets[i])
-                for i in range(len(all_golden_rets))
-            ]
+            [len(all_golden_rets[i]) == len(all_mut_rets[i]) for i in range(len(all_golden_rets))]
         ):
             error_case.append(result)
         else:
@@ -2170,9 +2084,7 @@ def x_bit_reg_parallel(
         common.program_file, common.program_input, func_names, common.timeout * 60
     )
 
-    good_res, bad_res, error_case = analyze_reg_results(
-        results, func_names, golden_register_info
-    )
+    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
 
     save_reg_report(
         report_path,
@@ -2240,9 +2152,9 @@ def x_bit_qemu_seq(
 
     disasm = disassemble_text_section(common.program_file)
 
-    # Filter 
+    # Filter
     if common.dynamic_filter:
-        disasm = dyna_detect_insns(common,  target, disasm)
+        disasm = dyna_detect_insns(common, target, disasm)
 
     if addresses_json is not None:
         address_filter = _load_address_filter(addresses_json)
@@ -2264,9 +2176,7 @@ def x_bit_qemu_seq(
     if not common.yes:
         candidate_bits = sum(len(inst.bytes) * 8 for inst in disasm)
         cont = str(
-            input(
-                f"Will _attempt_ to make {candidate_bits} mutated binaries, continue? (Yy/Nn)"
-            )
+            input(f"Will _attempt_ to make {candidate_bits} mutated binaries, continue? (Yy/Nn)")
         )
         if cont.lower() != "y":
             return
@@ -2358,7 +2268,7 @@ def x_bit_qemu_parallel(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
-    upset_on_match: bool | None = None
+    upset_on_match: bool | None = None,
 ):
     """Run the x bit mutation scheme with a parallel qemu backend.
 
@@ -2390,16 +2300,18 @@ def x_bit_qemu_parallel(
         common.out_dir.mkdir(exist_ok=True)
 
         # Compile the binary for the target
-        common.program_file = compile_program(source_code, bin_out, target, optimization, common.opts)
+        common.program_file = compile_program(
+            source_code, bin_out, target, optimization, common.opts
+        )
 
     disasm = disassemble_text_section(common.program_file)
 
-    # Filter 
+    # Filter
     if common.dynamic_filter:
         print(f"Total disasm had: {len(disasm)} insns")
-        disasm = dyna_detect_insns(common,  target, disasm)
+        disasm = dyna_detect_insns(common, target, disasm)
         print(f"after filter we had: {len(disasm)} insns")
-        #for x in disasm:
+        # for x in disasm:
         #    print(f"Addr: {hex(x.address)}")
 
     if addresses_json is not None:
@@ -2422,13 +2334,10 @@ def x_bit_qemu_parallel(
     if not common.yes:
         candidate_bits = sum(len(inst.bytes) * 8 for inst in disasm)
         cont = str(
-            input(
-                f"Will _attempt_ to make {candidate_bits} mutated binaries, continue? (Yy/Nn)"
-            )
+            input(f"Will _attempt_ to make {candidate_bits} mutated binaries, continue? (Yy/Nn)")
         )
         if cont.lower() != "y":
             return
-
 
     futures = []
     results: list[BitFlipExperimentResult] = []
@@ -2438,9 +2347,7 @@ def x_bit_qemu_parallel(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
         for inst in disasm:
-            future = executor.submit(
-                x_bit_para_run_helper, common, inst, target, num_bits 
-            )
+            future = executor.submit(x_bit_para_run_helper, common, inst, target, num_bits)
             futures.append(future)
 
         with alive_bar(len(futures), title="Processing tasks") as bar:
@@ -2519,7 +2426,6 @@ def x_bit_qemu_parallel(
         is_bit=True,
     )
 
-
     print(f"UPSET ON MATCH: {upset_on_match}")
     print(f"Had {normal_df.shape}) normal")
     print(f"Had {error_df.shape}) error")
@@ -2575,18 +2481,14 @@ def x_nop_reg_seq(
 
     disasm = disassemble_text_section(common.program_file)
 
-    # Filter 
+    # Filter
     if common.dynamic_filter:
-        disasm = dyna_detect_insns(common,  target, disasm)
+        disasm = dyna_detect_insns(common, target, disasm)
 
     num_instructions = len(disasm)
 
     if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
-            )
-        )
+        cont = str(input(f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"))
         if cont.lower() != "y":
             return
 
@@ -2605,14 +2507,12 @@ def x_nop_reg_seq(
     for i in alive_it(range(len(disasm) - (num_nops) + 1)):
         # Keet x instructions to overwrite with nop
         insts = [disasm[i + x] for x in range(num_nops)]
-        out_file, returncode, insts, common, target, stdout, captured = (
-            x_nop_angr_helper(
-                common,
-                insts,
-                target,
-                func_names,
-                common.timeout * 60,
-            )
+        out_file, returncode, insts, common, target, stdout, captured = x_nop_angr_helper(
+            common,
+            insts,
+            target,
+            func_names,
+            common.timeout * 60,
         )
 
         result = RegNopExperimentResult(
@@ -2651,9 +2551,7 @@ def x_nop_reg_seq(
     report_path = common.out_dir.parent.joinpath("report.md")
     print(f"Analyzing {len(results)} results")
 
-    good_res, bad_res, error_case = analyze_reg_results(
-        results, func_names, golden_register_info
-    )
+    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
 
     save_reg_report(
         report_path,
@@ -2683,7 +2581,7 @@ def x_nop_reg_seq(
 
 @app.command()
 def x_bit(
-    #common: RegCommandParameters,  # TODO: Make everything use this version and rename
+    # common: RegCommandParameters,  # TODO: Make everything use this version and rename
     common: CommandParameters,  # TODO: Make everything use this version and rename
     target: Target,
     func_names: str,
@@ -2718,13 +2616,9 @@ def x_bit(
     elif backend == backend.QEMU:
         # Now assert that we have stdout and expected return code
         if common.expected_stdout is None or common.expected_returncode is None:
-            print(
-                f"The backend {backend} requires expected_stdout and expected_returncode"
-            )
+            print(f"The backend {backend} requires expected_stdout and expected_returncode")
 
-        if reuse_existing_results_if_available(
-            common, log_matching, delete_non_upsets
-        ):
+        if reuse_existing_results_if_available(common, log_matching, delete_non_upsets):
             return
 
         if num_cpus == 1:
@@ -2790,13 +2684,9 @@ def x_nop(
     elif backend == backend.QEMU:
         # Now assert that we have stdout and expected return code
         if common.expected_stdout is None or common.expected_returncode is None:
-            print(
-                f"The backend {backend} requires expected_stdout and expected_returncode"
-            )
+            print(f"The backend {backend} requires expected_stdout and expected_returncode")
 
-        if reuse_existing_results_if_available(
-            common, log_matching, delete_non_upsets
-        ):
+        if reuse_existing_results_if_available(common, log_matching, delete_non_upsets):
             return
 
         if num_cpus == 1:
@@ -2877,11 +2767,7 @@ def x_nop_reg_parallel(
     num_instructions = len(disasm)
 
     if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"
-            )
-        )
+        cont = str(input(f"FaultSim will _attempt_ to generate {len(disasm)}. Continue? (Yy/Nn)"))
         if cont.lower() != "y":
             return
 
@@ -2921,9 +2807,7 @@ def x_nop_reg_parallel(
         with alive_bar(total_tasks, title="Processing tasks") as bar:
             for future in as_completed(futures):
                 # Check the status codes
-                out_file, returncode, insts, common, target, stdout, captured = (
-                    future.result()
-                )
+                out_file, returncode, insts, common, target, stdout, captured = future.result()
 
                 result = RegNopExperimentResult(
                     source_file=source_code,
@@ -2962,9 +2846,7 @@ def x_nop_reg_parallel(
     report_path = common.out_dir.parent.joinpath("report.md")
     print(f"Analyzing {len(results)} results")
 
-    good_res, bad_res, error_case = analyze_reg_results(
-        results, func_names, golden_register_info
-    )
+    good_res, bad_res, error_case = analyze_reg_results(results, func_names, golden_register_info)
 
     save_reg_report(
         report_path,
@@ -3016,9 +2898,7 @@ def verbose_output(results, func_names, golden_register_info):
         for name in func_names:
             if name in result.reg_info.keys():
                 # Get a liust of all the r0 values across all calls to func name
-                gold_register = collect_all_reg_calls(
-                    golden_register_info, register, name
-                )
+                gold_register = collect_all_reg_calls(golden_register_info, register, name)
                 mut_r0_ret = collect_all_reg_calls(result.reg_info, register, name)
                 is_correct = gold_register[-1] == mut_r0_ret[-1]
                 reg_vals.append(mut_r0_ret[-1])
@@ -3037,7 +2917,6 @@ def verbose_output(results, func_names, golden_register_info):
 
     print(f"Num missing func: {len(set(missing_func))}")
     print(f"Num missing reg info: {len(missing_reg_info)}")
-
 
 
 def x_nop_qemu_seq(
@@ -3109,19 +2988,15 @@ def x_nop_qemu_seq(
 
     num_instructions = len(indices)
     if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(indices)}. Continue? (Yy/Nn)"
-            )
-        )
+        cont = str(input(f"FaultSim will _attempt_ to generate {len(indices)}. Continue? (Yy/Nn)"))
         if cont.lower() != "y":
             return
 
     for i in alive_it(indices):
         insts = [disasm[i + x] for x in range(num_nops)]
 
-        out_file, returncode, insts, common, target, stdout, stderr = (
-            x_nop_para_run_helper(common, insts, target)
+        out_file, returncode, insts, common, target, stdout, stderr = x_nop_para_run_helper(
+            common, insts, target
         )
 
         result = NopExperimentResult(
@@ -3164,7 +3039,6 @@ def x_nop_qemu_seq(
 
     report_path = common.out_dir.parent.joinpath("report.md")
 
-
     upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
@@ -3191,7 +3065,6 @@ def x_nop_qemu_seq(
     print(f"Report saved to {report_path}")
 
     return
-
 
 
 @app.command()
@@ -3227,9 +3100,7 @@ def x_bit_qemu_parallel_data(
         bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
 
         # Compile the binary for the target
-        common.program_file = compile_program(
-            source_code, bin_out, target, optimization
-        )
+        common.program_file = compile_program(source_code, bin_out, target, optimization)
         compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
     else:
         source_code = ""
@@ -3248,7 +3119,7 @@ def x_bit_qemu_parallel_data(
     if not common.yes:
         cont = str(
             input(
-                f"FaultSim will _attempt_ to generate {len(target_section_contents)*8}. Continue? (Yy/Nn)"
+                f"FaultSim will _attempt_ to generate {len(target_section_contents) * 8}. Continue? (Yy/Nn)"
             )
         )
         if cont.lower() != "y":
@@ -3263,13 +3134,13 @@ def x_bit_qemu_parallel_data(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for i in range(len(target_section_contents)):
-            future = executor.submit( x_data_para_run_helper, common, i, target, target_section)
+            future = executor.submit(x_data_para_run_helper, common, i, target, target_section)
             futures.append(future)
 
         with alive_bar(len(futures), title="Processing tasks") as bar:
             for future in as_completed(futures):
                 # Check the status codes
-                
+
                 result = future.result()
 
                 for (
@@ -3305,8 +3176,6 @@ def x_bit_qemu_parallel_data(
     df = dataclass_to_dataframe(results)
     save_df(df, res_file)
 
-
-
     # Lastly save the experiment parameters
     params = common.to_dict()
     params["target"] = target.value
@@ -3339,15 +3208,12 @@ def x_bit_qemu_parallel_data(
     )
     print(f"Report saved to {report_path}")
 
-
     print(f"UPSET ON MATCH: {upset_on_match}")
     print(f"Had {normal_df.shape}) normal")
     print(f"Had {error_df.shape}) error")
     print(f"Had {fault_df.shape}) upset")
 
     return
-
-
 
 
 def x_nop_qemu_parallel(
@@ -3360,7 +3226,7 @@ def x_nop_qemu_parallel(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
-    upset_on_match: bool | None = None
+    upset_on_match: bool | None = None,
 ):
     """Run an experiment that gernerates mutant binaries with num_nops, and tests them with QEMU.
 
@@ -3405,8 +3271,7 @@ def x_nop_qemu_parallel(
     disasm = disassemble_text_section(common.program_file)
 
     if common.dynamic_filter:
-        disasm = dyna_detect_insns(common,  target, disasm)
-
+        disasm = dyna_detect_insns(common, target, disasm)
 
     max_start = len(disasm) - num_nops + 1
     indices = list(range(max_start))
@@ -3429,11 +3294,7 @@ def x_nop_qemu_parallel(
     num_instructions = len(indices)
 
     if not common.yes:
-        cont = str(
-            input(
-                f"FaultSim will _attempt_ to generate {len(indices)}. Continue? (Yy/Nn)"
-            )
-        )
+        cont = str(input(f"FaultSim will _attempt_ to generate {len(indices)}. Continue? (Yy/Nn)"))
         if cont.lower() != "y":
             return
 
@@ -3453,9 +3314,7 @@ def x_nop_qemu_parallel(
         with alive_bar(len(futures), title="Processing tasks") as bar:
             for future in as_completed(futures):
                 # Check the status codes
-                out_file, returncode, insts, common, target, stdout, stderr = (
-                    future.result()
-                )
+                out_file, returncode, insts, common, target, stdout, stderr = future.result()
 
                 result = NopExperimentResult(
                     source_file=source_code,
@@ -3516,7 +3375,6 @@ def x_nop_qemu_parallel(
     )
     print(f"Report saved to {report_path}")
 
-
     print(f"UPSET ON MATCH: {upset_on_match}")
     print(f"Had {normal_df.shape}) normal")
     print(f"Had {error_df.shape}) error")
@@ -3547,7 +3405,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
         }
 
         for exp_name, exp in experiments.items():
-            #print(f"Running {exp_name}")
+            # print(f"Running {exp_name}")
 
             # Get the function itself
             command_name = exp.pop("command", None)
@@ -3704,7 +3562,6 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 )  # , target=target, num_cpus=num_cpus)
 
 
-
 @app.command
 def gather_reports(inp: Path, out: Path, force: bool = False, substrs: list[str] = []):
     """
@@ -3715,15 +3572,11 @@ def gather_reports(inp: Path, out: Path, force: bool = False, substrs: list[str]
     """
     if out.exists():
         if not force:
-            print(
-                "The destination already exists, if this is okay pass the force command"
-            )
+            print("The destination already exists, if this is okay pass the force command")
             return
 
         if out.is_file():
-            print(
-                "The destination already exists is is a file. Please provide a new output"
-            )
+            print("The destination already exists is is a file. Please provide a new output")
             return
 
         out.mkdir(parents=True, exist_ok=True)
@@ -3786,9 +3639,7 @@ def get_overhead(
         tot_runtime = 0
 
         for _ in range(run_count):
-            _, _, _, runtime = timed_run_binary_w_input(
-                comp_inp, runtime_inp, target, timeout
-            )
+            _, _, _, runtime = timed_run_binary_w_input(comp_inp, runtime_inp, target, timeout)
             tot_runtime += runtime
 
         results.append((source_len, num_inst, tot_runtime / run_count))
@@ -3804,10 +3655,7 @@ def get_overhead(
     shutil.rmtree(out)
 
 
-
-def dataset_split_random(
-    data, val_size=0.25, test_size=0.25, random_state=3, column="split"
-):
+def dataset_split_random(data, val_size=0.25, test_size=0.25, random_state=3, column="split"):
     """
     Split DataFrame into 3 non-overlapping parts: train,val,test with specified proportions
 
@@ -3828,6 +3676,7 @@ def dataset_split_random(
     test = data.loc[test_idx]
 
     return train, val, test
+
 
 def plot_faults_and_failures(start_addr, end_addr, faulted_addresses, failed_addresses):
     """
@@ -3953,11 +3802,8 @@ def nn_generate_exp_files(
     )
 
 
-
 # TODO: Add this
-def compare_plot(
-    nop_list, bit_list, static_list, segfaults, num_instructions, out_path
-):
+def compare_plot(nop_list, bit_list, static_list, segfaults, num_instructions, out_path):
     # Configuration
     dtypes = ["Bypass", "Loop", "Constant", "Branch", "NOP", "BIT"]
     colors = {
@@ -4053,7 +3899,7 @@ def compare_plot(
         ]
     else:
         legend_handles = [
-            #mpatches.Patch(color=colors["Upset & Error"], label="Error and Upset Output"),
+            # mpatches.Patch(color=colors["Upset & Error"], label="Error and Upset Output"),
             mpatches.Patch(color=colors["Upset"], label="Upset"),
             mpatches.Patch(color=colors["Error"], label="Error"),
         ]
@@ -4065,9 +3911,7 @@ def compare_plot(
     return plt
 
 
-def _accuracy_series(
-    df: pd.DataFrame, *, is_bit: bool, aggregate: str = "max"
-) -> np.ndarray:
+def _accuracy_series(df: pd.DataFrame, *, is_bit: bool, aggregate: str = "max") -> np.ndarray:
     """
     Return a 1D numpy array of accuracies suitable for plotting.
     - is_bit=True: one row per (flipped_addr, flipped_index) -> use all rows.
@@ -4196,9 +4040,8 @@ def compare_regs(
     print(mut_stdout)
 
 
-
 @app.command()
-def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path, tick_int: int ):
+def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path, tick_int: int):
     """Make the spectrral plot.
 
     Spectral plot has the address as the x addr and plots
@@ -4229,14 +4072,26 @@ def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path, tick_
     out.mkdir(exist_ok=True)
 
     create_single_plot(
-        nop_list, nop_e_list, "NOP", nop_df.shape[0], out.joinpath("NOP.jpeg"), all_addrs, False, tick_int
+        nop_list,
+        nop_e_list,
+        "NOP",
+        nop_df.shape[0],
+        out.joinpath("NOP.jpeg"),
+        all_addrs,
+        False,
+        tick_int,
     )
 
     create_single_plot(
-        bit_list,  bit_e_list, "BIT", nop_df.shape[0], out.joinpath("BIT.jpeg"), all_addrs, True, tick_int
+        bit_list,
+        bit_e_list,
+        "BIT",
+        nop_df.shape[0],
+        out.joinpath("BIT.jpeg"),
+        all_addrs,
+        True,
+        tick_int,
     )
-
-
 
 
 def create_single_plot(
@@ -4252,15 +4107,15 @@ def create_single_plot(
     """Create a spectrum plot."""
     # Colors
     colors = {
-        "Upset & Error": "#7f2a19",       # Error + Upset
-        "Error": "#f6b26b",    # Error
-        "Upset": "#e66c2c", # Upset
-        "normal": "#ffffff",     # white (was gray)
+        "Upset & Error": "#7f2a19",  # Error + Upset
+        "Error": "#f6b26b",  # Error
+        "Upset": "#e66c2c",  # Upset
+        "normal": "#ffffff",  # white (was gray)
     }
 
     n = len(all_addrs)
 
-    #fig, ax = plt.subplots(figsize=(16, 4))
+    # fig, ax = plt.subplots(figsize=(16, 4))
     fig, ax = plt.subplots(figsize=(16, 2))
 
     # Draw one very thin horizontal bar per address position
@@ -4292,13 +4147,13 @@ def create_single_plot(
     ax.invert_yaxis()
 
     # Kill the automatic margins that create the right-edge gap
-    ax.set_xlim(0, n)        # exactly span 0..n, no extra pad
-    ax.set_ylim(-0.5, 0.5)   # no extra vertical pad
+    ax.set_xlim(0, n)  # exactly span 0..n, no extra pad
+    ax.set_ylim(-0.5, 0.5)  # no extra vertical pad
     ax.margins(x=0, y=0)
 
     # X ticks
     tick_interval = tick_int
-    xticks = list(range(0, n + 1, tick_interval)) #+ [n]
+    xticks = list(range(0, n + 1, tick_interval))  # + [n]
     xtick_labels = [str(i + 1) for i in xticks]
     ax.set_xticks(xticks)
     ax.set_xticklabels(xtick_labels, fontsize=28)
@@ -4329,13 +4184,11 @@ def create_single_plot(
         fontsize=22,
         ncol=len(handles),
         loc="lower center",
-        bbox_to_anchor=(0.5, 1.02), # put it above the plot; adjust if you like
+        bbox_to_anchor=(0.5, 1.02),  # put it above the plot; adjust if you like
         frameon=True,
     )
 
     fig.savefig(out, dpi=800, bbox_inches="tight")
-
-
 
 
 def create_plot(
@@ -4435,7 +4288,6 @@ def create_plot(
     )
 
     figa.savefig(out, dpi=1200, bbox_inches="tight")
-
 
 
 if __name__ == "__main__":
