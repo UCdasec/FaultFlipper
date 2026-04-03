@@ -2358,6 +2358,7 @@ def x_bit_qemu_parallel(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
+    upset_on_match: bool | None = None
 ):
     """Run the x bit mutation scheme with a parallel qemu backend.
 
@@ -3359,6 +3360,7 @@ def x_nop_qemu_parallel(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
+    upset_on_match: bool | None = None
 ):
     """Run an experiment that gernerates mutant binaries with num_nops, and tests them with QEMU.
 
@@ -3401,6 +3403,11 @@ def x_nop_qemu_parallel(
     original_bin = common.program_file
 
     disasm = disassemble_text_section(common.program_file)
+
+    if common.dynamic_filter:
+        disasm = dyna_detect_insns(common,  target, disasm)
+
+
     max_start = len(disasm) - num_nops + 1
     indices = list(range(max_start))
     if addresses_json is not None:
@@ -3483,7 +3490,8 @@ def x_nop_qemu_parallel(
 
     report_path = common.out_dir.parent.joinpath("report.md")
 
-    upset_on_match = False if "fib" in results[0].source_file.name else True
+    if upset_on_match is None:
+        upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
     if delete_non_upsets:
@@ -3562,6 +3570,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 num_cpus = formated.pop("num_cpus")
                 num_nops = formated.get("num_nops")
                 func_names = formated.get("func_names")
+                upset_on_match = formated.get("upset_on_match")
                 addresses_json = formated.pop("addresses_json", None)
                 if addresses_json is not None:
                     addresses_json = Path(addresses_json)
@@ -3575,6 +3584,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                         num_cpus=num_cpus,
                         num_nops=num_nops,
                         addresses_json=addresses_json,
+                        upset_on_match=upset_on_match,
                     )
                 else:
                     params = CommandParameters(**formated)
@@ -3584,6 +3594,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                         num_cpus=num_cpus,
                         func_names=func_names,
                         addresses_json=addresses_json,
+                        upset_on_match=upset_on_match,
                     )
 
             elif command_name in ["x_bit"]:
@@ -3591,6 +3602,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                 num_cpus = formated.pop("num_cpus")
                 num_bits = formated.get("num_bits")
                 func_names = formated.get("func_names")
+                upset_on_match = formated.get("upset_on_match")
                 addresses_json = formated.pop("addresses_json", None)
                 if addresses_json is not None:
                     addresses_json = Path(addresses_json)
@@ -3605,6 +3617,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                         num_bits=num_bits,
                         func_names=func_names,
                         addresses_json=addresses_json,
+                        upset_on_match=upset_on_match,
                     )
                 else:
                     params = CommandParameters(**formated)
@@ -3614,6 +3627,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
                         num_cpus=num_cpus,
                         func_names=func_names,
                         addresses_json=addresses_json,
+                        upset_on_match=upset_on_match,
                     )
 
             elif command_name in ["x_nop_reg"]:
