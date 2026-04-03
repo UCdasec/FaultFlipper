@@ -852,7 +852,6 @@ def bit_no_comp_inout(
             if repeat_addr != cur_addr:
                 repeat_addr = cur_addr
                 unique_instr_counts[instr_type] += 1
-            unique_instr_counts[instr_type] += 1
 
             instr_counts[instr_type] += 1
             bar()
@@ -863,10 +862,15 @@ def bit_no_comp_inout(
             cur_addr = cur_addr.split("_")[0]
             cur_addr = int(cur_addr, 16)
 
-            # Count instructions
+            # Only execute if address is unique (BIT)
             instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            if repeat_addr != cur_addr:
+                repeat_addr = cur_addr
+                unique_vulnerable_instr_counts[instr_type] += 1
+
+            # Count instructions
             vulnerable_instr_counts[instr_type] += 1
-            unique_vulnerable_instr_counts[instr_type] += 1
+
             bar()
 
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:

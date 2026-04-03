@@ -59,6 +59,16 @@ def print_results(results: list[Result]):
 
 
 def analyze(data1, data2):
+    """
+    Analyze two datasets via constructing a contingency table and performing Fisher-Exact/Chi-Square
+    tests for each instruction on each dataset.
+
+    Contingency table constructed by creating columns for each dataset. Row-1 contains the total
+    number of upsets for an instruction type, whereas Row-2 contains the "normal" and "error" cases.
+    By constructing a contingency table, we can perform chi2_contingency
+    (https://docs.scipy.org/doc/scipy/reference/generated/scipy.stats.chi2_contingency.html)
+    analysis.
+    """
     all_instructions = set(data1["total"].keys()) | set(data2["total"].keys())
     results = []
 
