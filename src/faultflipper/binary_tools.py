@@ -1,7 +1,7 @@
-import os
 import json
-import signal
+import os
 import shutil
+import signal
 import struct
 import subprocess
 from collections import Counter, defaultdict
@@ -16,9 +16,6 @@ from typing import Any
 import capstone
 import lief
 import pandas as pd
-from faultflipper.angr_backend import (
-    run_angr_insn_trace,
-)
 from capstone import (
     CS_ARCH_ARM,
     CS_ARCH_ARM64,
@@ -31,6 +28,10 @@ from capstone import (
     CsInsn,
 )
 from elftools.elf.elffile import ELFFile
+
+from faultflipper.angr_backend import (
+    run_angr_insn_trace,
+)
 
 
 class OptimizationLevel(Enum):
@@ -2238,7 +2239,7 @@ def extract_model(target, model_config: Path | None) -> dict[str, float] | None:
         return None
 
     try:
-        with open(model_config, "r") as file:
+        with open(model_config) as file:
             loaded_data = json.load(file)
 
     except FileNotFoundError:
@@ -2460,13 +2461,11 @@ def compile_program(
         raise e
 
 
-# TODO: sync with disasm to avoid disassembling the same binaries multiple times
-def extract_instr_type(disasm, address: int) -> str:
-    for instr in disasm:
-        if instr.address == address:
-            return instr.mnemonic
-
-    raise Exception(f"Did not find instruction address 0x{address:x}")
+def extract_instr_type(disasm_lookup: dict[int, str], address: int) -> str:
+    try:
+        return disasm_lookup[address]
+    except KeyError:
+        raise Exception(f"Did not find instruction address 0x{address:x}")
 
 
 def disasm(

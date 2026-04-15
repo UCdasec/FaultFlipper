@@ -808,6 +808,7 @@ def bit_no_comp_inout(
     upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
     bins = [Path(x) for x in list(summary_df["binary_path"])]
     source_disasm = disassemble_text_section(common.program_file.absolute())
+    disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
 
     repeat_addr = -1
     with alive_bar(len(bins), title="Processing total bins") as bar:
@@ -816,9 +817,7 @@ def bit_no_comp_inout(
             cur_addr = cur_addr.split("_")[0]
             cur_addr = int(cur_addr, 16)
 
-            #print(f'0x{cur_addr:x}')
-            #print(f'0x{source_disasm[0].address:x} to 0x{source_disasm[len(source_disasm)-1].address:x}')
-            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
 
             # Only execute if address is unique (BIT)
             if repeat_addr != cur_addr:
@@ -835,7 +834,7 @@ def bit_no_comp_inout(
             cur_addr = int(cur_addr, 16)
 
             # Only execute if address is unique (BIT)
-            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
             if repeat_addr != cur_addr:
                 repeat_addr = cur_addr
                 unique_vulnerable_instr_counts[instr_type] += 1
@@ -1622,6 +1621,7 @@ def nop_no_comp_inout(
     upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
     bins = [Path(x) for x in list(summary_df["binary_path"])]
     source_disasm = disassemble_text_section(common.program_file.absolute())
+    disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
 
     #repeat_addr = -1
     with alive_bar(len(bins), title="Processing total bins") as bar:
@@ -1634,7 +1634,7 @@ def nop_no_comp_inout(
             #     cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
             cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
-            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
 
             # Only execute if address is unique (BIT)
             # if repeat_addr != cur_addr:
@@ -1650,7 +1650,7 @@ def nop_no_comp_inout(
             cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
             # Count instructions
-            instr_type: str = extract_instr_type(source_disasm, cur_addr)
+            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
             vulnerable_instr_counts[instr_type] += 1
             unique_vulnerable_instr_counts[instr_type] += 1
             bar()

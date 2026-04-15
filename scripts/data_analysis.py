@@ -1,15 +1,16 @@
 #!/usr/bin/python
 
-from dataclasses import dataclass
-import sys
 import json
 import os
-from collections import defaultdict
+import sys
+from dataclasses import dataclass
 
-from tabulate import tabulate
-from scipy.stats import chi2_contingency, fisher_exact
-import pandas as pd
 import numpy as np
+from scipy.stats import chi2_contingency, fisher_exact
+from statsmodels.stats.power import GofChisquarePower
+from tabulate import tabulate
+
+ALPHA = 0.05
 
 
 @dataclass
@@ -39,27 +40,29 @@ def print_results(results: list[Result], image1: str, image2: str):
 
     table_data = []
     for r in results:
-        table_data.append([
-            r.instruction,
-            f"{r.rate1} ({r.count1})",
-            f"{r.rate2} ({r.count2})",
-            f"{r.p_value:.4e}",
-            r.test,
-            "Yes" if r.significant else "No"
-        ])
+        table_data.append(
+            [
+                r.instruction,
+                f"{r.rate1} ({r.count1})",
+                f"{r.rate2} ({r.count2})",
+                f"{r.p_value:.4e}",
+                r.test,
+                "Yes" if r.significant else "No",
+            ]
+        )
 
     headers = ["Instruction", f"{image1} Rate", f"{image2} Rate", "P-Value", "Test", "Sig?"]
-    
+
     print(tabulate(table_data, headers=headers, tablefmt="pretty", stralign="right"))
     # print latex formatting
-    #print(tabulate(table_data, headers=headers, tablefmt="latex", stralign="right"))
+    # print(tabulate(table_data, headers=headers, tablefmt="latex", stralign="right"))
 
     return
     # 1. Calculate dynamic width for the 'Instruction' column
     # Find the longest instruction name, but ensure it's at least 15
     max_instr = max([len(r.instruction) for r in results] + [len("Instruction")])
-    instr_w = max_instr + 2 # Add some breathing room
-    
+    instr_w = max_instr + 2  # Add some breathing room
+
     rate_w = 20
     p_val_w = 12
     test_w = 15
@@ -74,14 +77,14 @@ def print_results(results: list[Result], image1: str, image2: str):
         f"{'Test Used':^{test_w}}"
         f"{'Significant':>{sig_w}}"
     )
-    
+
     print("\n" + header)
     print("-" * len(header))
 
     # 3. Print Rows
     for r in results:
         sig_text = "yes" if r.significant else "no"
-        
+
         # Combine rate and count into one string first to align them as a unit
         r1_str = f"{r.rate1:.3f} ({r.count1})"
         r2_str = f"{r.rate2:.3f} ({r.count2})"
@@ -94,6 +97,46 @@ def print_results(results: list[Result], image1: str, image2: str):
             f"{r.test:^{test_w}}"
             f"{sig_text:>{sig_w}}"
         )
+
+
+def calculate_dataset_independence(data1, data2):
+    """
+    Constructs a 2 x N contingency table to test if the distribution of
+    instruction types is independent of the dataset. If the number of
+    instructions is below 5, the column is dropped for that instruction type
+
+    Row 1: Dataset 1 instruction counts
+    Row 2: Dataset 2 instruction counts
+    Columns: Instruction types
+    """
+    all_instructions = sorted(set(data1["total"].keys()) | set(data2["total"].keys()))
+    row1 = []
+    row2 = []
+    for inst in all_instructions:
+        d1count = data1["total"].get(inst, 0)
+        d2count = data2["total"].get(inst, 0)
+        # drop column if less than 5 for Chi-Squared tests
+        if d1count < 5 or d2count < 5:
+            if d1count > 30 or d2count > 30:
+                raise ValueError("Instruction count disparity greater than 25")
+            continue
+
+        row1.append(d1count)
+        row2.append(d2count)
+    table = [row1, row2]
+    try:
+        chi2_stat, p_val, dof, expected = chi2_contingency(table)
+        print(f"Chi:{chi2_stat}, P:{p_val}, DoF:{dof}")
+        print(f"Expected:{expected}")
+
+        effect_size = 0.5  # Large effect
+        power = 0.80  # Standard chosen value
+        n_samples = GofChisquarePower().solve_power(
+            effect_size=effect_size, alpha=ALPHA, power=power, n_bins=(dof + 1)
+        )
+        print(f"Required Samples: {n_samples}")
+    except ValueError as e:
+        print(f"Could not calculate Chi-Square: {e}")
 
 
 def calculate_significances(data1, data2):
@@ -110,6 +153,7 @@ def calculate_significances(data1, data2):
     all_instructions = set(data1["total"].keys()) | set(data2["total"].keys())
     results = []
 
+    # calculate Chi-Squared statistic between instruction types
     for inst in all_instructions:
         vul1 = data1["vulnerable"].get(inst, 0)
         total1 = data1["total"].get(inst, 0)
@@ -139,13 +183,13 @@ def calculate_significances(data1, data2):
 
             result = {
                 "instruction": inst,
-                "rate1": round((vul1/total1), 3),
+                "rate1": round((vul1 / total1), 3),
                 "count1": vul1,
-                "rate2": round((vul2/total2), 3),
+                "rate2": round((vul2 / total2), 3),
                 "count2": vul2,
                 "p_value": p,
                 "test": test_used,
-                "significant": p < 0.05,
+                "significant": p < ALPHA,
             }
             results.append(Result(**result))
         except ValueError:
@@ -157,11 +201,11 @@ def calculate_significances(data1, data2):
 
 def calculate_coverage(results: list[Result], total_upset_count: int):
     sig = sum([r.count1 + r.count2 for r in results if r.significant])
-    return sig/total_upset_count
+    return sig / total_upset_count
 
 
 def get_instruction_data(filename: str):
-    with open(filename, "r") as f:
+    with open(filename) as f:
         loaded_data = json.load(f)
 
     # json keys used to categorize data
@@ -179,14 +223,17 @@ if __name__ == "__main__":
         file1: str = sys.argv[1]
         file2: str = sys.argv[2]
 
-        datafile1 = Datafile(file1) 
-        datafile2 = Datafile(file2) 
+        datafile1 = Datafile(file1)
+        datafile2 = Datafile(file2)
 
         significances = calculate_significances(data1=datafile1.data, data2=datafile2.data)
+        calculate_dataset_independence(data1=datafile1.data, data2=datafile2.data)
 
-        total_upset_count = sum(datafile1.data["vulnerable"].values()) + sum(datafile2.data["vulnerable"].values())
+        total_upset_count = sum(datafile1.data["vulnerable"].values()) + sum(
+            datafile2.data["vulnerable"].values()
+        )
         coverage = calculate_coverage(significances, total_upset_count)
-        coverage = coverage * 100 # percent
+        coverage = coverage * 100  # percent
         print(f"Significance Coverage: {coverage:.3}%")
 
         print_results(significances, datafile1.image_name, datafile2.image_name)

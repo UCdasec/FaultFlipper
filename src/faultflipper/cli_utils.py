@@ -1,11 +1,11 @@
 import json
 import logging
 import random
+from collections import defaultdict
 from dataclasses import dataclass, fields
 from enum import Enum
 from pathlib import Path
 from typing import Literal
-from collections import defaultdict
 
 import pandas as pd
 from binary_tools import (
@@ -13,9 +13,9 @@ from binary_tools import (
     Target,
     disasm,
     disassemble_text_section,
+    extract_instr_type,
     generate_run_cmd,
     map_asm_to_c,
-    extract_instr_type,
 )
 from cyclopts import Parameter
 from enums import LinuxExitCodes
@@ -587,6 +587,7 @@ def save_report(
         names_str += f"- {bin_file.name} \n\n"
 
     source_disasm = disassemble_text_section(common.program_file.absolute())
+    disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
 
     # Get mapping for each instruction count
     for bin in bins:
@@ -597,7 +598,7 @@ def save_report(
         else:
             cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
-        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+        instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
 
         # Only execute if address is unique (BIT)
         if repeat_addr != cur_addr:
@@ -618,7 +619,7 @@ def save_report(
             cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
         # Count instructions
-        instr_type: str = extract_instr_type(source_disasm, cur_addr)
+        instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
         vulnerable_instr_counts[instr_type] += 1
 
         # Only execute if address is unique (BIT)
