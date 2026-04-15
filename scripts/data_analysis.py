@@ -3,8 +3,10 @@
 from dataclasses import dataclass
 import sys
 import json
+import os
 from collections import defaultdict
 
+from tabulate import tabulate
 from scipy.stats import chi2_contingency, fisher_exact
 import pandas as pd
 import numpy as np
@@ -13,52 +15,88 @@ import numpy as np
 @dataclass
 class Result:
     instruction: str
-    rate1: str
-    rate2: str
+    rate1: float
+    count1: int
+    rate2: float
+    count2: int
     p_value: float
     test: str
     significant: bool
 
 
-def print_results(results: list[Result]):
+@dataclass
+class Datafile:
+    image_name: str
+    data: dict
+
+    def __init__(self, file):
+        self.image_name = os.path.basename(os.path.dirname(file))
+        self.data = get_instruction_data(file)
+
+
+def print_results(results: list[Result], image1: str, image2: str):
     results.sort(key=lambda x: x.p_value)
 
-    if not results:
-        print("No results to display.")
-        return
+    table_data = []
+    for r in results:
+        table_data.append([
+            r.instruction,
+            f"{r.rate1} ({r.count1})",
+            f"{r.rate2} ({r.count2})",
+            f"{r.p_value:.4e}",
+            r.test,
+            "Yes" if r.significant else "No"
+        ])
 
-    # define column widths
-    instr_w = 15
-    rate_w = 12
+    headers = ["Instruction", f"{image1} Rate", f"{image2} Rate", "P-Value", "Test", "Sig?"]
+    
+    print(tabulate(table_data, headers=headers, tablefmt="pretty", stralign="right"))
+    # print latex formatting
+    #print(tabulate(table_data, headers=headers, tablefmt="latex", stralign="right"))
+
+    return
+    # 1. Calculate dynamic width for the 'Instruction' column
+    # Find the longest instruction name, but ensure it's at least 15
+    max_instr = max([len(r.instruction) for r in results] + [len("Instruction")])
+    instr_w = max_instr + 2 # Add some breathing room
+    
+    rate_w = 20
     p_val_w = 12
     test_w = 15
     sig_w = 12
 
+    # 2. Build the Header
     header = (
-        f"{'Instruction':<{instr_w}} "
-        f"{'Rate 1':>{rate_w}} "
-        f"{'Rate 2':>{rate_w}} "
-        f"{'P-Value':>{p_val_w}} "
-        f"{'Test Used':^{test_w}} "
+        f"{'Instruction':<{instr_w}}"
+        f"{f'{image1} (Rate)':>{rate_w}}"
+        f"{f'{image2} (Rate)':>{rate_w}}"
+        f"{'P-Value':>{p_val_w}}"
+        f"{'Test Used':^{test_w}}"
         f"{'Significant':>{sig_w}}"
     )
-    print(header)
+    
+    print("\n" + header)
     print("-" * len(header))
 
+    # 3. Print Rows
     for r in results:
-        sig_text = "Significant★" if r.significant else "Insignificant"
+        sig_text = "yes" if r.significant else "no"
+        
+        # Combine rate and count into one string first to align them as a unit
+        r1_str = f"{r.rate1:.3f} ({r.count1})"
+        r2_str = f"{r.rate2:.3f} ({r.count2})"
 
         print(
-            f"{r.instruction:<{instr_w}} "
-            f"{r.rate1:>{rate_w}} "
-            f"{r.rate2:>{rate_w}} "
-            f"{r.p_value:>{p_val_w}.4e} "
-            f"{r.test:^{test_w}} "
+            f"{r.instruction:<{instr_w}}"
+            f"{r1_str:>{rate_w}}"
+            f"{r2_str:>{rate_w}}"
+            f"{r.p_value:>{p_val_w}.4e}"
+            f"{r.test:^{test_w}}"
             f"{sig_text:>{sig_w}}"
         )
 
 
-def analyze(data1, data2):
+def calculate_significances(data1, data2):
     """
     Analyze two datasets via constructing a contingency table and performing Fisher-Exact/Chi-Square
     tests for each instruction on each dataset.
@@ -101,8 +139,10 @@ def analyze(data1, data2):
 
             result = {
                 "instruction": inst,
-                "rate1": f"{(vul1/total1):.3%}",
-                "rate2": f"{(vul2/total2):.3%}",
+                "rate1": round((vul1/total1), 3),
+                "count1": vul1,
+                "rate2": round((vul2/total2), 3),
+                "count2": vul2,
                 "p_value": p,
                 "test": test_used,
                 "significant": p < 0.05,
@@ -113,6 +153,11 @@ def analyze(data1, data2):
             continue
 
     return results
+
+
+def calculate_coverage(results: list[Result], total_upset_count: int):
+    sig = sum([r.count1 + r.count2 for r in results if r.significant])
+    return sig/total_upset_count
 
 
 def get_instruction_data(filename: str):
@@ -133,9 +178,17 @@ if __name__ == "__main__":
     if len(sys.argv) > 2:
         file1: str = sys.argv[1]
         file2: str = sys.argv[2]
-        data1 = get_instruction_data(file1)
-        data2 = get_instruction_data(file2)
-        results = analyze(data1=data1, data2=data2)
-        print_results(results)
+
+        datafile1 = Datafile(file1) 
+        datafile2 = Datafile(file2) 
+
+        significances = calculate_significances(data1=datafile1.data, data2=datafile2.data)
+
+        total_upset_count = sum(datafile1.data["vulnerable"].values()) + sum(datafile2.data["vulnerable"].values())
+        coverage = calculate_coverage(significances, total_upset_count)
+        coverage = coverage * 100 # percent
+        print(f"Significance Coverage: {coverage:.3}%")
+
+        print_results(significances, datafile1.image_name, datafile2.image_name)
     else:
         print("Error: No file provided. Usage: python data_analysis.py <filename>")

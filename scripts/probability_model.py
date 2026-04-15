@@ -7,7 +7,7 @@ from enum import Enum
 
 import pandas as pd
 
-from data_analysis import analyze, get_instruction_data
+from data_analysis import get_instruction_data
 
 
 class Metric(Enum):
@@ -17,7 +17,7 @@ class Metric(Enum):
     UniqueInstruction = (4,)
 
 
-def analyze_MMR(data) -> dict:
+def analyze_MMR(data, threshold) -> dict:
     create_df = lambda dictionary: pd.DataFrame(
         list(dictionary.items()), columns=["Instruction", "Count"]
     )
@@ -33,18 +33,17 @@ def analyze_MMR(data) -> dict:
     merged["Vul_Rate"] = merged["Vul_Count"] / merged["Total_Count"]
 
     # temporary, if greather than threshold, set rate to 100%
-    threshold = 0.025
     merged.loc[merged["Vul_Rate"] > threshold, "Vul_Rate"] = 1
 
     return dict(zip(merged["Instruction"], merged["Vul_Rate"]))
 
 
-def construct_probability_model(data, metric: Metric):
+def construct_probability_model(data, threshold, metric: Metric):
     """
     Construct probability model with selected metric
     """
     if metric == Metric.MMR:
-        prob_dict = analyze_MMR(data)
+        prob_dict = analyze_MMR(data, threshold=threshold)
 
         model_json = {"target": data["target"], "instruction_probabilities": prob_dict}
 
@@ -61,15 +60,19 @@ if __name__ == "__main__":
 
     # 'nargs='+' gathers all remaining arguments into a list
     parser.add_argument(
-        "files", metavar="F", type=str, nargs="+", help="an integer for the accumulator"
+        "files", metavar="F", type=str, nargs="+", help="list of files to analyze"
+    )
+    parser.add_argument(
+        "threshold", metavar="T", type=float, help="floating point threshold value"
     )
 
     args = parser.parse_args()
     file_list = args.files
+    threshold = args.threshold
 
     for file in file_list:
         data = get_instruction_data(file)
         # TODO: verify targets are identical
         # TODO: check to add probabilities only if they are deemed SIGNIFICANT by chi-squared test
         # TODO: combine different instruction files to create single prob. model
-        construct_probability_model(data, Metric.MMR)
+        construct_probability_model(data, threshold, Metric.MMR)
