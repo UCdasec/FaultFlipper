@@ -51,6 +51,12 @@ that can be run to analyze a binary. To see a list of commands run:
 python src/cli.py --help
 ```
 
+Alternatively, you can build the provided Dockerfile by running:
+```sh
+docker build . -t fault-flipper
+```
+We also provide a `run_docker.sh` file that shows an example of how to run within a dockerized environment.
+
 ## Example Experiments - Password Check
 
 An example experiment that will (1) compile the binary `test_files/password_check.c`
