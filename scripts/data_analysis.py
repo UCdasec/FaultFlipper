@@ -127,7 +127,6 @@ def calculate_dataset_independence(data1, data2):
     try:
         chi2_stat, p_val, dof, expected = chi2_contingency(table)
         print(f"Chi:{chi2_stat}, P:{p_val}, DoF:{dof}")
-        print(f"Expected:{expected}")
 
         effect_size = 0.5  # Large effect
         power = 0.80  # Standard chosen value
