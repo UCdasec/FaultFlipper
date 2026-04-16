@@ -817,15 +817,19 @@ def bit_no_comp_inout(
             cur_addr = cur_addr.split("_")[0]
             cur_addr = int(cur_addr, 16)
 
-            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
+            try:
+                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
 
-            # Only execute if address is unique (BIT)
-            if repeat_addr != cur_addr:
-                repeat_addr = cur_addr
-                unique_instr_counts[instr_type] += 1
+                # Only execute if address is unique (BIT)
+                if repeat_addr != cur_addr:
+                    repeat_addr = cur_addr
+                    unique_instr_counts[instr_type] += 1
 
-            instr_counts[instr_type] += 1
-            bar()
+                instr_counts[instr_type] += 1
+            except Exception as e:
+                print(f"[Exception]: {e}")
+            finally:
+                bar()
 
     with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
         for bin in upset_bins:
@@ -834,15 +838,18 @@ def bit_no_comp_inout(
             cur_addr = int(cur_addr, 16)
 
             # Only execute if address is unique (BIT)
-            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
-            if repeat_addr != cur_addr:
-                repeat_addr = cur_addr
-                unique_vulnerable_instr_counts[instr_type] += 1
+            try:
+                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
+                if repeat_addr != cur_addr:
+                    repeat_addr = cur_addr
+                    unique_vulnerable_instr_counts[instr_type] += 1
 
-            # Count instructions
-            vulnerable_instr_counts[instr_type] += 1
-
-            bar()
+                # Count instructions
+                vulnerable_instr_counts[instr_type] += 1
+            except Exception as e:
+                print(f"[Exception]: {e}")
+            finally:
+                bar()
 
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {
@@ -1634,26 +1641,34 @@ def nop_no_comp_inout(
             #     cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
             cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
-            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
+            try:
+                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
 
-            # Only execute if address is unique (BIT)
-            # if repeat_addr != cur_addr:
-            #     repeat_addr = cur_addr
-            #     unique_instr_counts[instr_type] += 1
-            unique_instr_counts[instr_type] += 1
+                # Only execute if address is unique (BIT)
+                # if repeat_addr != cur_addr:
+                #     repeat_addr = cur_addr
+                #     unique_instr_counts[instr_type] += 1
+                unique_instr_counts[instr_type] += 1
 
-            instr_counts[instr_type] += 1
-            bar()
+                instr_counts[instr_type] += 1
+            except Exception as e:
+                print(f"[Exception]: {e}")
+            finally:
+                bar()
 
     with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
         for bin in upset_bins:
             cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
             # Count instructions
-            instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
-            vulnerable_instr_counts[instr_type] += 1
-            unique_vulnerable_instr_counts[instr_type] += 1
-            bar()
+            try:
+                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
+                vulnerable_instr_counts[instr_type] += 1
+                unique_vulnerable_instr_counts[instr_type] += 1
+            except Exception as e:
+                print(f"[Exception]: {e}")
+            finally:
+                bar()
 
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {
