@@ -1,0 +1,67 @@
+[experiment.bit_face_img_0000_lbl_7]
+command = 'bit_no_comp_inout'
+expected-stdout = ''
+num_cpus=16
+no_compile=true
+program-input= ''
+program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0000_lbl_7.png']
+expected-returncode = ''
+outs = ['7']
+list-expected = false
+timeout = 4
+out-dir = '/home/brendan/FaultFlipper/experiments/face_0000_7'
+yes = true 
+target = 'ARM_32' 
+expected-correct = '1' 
+
+[experiment.bit_face_img_0010_lbl_7]
+command = 'bit_no_comp_inout'
+expected-stdout = ''
+num_cpus=16
+no_compile=true
+program-input= ''
+program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0010_lbl_7.png']
+expected-returncode = ''
+outs = ['7']
+list-expected = false
+timeout = 4
+out-dir = '/home/brendan/FaultFlipper/experiments/face_0010_7'
+yes = true 
+target = 'ARM_32' 
+expected-correct = '1' 
+
+[experiment.bit_face_img_0002_lbl_11]
+command = 'bit_no_comp_inout'
+expected-stdout = ''
+num_cpus=16
+no_compile=true
+program-input= ''
+program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0002_lbl_11.png']
+expected-returncode = ''
+outs = ['11']
+list-expected = false
+timeout = 4
+out-dir = '/home/brendan/FaultFlipper/experiments/face_0002_11'
+yes = true 
+target = 'ARM_32' 
+expected-correct = '1' 
+
+[experiment.bit_face_img_0007_lbl_11]
+command = 'bit_no_comp_inout'
+expected-stdout = ''
+num_cpus=16
+no_compile=true
+program-input= ''
+program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0007_lbl_11.png']
+expected-returncode = ''
+outs = ['11']
+list-expected = false
+timeout = 4
+out-dir = '/home/brendan/FaultFlipper/experiments/face_0007_11'
+yes = true 
+target = 'ARM_32' 
+expected-correct = '1' 

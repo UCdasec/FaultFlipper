@@ -2489,6 +2489,7 @@ def x_bit_qemu_parallel(
         for inst in disasm:
             future = executor.submit(
                 x_bit_para_run_helper, common, inst, target, num_bits, instr_probs
+            )
             futures.append(future)
 
         with alive_bar(len(futures), title="Processing tasks") as bar:
