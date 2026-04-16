@@ -57,47 +57,6 @@ def print_results(results: list[Result], image1: str, image2: str):
     # print latex formatting
     # print(tabulate(table_data, headers=headers, tablefmt="latex", stralign="right"))
 
-    return
-    # 1. Calculate dynamic width for the 'Instruction' column
-    # Find the longest instruction name, but ensure it's at least 15
-    max_instr = max([len(r.instruction) for r in results] + [len("Instruction")])
-    instr_w = max_instr + 2  # Add some breathing room
-
-    rate_w = 20
-    p_val_w = 12
-    test_w = 15
-    sig_w = 12
-
-    # 2. Build the Header
-    header = (
-        f"{'Instruction':<{instr_w}}"
-        f"{f'{image1} (Rate)':>{rate_w}}"
-        f"{f'{image2} (Rate)':>{rate_w}}"
-        f"{'P-Value':>{p_val_w}}"
-        f"{'Test Used':^{test_w}}"
-        f"{'Significant':>{sig_w}}"
-    )
-
-    print("\n" + header)
-    print("-" * len(header))
-
-    # 3. Print Rows
-    for r in results:
-        sig_text = "yes" if r.significant else "no"
-
-        # Combine rate and count into one string first to align them as a unit
-        r1_str = f"{r.rate1:.3f} ({r.count1})"
-        r2_str = f"{r.rate2:.3f} ({r.count2})"
-
-        print(
-            f"{r.instruction:<{instr_w}}"
-            f"{r1_str:>{rate_w}}"
-            f"{r2_str:>{rate_w}}"
-            f"{r.p_value:>{p_val_w}.4e}"
-            f"{r.test:^{test_w}}"
-            f"{sig_text:>{sig_w}}"
-        )
-
 
 def calculate_dataset_independence(data1, data2):
     """
