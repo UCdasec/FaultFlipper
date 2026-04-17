@@ -1,33 +1,33 @@
-[experiment.bit_face_img_0000_lbl_7]
+[experiment.bit_face_img_0019_lbl_6]
 command = 'bit_no_comp_inout'
 expected-stdout = ''
 num_cpus=16
 no_compile=true
 program-input= ''
 program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
-ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0000_lbl_7.png']
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0019_lbl_6.png']
 expected-returncode = ''
-outs = ['7']
+outs = ['6']
 list-expected = false
 timeout = 4
-out-dir = '/home/brendan/FaultFlipper/experiments/face_0000_7'
+out-dir = '/home/brendan/FaultFlipper/experiments/face_0019_6'
 yes = true 
 target = 'ARM_32' 
 expected-correct = '1' 
 
-[experiment.bit_face_img_0010_lbl_7]
+[experiment.bit_face_img_0064_lbl_6]
 command = 'bit_no_comp_inout'
 expected-stdout = ''
 num_cpus=16
 no_compile=true
 program-input= ''
 program-file = '/home/brendan/FaultFlipper/test_packages/emlearn_example/STATIC_face_mlp_arm32.o'
-ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0010_lbl_7.png']
+ins = ['/home/brendan/FaultFlipper/test_packages/emlearn_example/chopped_images/faces/image0064_lbl_6.png']
 expected-returncode = ''
-outs = ['7']
+outs = ['6']
 list-expected = false
 timeout = 4
-out-dir = '/home/brendan/FaultFlipper/experiments/face_0010_7'
+out-dir = '/home/brendan/FaultFlipper/experiments/face_0064_6'
 yes = true 
 target = 'ARM_32' 
 expected-correct = '1' 

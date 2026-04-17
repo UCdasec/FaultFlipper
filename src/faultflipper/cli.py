@@ -1,9 +1,8 @@
 import json
-import random
 import logging
 import math
 import shutil
-from collections import Counter, defaultdict
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
@@ -27,6 +26,7 @@ from binary_tools import (
     disasm,
     disassemble_text_section,
     dyna_detect_insns,
+    extract_model,
     generate_bit_mutated_file,
     generate_compile_cmd,
     # _generate_nop_mutated_bin,
@@ -35,8 +35,6 @@ from binary_tools import (
     run_binary_w_calltime_input,
     shift_exit_code,
     timed_run_binary_w_input,
-    extract_model,
-    extract_instr_type,
 )
 from cli_utils import (
     Backends,
@@ -46,6 +44,7 @@ from cli_utils import (
     RegBitFlipExperimentResult,
     RegCommandParameters,
     RegNopExperimentResult,
+    collect_upset_data,
     parse_results,
     save_reg_report,
     save_report,
@@ -622,39 +621,49 @@ def bit_no_comp_inout(
             print("All (addr, bit) pairs already processed. Skipping mutation run.")
         else:
             futures = []
+            def execute(instructions, title: str):
+                with ThreadPoolExecutor(max_workers=num_cpus) as executor:
+                    for inst in alive_it(instructions, title=f"Submitting {title}"):
+                        future = executor.submit(
+                            bit_inout_runner,
+                            inst,
+                            target,
+                            common,
+                            store,
+                            source_code,
+                            completed_pairs,
+                            input_pairs,
+                            use_store,
+                            mutated_bin_dir,
+                            delete_bins,
+                            base_bytes,
+                            text_section_offset,
+                            text_section_vaddr,
+                        )
+                        futures.append(future)
 
-            with ThreadPoolExecutor(max_workers=num_cpus) as executor:
-                # Run the threads
-                for inst in alive_it(disasm, title="Submitting tasks"):
-                    future = executor.submit(
-                        bit_inout_runner,
-                        inst,
-                        target,
-                        common,
-                        store,
-                        source_code,
-                        completed_pairs,
-                        input_pairs,
-                        use_store,
-                        mutated_bin_dir,
-                        delete_bins,
-                        base_bytes,
-                        text_section_offset,
-                        text_section_vaddr,
-                    )
-                    futures.append(future)
+                    with alive_bar(len(futures), title=f"Processing {title}") as bar:
+                        for future in as_completed(futures):
+                            try: 
+                                res = future.result()
+                                results.append(res)
+                            except Exception:
+                                pass
+                            finally:
+                                bar()
 
-                with alive_bar(len(futures), title="Processing tasks") as bar:
-                    for future in as_completed(futures):
-                        # Check the status codes
-                        try: 
-                            res = future.result()
-                            results.append(res)
-                        except Exception as e:
-                            #print(f"[Exception]: {e}")
-                            pass
-                        finally:
-                            bar()
+            # if random sample is enabled, we first collect data
+            instr_probs = None
+            if common.random_sample:
+                rng = np.random.default_rng()
+                percentage = 0.10
+                sample_count = int(len(disasm) * percentage)
+                samples = rng.choice(disasm, size=sample_count, replace=False)
+                execute(instructions=samples, title="samples")
+                # collect random sample data to estimate distribution, then
+                # run rest of instructions given that distribution
+
+            execute(instructions=disasm, title="tasks")
 
         if shm_dir is not None:
             try:
@@ -800,65 +809,16 @@ def bit_no_comp_inout(
     # ]
     # show_results(common, legacy_df, other_returncodes)
 
-    vulnerable_instr_counts = defaultdict(int)
-    unique_vulnerable_instr_counts = defaultdict(int)
-    instr_counts = defaultdict(int)
-    unique_instr_counts = defaultdict(int)
-
-    upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
-    bins = [Path(x) for x in list(summary_df["binary_path"])]
-    source_disasm = disassemble_text_section(common.program_file.absolute())
-    disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
-
-    repeat_addr = -1
-    with alive_bar(len(bins), title="Processing total bins") as bar:
-        for bin in bins:
-            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
-            cur_addr = cur_addr.split("_")[0]
-            cur_addr = int(cur_addr, 16)
-
-            try:
-                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
-
-                # Only execute if address is unique (BIT)
-                if repeat_addr != cur_addr:
-                    repeat_addr = cur_addr
-                    unique_instr_counts[instr_type] += 1
-
-                instr_counts[instr_type] += 1
-            except Exception as e:
-                print(f"[Exception]: {e}")
-            finally:
-                bar()
-
-    with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
-        for bin in upset_bins:
-            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
-            cur_addr = cur_addr.split("_")[0]
-            cur_addr = int(cur_addr, 16)
-
-            # Only execute if address is unique (BIT)
-            try:
-                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
-                if repeat_addr != cur_addr:
-                    repeat_addr = cur_addr
-                    unique_vulnerable_instr_counts[instr_type] += 1
-
-                # Count instructions
-                vulnerable_instr_counts[instr_type] += 1
-            except Exception as e:
-                print(f"[Exception]: {e}")
-            finally:
-                bar()
+    count = collect_upset_data(common, upset_df, summary_df, is_bit=True)
 
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {
             "target": str(target),
             "fault_model": "BIT",
-            "vulnerable": dict(vulnerable_instr_counts),
-            "total": dict(instr_counts),
-            "unique_total": dict(unique_instr_counts),
-            "unique_vul": dict(unique_vulnerable_instr_counts),
+            "vulnerable": dict(count.vulnerable_instr_counts),
+            "total": dict(count.instr_counts),
+            "unique_total": dict(count.unique_instr_counts),
+            "unique_vul": dict(count.unique_vulnerable_instr_counts),
         }
         json.dump(data_to_save, f, indent=4)
 
@@ -1463,7 +1423,7 @@ def nop_no_comp_inout(
                         try: 
                             res = future.result()
                             results.append(res)
-                        except Exception as e:
+                        except Exception:
                             #print(f"[Exception]: {e}")
                             pass
                         finally:
@@ -1620,64 +1580,16 @@ def nop_no_comp_inout(
     # legacy_df["failed"] = legacy_df["return_code"] == -999
     # show_results(common, legacy_df, other_returncodes)
 
-    vulnerable_instr_counts = defaultdict(int)
-    unique_vulnerable_instr_counts = defaultdict(int)
-    instr_counts = defaultdict(int)
-    unique_instr_counts = defaultdict(int)
-
-    upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
-    bins = [Path(x) for x in list(summary_df["binary_path"])]
-    source_disasm = disassemble_text_section(common.program_file.absolute())
-    disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
-
-    #repeat_addr = -1
-    with alive_bar(len(bins), title="Processing total bins") as bar:
-        for bin in bins:
-            # if is_bit:
-            #     cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
-            #     cur_addr = cur_addr.split("_")[0]
-            #     cur_addr = int(cur_addr, 16)
-            # else:
-            #     cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
-            cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
-
-            try:
-                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
-
-                # Only execute if address is unique (BIT)
-                # if repeat_addr != cur_addr:
-                #     repeat_addr = cur_addr
-                #     unique_instr_counts[instr_type] += 1
-                unique_instr_counts[instr_type] += 1
-
-                instr_counts[instr_type] += 1
-            except Exception as e:
-                print(f"[Exception]: {e}")
-            finally:
-                bar()
-
-    with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
-        for bin in upset_bins:
-            cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
-
-            # Count instructions
-            try:
-                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
-                vulnerable_instr_counts[instr_type] += 1
-                unique_vulnerable_instr_counts[instr_type] += 1
-            except Exception as e:
-                print(f"[Exception]: {e}")
-            finally:
-                bar()
+    count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
 
     with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
         data_to_save = {
             "target": str(target),
             "fault_model": "NOP",
-            "vulnerable": dict(vulnerable_instr_counts),
-            "total": dict(instr_counts),
-            "unique_total": dict(unique_instr_counts),
-            "unique_vul": dict(unique_vulnerable_instr_counts),
+            "vulnerable": dict(count.vulnerable_instr_counts),
+            "total": dict(count.instr_counts),
+            "unique_total": dict(count.unique_instr_counts),
+            "unique_vul": dict(count.unique_vulnerable_instr_counts),
         }
         json.dump(data_to_save, f, indent=4)
 

@@ -2,12 +2,13 @@ import json
 import logging
 import random
 from collections import defaultdict
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Literal
 
 import pandas as pd
+from alive_progress import alive_bar
 from binary_tools import (
     Nop,
     Target,
@@ -90,6 +91,7 @@ class CommandParameters:
     yes: bool = False
     program_source_code: Path | None = None
     probability_model: Path | None = None
+    random_sample: bool = False
     dynamic_filter: bool = False
     comp: bool = True
     opts: str | None = None  # compilation options
@@ -120,6 +122,7 @@ class CommandParameters:
             "probability_model": (
                 str(self.probability_model.absolute()) if self.probability_model else ""
             ),
+            "random_sample": self.random_sample
         }
 
 
@@ -902,3 +905,70 @@ def save_reg_report(
 
 def skip_fault(prob: float) -> bool:
     return random.random() < (1 - prob)
+
+
+@dataclass
+class InstructionCount:
+    vulnerable_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
+    unique_vulnerable_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
+    instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
+    unique_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
+
+
+def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summary_df: pd.DataFrame, is_bit: bool) -> InstructionCount:
+    """Return InstructionCount with all values for gathered data"""
+    count = InstructionCount()
+    upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
+    bins = [Path(x) for x in list(summary_df["binary_path"])]
+    source_disasm = disassemble_text_section(common.program_file.absolute())
+    disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
+
+    repeat_addr = -1
+    with alive_bar(len(bins), title="Processing total bins") as bar:
+        for bin in bins:
+            try:
+                if is_bit:
+                    cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+                    cur_addr = cur_addr.split("_")[0]
+                    cur_addr = int(cur_addr, 16)
+                else:
+                    cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
+
+                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
+
+                # Only execute if address is unique (BIT)
+                if repeat_addr != cur_addr:
+                    repeat_addr = cur_addr
+                    count.unique_instr_counts[instr_type] += 1
+
+                count.instr_counts[instr_type] += 1
+            except Exception as e:
+                print(f"[Exception]: {e}")
+            finally:
+                bar()
+
+    with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
+        for bin in upset_bins:
+            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+            cur_addr = cur_addr.split("_")[0]
+            cur_addr = int(cur_addr, 16)
+
+            # Only execute if address is unique (BIT)
+            try:
+                instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
+                if repeat_addr != cur_addr:
+                    repeat_addr = cur_addr
+                    count.unique_vulnerable_instr_counts[instr_type] += 1
+
+                # Count instructions
+                count.vulnerable_instr_counts[instr_type] += 1
+            except Exception as e:
+                print(f"[Exception]: {e}")
+            finally:
+                bar()
+
+    return count
+
+
+
+

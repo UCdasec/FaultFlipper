@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import itertools
 import json
 import os
 import sys
@@ -10,8 +11,8 @@ from scipy.stats import chi2_contingency, fisher_exact
 from statsmodels.stats.power import GofChisquarePower
 from tabulate import tabulate
 
-ALPHA = 0.05
-
+# choose alpha value of 0.10 for experiments
+ALPHA = 0.10
 
 @dataclass
 class Result:
@@ -178,22 +179,27 @@ def get_instruction_data(filename: str):
 
 if __name__ == "__main__":
     if len(sys.argv) > 2:
-        file1: str = sys.argv[1]
-        file2: str = sys.argv[2]
+        file_paths = sys.argv[1:]
+        datafiles = [Datafile(f) for f in file_paths]
 
-        datafile1 = Datafile(file1)
-        datafile2 = Datafile(file2)
+        for datafile1, datafile2 in itertools.combinations(datafiles, 2):
+            print(f"\n{'='*60}")
+            print(f"Comparing: {datafile1.image_name} vs {datafile2.image_name}")
+            print(f"{'='*60}")
 
-        significances = calculate_significances(data1=datafile1.data, data2=datafile2.data)
-        calculate_dataset_independence(data1=datafile1.data, data2=datafile2.data)
+            significances = calculate_significances(data1=datafile1.data, data2=datafile2.data)
 
-        total_upset_count = sum(datafile1.data["vulnerable"].values()) + sum(
-            datafile2.data["vulnerable"].values()
-        )
-        coverage = calculate_coverage(significances, total_upset_count)
-        coverage = coverage * 100  # percent
-        print(f"Significance Coverage: {coverage:.3}%")
+            print("\n--- Dataset Independence ---")
+            calculate_dataset_independence(data1=datafile1.data, data2=datafile2.data)
 
-        print_results(significances, datafile1.image_name, datafile2.image_name)
+            total_upset_count = sum(datafile1.data["vulnerable"].values()) + sum(
+                datafile2.data["vulnerable"].values()
+            )
+            coverage = calculate_coverage(significances, total_upset_count)
+            coverage = coverage * 100  # percent
+            print(f"Significance Coverage: {coverage:.3}%")
+
+            print("\n--- Instruction Significances ---")
+            print_results(significances, datafile1.image_name, datafile2.image_name)
     else:
         print("Error: No file provided. Usage: python data_analysis.py <filename>")
