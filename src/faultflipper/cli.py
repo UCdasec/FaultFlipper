@@ -678,7 +678,7 @@ def bit_no_comp_inout(
                 # collect distribution by running sample
                 execute(instructions=samples, results=results, title="samples", instr_probs=None)
 
-                #########################
+                # collect summary dataframe
                 if use_store:
                     summary_rows = store.summarize_bit_results(common.program_file)
                     summary_sample_df = pd.DataFrame(summary_rows)
@@ -690,9 +690,22 @@ def bit_no_comp_inout(
                 summary_sample_df["total_correct"] = summary_sample_df["total_correct"].fillna(0).astype(int)
                 clean_df = summary_sample_df[summary_sample_df["total_failed"] == 0]
                 upset_sample_df = clean_df[clean_df["total_correct"] != expected_correct]
-                #########################
 
+                # collect upset data
                 count = collect_upset_data(common, upset_sample_df, summary_sample_df, is_bit=True)
+
+                #TODO: temporary outputting sample data to file
+                with open(experiment_root.joinpath("sample_instruction_count.json"), "w") as f:
+                    data_to_save = {
+                        "target": str(target),
+                        "fault_model": "BIT",
+                        "vulnerable": dict(count.vulnerable_instr_counts),
+                        "total": dict(count.instr_counts),
+                        "unique_total": dict(count.unique_instr_counts),
+                        "unique_vul": dict(count.unique_vulnerable_instr_counts),
+                    }
+                    json.dump(data_to_save, f, indent=4)
+
                 probs = analyze_probs(count)
                 execute(instructions=remainder, results=results, title="tasks", instr_probs=probs)
             else:
