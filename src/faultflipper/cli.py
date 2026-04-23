@@ -1,6 +1,7 @@
 import json
 import logging
 import math
+import random
 import shutil
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -44,6 +45,7 @@ from cli_utils import (
     RegBitFlipExperimentResult,
     RegCommandParameters,
     RegNopExperimentResult,
+    analyze_probs,
     collect_upset_data,
     parse_results,
     save_reg_report,
@@ -418,6 +420,7 @@ def bit_inout_runner(
     base_bytes: bytes,
     text_section_offset: int,
     text_section_vaddr: int,
+    instr_probs: dict[str, int] | None,
 ):
     """Run bit flips for (addr, bit) pairs missing complete coverage."""
     if not input_pairs:
@@ -435,6 +438,14 @@ def bit_inout_runner(
 
         if bit_key in completed_pairs:
             continue
+
+        if instr_probs:
+            # probabilistically choose to skip faulting that instruction
+            instr_prob = instr_probs.get(inst.mnemonic, 1)
+            # instr_prob is the probability that we SHOULD fault the instruction
+            # if statement represents probability that we DO NOT fault the instruction
+            if skip_fault(instr_prob):
+                continue
 
         out_file = generate_bit_mutated_file(
             i,
@@ -621,7 +632,7 @@ def bit_no_comp_inout(
             print("All (addr, bit) pairs already processed. Skipping mutation run.")
         else:
             futures = []
-            def execute(instructions, title: str):
+            def execute(instructions, results: list, title: str, instr_probs: dict[str, int] | None):
                 with ThreadPoolExecutor(max_workers=num_cpus) as executor:
                     for inst in alive_it(instructions, title=f"Submitting {title}"):
                         future = executor.submit(
@@ -639,6 +650,7 @@ def bit_no_comp_inout(
                             base_bytes,
                             text_section_offset,
                             text_section_vaddr,
+                            instr_probs,
                         )
                         futures.append(future)
 
@@ -647,23 +659,44 @@ def bit_no_comp_inout(
                             try: 
                                 res = future.result()
                                 results.append(res)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                print(e)
                             finally:
                                 bar()
 
-            # if random sample is enabled, we first collect data
-            instr_probs = None
             if common.random_sample:
-                rng = np.random.default_rng()
-                percentage = 0.10
+                #TODO: PERCENTAGE HARDCODED
+                percentage = 0.01
                 sample_count = int(len(disasm) * percentage)
-                samples = rng.choice(disasm, size=sample_count, replace=False)
-                execute(instructions=samples, title="samples")
-                # collect random sample data to estimate distribution, then
-                # run rest of instructions given that distribution
 
-            execute(instructions=disasm, title="tasks")
+                # create shuffled list as subset random sampled
+                shuffled_list = list(disasm) 
+                random.shuffle(shuffled_list)
+                samples = shuffled_list[:sample_count]
+                remainder = shuffled_list[sample_count:]
+
+                # collect distribution by running sample
+                execute(instructions=samples, results=results, title="samples", instr_probs=None)
+
+                #########################
+                if use_store:
+                    summary_rows = store.summarize_bit_results(common.program_file)
+                    summary_sample_df = pd.DataFrame(summary_rows)
+                else:
+                    flat_results = [item for batch in results if batch for item in batch]
+                    summary_sample_df = dataclass_to_dataframe(flat_results) if flat_results else pd.DataFrame()
+
+                summary_sample_df["total_failed"] = summary_sample_df["total_failed"].fillna(0).astype(int)
+                summary_sample_df["total_correct"] = summary_sample_df["total_correct"].fillna(0).astype(int)
+                clean_df = summary_sample_df[summary_sample_df["total_failed"] == 0]
+                upset_sample_df = clean_df[clean_df["total_correct"] != expected_correct]
+                #########################
+
+                count = collect_upset_data(common, upset_sample_df, summary_sample_df, is_bit=True)
+                probs = analyze_probs(count)
+                execute(instructions=remainder, results=results, title="tasks", instr_probs=probs)
+            else:
+                execute(instructions=disasm, results=results, title="tasks", instr_probs=None)
 
         if shm_dir is not None:
             try:
@@ -772,42 +805,6 @@ def bit_no_comp_inout(
                 print(f"{count:>8}  {code}")
         else:
             print("No exit codes recorded for this experiment.")
-
-    # Legacy pandas-heavy logic retained for reference (OOM-prone on large runs)
-    # legacy_df = store.load_dataframe()
-    # legacy_df["correct"] = [
-    #     exp in prog
-    #     for exp, prog in zip(
-    #         legacy_df["expected_stdout"].astype(str), legacy_df["program_stdout"].astype(str), strict=False
-    #     )
-    # ]
-    # legacy_df["failed"] = legacy_df["return_code"] == -999
-    # legacy_bad_idx = pd.MultiIndex.from_frame(
-    #     legacy_df.loc[legacy_df["return_code"] == -999, ["flipped_addr", "flipped_index"]]
-    # )
-    # legacy_df_no_fail = legacy_df[
-    #     ~pd.MultiIndex.from_frame(legacy_df[["flipped_addr", "flipped_index"]]).isin(legacy_bad_idx)
-    # ]
-    # legacy_agg_df = (
-    #     legacy_df.groupby(["flipped_addr", "flipped_index"])
-    #     .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-    #     .reset_index()
-    # )
-    # legacy_agg_no_fail = (
-    #     legacy_df_no_fail.groupby(["flipped_addr", "flipped_index"])
-    #     .agg(total_correct=("correct", "sum"), total_failed=("failed", "sum"))
-    #     .reset_index()
-    # )
-    # legacy_agg_df["accuracy"] = legacy_agg_df.apply(
-    #     lambda row: row["total_correct"] / len(outs), axis=1
-    # )
-    # legacy_agg_no_fail["accuracy"] = legacy_agg_df.apply(
-    #     lambda row: row["total_correct"] / len(outs), axis=1
-    # )
-    # legacy_plot_df = legacy_agg_no_fail[
-    #     legacy_agg_no_fail["total_correct"] != int(expected_correct)
-    # ]
-    # show_results(common, legacy_df, other_returncodes)
 
     count = collect_upset_data(common, upset_df, summary_df, is_bit=True)
 

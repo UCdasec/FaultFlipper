@@ -2,7 +2,7 @@ import json
 import logging
 import random
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from enum import Enum
 from pathlib import Path
 from typing import Literal
@@ -970,5 +970,27 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
     return count
 
 
+def analyze_probs(count: InstructionCount) -> dict[str, int]:
+    #TODO: HARDCODED THRESHOLD
+    threshold = 0.1
+
+    create_df = lambda dictionary: pd.DataFrame(
+        list(dictionary.items()), columns=["Instruction", "Count"]
+    )
+    vul = create_df(dict(count.vulnerable_instr_counts))
+    total = create_df(dict(count.instr_counts))
+    merged = pd.merge(
+        total.rename(columns={"Count": "Total_Count"}),
+        vul.rename(columns={"Count": "Vul_Count"}),
+        on="Instruction",
+        how="left",
+    )
+    merged["Vul_Count"] = merged["Vul_Count"].fillna(0)
+    merged["Vul_Rate"] = merged["Vul_Count"] / merged["Total_Count"]
+
+    # temporary, if greather than threshold, set rate to 100%
+    merged.loc[merged["Vul_Rate"] > threshold, "Vul_Rate"] = 1
+
+    return dict(zip(merged["Instruction"], merged["Vul_Rate"]))
 
 
