@@ -77,8 +77,6 @@ def calculate_dataset_independence(data1, data2):
         d2count = data2["total"].get(inst, 0)
         # drop column if less than 5 for Chi-Squared tests
         if d1count < 5 or d2count < 5:
-            if d1count > 30 or d2count > 30:
-                raise ValueError("Instruction count disparity greater than 25")
             continue
 
         row1.append(d1count)

@@ -420,7 +420,7 @@ def bit_inout_runner(
     base_bytes: bytes,
     text_section_offset: int,
     text_section_vaddr: int,
-    instr_probs: dict[str, int] | None,
+    instr_probs: dict[str, float] | None,
 ):
     """Run bit flips for (addr, bit) pairs missing complete coverage."""
     if not input_pairs:
@@ -632,7 +632,9 @@ def bit_no_comp_inout(
             print("All (addr, bit) pairs already processed. Skipping mutation run.")
         else:
             futures = []
-            def execute(instructions, results: list, title: str, instr_probs: dict[str, int] | None):
+            instr_probs = extract_model(target, common.probability_model)
+            start = datetime.now()
+            def execute(instructions, title: str, instr_probs: dict[str, float] | None):
                 with ThreadPoolExecutor(max_workers=num_cpus) as executor:
                     for inst in alive_it(instructions, title=f"Submitting {title}"):
                         future = executor.submit(
@@ -660,13 +662,13 @@ def bit_no_comp_inout(
                                 res = future.result()
                                 results.append(res)
                             except Exception as e:
-                                print(e)
+                                print(f"[Exception]: {e}")
                             finally:
                                 bar()
 
-            if common.random_sample:
+            if common.random_sample and instr_probs is not None:
                 #TODO: PERCENTAGE HARDCODED
-                percentage = 0.01
+                percentage = 0.05
                 sample_count = int(len(disasm) * percentage)
 
                 # create shuffled list as subset random sampled
@@ -676,7 +678,7 @@ def bit_no_comp_inout(
                 remainder = shuffled_list[sample_count:]
 
                 # collect distribution by running sample
-                execute(instructions=samples, results=results, title="samples", instr_probs=None)
+                execute(instructions=samples, title="samples", instr_probs=None)
 
                 # collect summary dataframe
                 if use_store:
@@ -707,9 +709,12 @@ def bit_no_comp_inout(
                     json.dump(data_to_save, f, indent=4)
 
                 probs = analyze_probs(count)
-                execute(instructions=remainder, results=results, title="tasks", instr_probs=probs)
+                execute(instructions=remainder, title="tasks", instr_probs=probs)
             else:
-                execute(instructions=disasm, results=results, title="tasks", instr_probs=None)
+                execute(instructions=disasm, title="tasks", instr_probs=instr_probs)
+
+            runtime = datetime.now() - start
+            print(runtime)
 
         if shm_dir is not None:
             try:
@@ -1034,12 +1039,21 @@ def nn_inout_runner(
     base_bytes: bytes,
     text_section_offset: int,
     text_section_vaddr: int,
+    instr_probs: dict[str, float]|None
 ):
     """Function to help with running parallel neural network in outs.
 
     That is. This function, given one instruction, will rewrite it with a
     nop, then test the mutant binary on all the in files.
     """
+    if instr_probs:
+        # probabilistically choose to skip faulting that instruction
+        instr_prob = instr_probs.get(inst.mnemonic, 1)
+        # instr_prob is the probability that we SHOULD fault the instruction
+        # if statement represents probability that we DO NOT fault the instruction
+        if skip_fault(instr_prob):
+            return []
+
     insts = [inst]
     out_path = out_dir.joinpath(common.program_file.name + f"_{hex(insts[0].address)}")
 
@@ -1397,48 +1411,96 @@ def nop_no_comp_inout(
             if not common.yes:
                 cont = str(input(f"Normal for {len(disasm)} instructions? (Yy/Nn)"))
                 if cont.lower() != "y":
-                    return
+                    return pd.DataFrame()
 
             instr_probs = extract_model(target, common.probability_model)
             futures = []
             start = datetime.now()
 
-            with ThreadPoolExecutor(max_workers=num_cpus) as executor:
-                for inst in pending_insts:
-                    if instr_probs:
-                        instr_prob = instr_probs.get(inst.mnemonic, 1)
-                        if skip_fault(instr_prob):
-                            continue
+            def execute(instructions, title: str, instr_probs: dict[str, float] | None):
+                with ThreadPoolExecutor(max_workers=num_cpus) as executor:
+                    for inst in instructions:
+                        if instr_probs:
+                            instr_prob = instr_probs.get(inst.mnemonic, 1)
+                            if skip_fault(instr_prob):
+                                continue
 
-                    future = executor.submit(
-                        nn_inout_runner,
-                        common,
-                        inst,
-                        store,
-                        target,
-                        ins,
-                        outs,
-                        source_code,
-                        use_store,
-                        mutated_bin_dir,
-                        delete_bins,
-                        base_bytes,
-                        text_section_offset,
-                        text_section_vaddr,
-                    )
-                    futures.append(future)
+                        future = executor.submit(
+                            nn_inout_runner,
+                            common,
+                            inst,
+                            store,
+                            target,
+                            ins,
+                            outs,
+                            source_code,
+                            use_store,
+                            mutated_bin_dir,
+                            delete_bins,
+                            base_bytes,
+                            text_section_offset,
+                            text_section_vaddr,
+                            instr_probs
+                        )
+                        futures.append(future)
 
-                with alive_bar(len(futures), title="Processing tasks") as bar:
-                    for future in as_completed(futures):
-                        try: 
-                            res = future.result()
-                            results.append(res)
-                        except Exception:
-                            #print(f"[Exception]: {e}")
-                            pass
-                        finally:
-                            bar()
+                    with alive_bar(len(futures), title=f"Processing {title}") as bar:
+                        for future in as_completed(futures):
+                            try: 
+                                res = future.result()
+                                results.append(res)
+                            except Exception:
+                                pass
+                            finally:
+                                bar()
 
+
+            if common.random_sample and instr_probs is not None:
+                #TODO: PERCENTAGE HARDCODED
+                percentage = 0.05
+                sample_count = int(len(disasm) * percentage)
+
+                # create shuffled list as subset random sampled
+                shuffled_list = list(disasm) 
+                random.shuffle(shuffled_list)
+                samples = shuffled_list[:sample_count]
+                remainder = shuffled_list[sample_count:]
+
+                # collect distribution by running sample
+                execute(instructions=samples, title="samples", instr_probs=None)
+
+                # collect summary dataframe
+                if use_store:
+                    summary_rows = store.summarize_nop_results(common.program_file)
+                    summary_sample_df = pd.DataFrame(summary_rows)
+                else:
+                    flat_results = [item for batch in results if batch for item in batch]
+                    summary_sample_df = dataclass_to_dataframe(flat_results) if flat_results else pd.DataFrame()
+
+                summary_sample_df["total_failed"] = summary_sample_df["total_failed"].fillna(0).astype(int)
+                summary_sample_df["total_correct"] = summary_sample_df["total_correct"].fillna(0).astype(int)
+                clean_df = summary_sample_df[summary_sample_df["total_failed"] == 0]
+                upset_sample_df = clean_df[clean_df["total_correct"] != expected_correct]
+
+                # collect upset data
+                count = collect_upset_data(common, upset_sample_df, summary_sample_df, is_bit=False)
+
+                #TODO: temporary outputting sample data to file
+                with open(experiment_root.joinpath("sample_instruction_count.json"), "w") as f:
+                    data_to_save = {
+                        "target": str(target),
+                        "fault_model": "NOP",
+                        "vulnerable": dict(count.vulnerable_instr_counts),
+                        "total": dict(count.instr_counts),
+                        "unique_total": dict(count.unique_instr_counts),
+                        "unique_vul": dict(count.unique_vulnerable_instr_counts),
+                    }
+                    json.dump(data_to_save, f, indent=4)
+
+                probs = analyze_probs(count)
+                execute(instructions=remainder, title="tasks", instr_probs=probs)
+            else:
+                execute(instructions=disasm, title="tasks", instr_probs=instr_probs)
             runtime = datetime.now() - start
             print(runtime)
 
@@ -1561,14 +1623,6 @@ def nop_no_comp_inout(
             common.program_file, upset_df["nopped_addr"].tolist()
         )
 
-        # TODO: This blew up my termianl when I ran it
-        # if histogram:
-        #    print("Histogram of stdout values for upset binaries:")
-        #    for stdout, count in histogram:
-        #        print(f"{count:>8}  {stdout!r}")
-        # else:
-        #    print("Upset binaries produced no stdout entries to summarize.")
-
     exit_hist_store = store
     if exit_hist_store is None and db_path.exists():
         exit_hist_store = NopResultStore(db_path)
@@ -1581,14 +1635,6 @@ def nop_no_comp_inout(
                 print(f"{count:>8}  {code}")
         else:
             print("No exit codes recorded for this experiment.")
-
-    # Legacy pandas-heavy logic retained for reference
-    # legacy_df = store.load_dataframe()
-    # legacy_df["correct"] = legacy_df.apply(
-    #     lambda row: str(row["expected_stdout"]) in str(row["program_stdout"]), axis=1
-    # )
-    # legacy_df["failed"] = legacy_df["return_code"] == -999
-    # show_results(common, legacy_df, other_returncodes)
 
     count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
 

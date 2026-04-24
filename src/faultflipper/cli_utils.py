@@ -970,7 +970,7 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
     return count
 
 
-def analyze_probs(count: InstructionCount) -> dict[str, int]:
+def analyze_probs(count: InstructionCount) -> dict[str, float]:
     #TODO: HARDCODED THRESHOLD
     threshold = 0.1
 
