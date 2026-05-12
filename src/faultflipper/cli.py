@@ -800,14 +800,14 @@ def bit_no_comp_inout(
         is_bit=True,
     )
 
-    print("############# TOTOAL DF########################")
+    print("############# TOTAL DF########################")
     print("Histogram of #correct rows per (addr, idx):")
     print(agg_df["total_correct"].value_counts().sort_index())
 
     print("Histogram of #failed rows per (addr, idx):")
     print(agg_df["total_failed"].value_counts().sort_index())
 
-    print("############# NO FAILT TOTOAL DF########################")
+    print("############# NO FAULT TOTAL DF########################")
     print("Histogram of #correct rows per (addr, idx):")
     print(agg_df_no_fail["total_correct"].value_counts().sort_index())
 

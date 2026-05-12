@@ -972,7 +972,7 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
 
 def analyze_probs(count: InstructionCount) -> dict[str, float]:
     #TODO: HARDCODED THRESHOLD
-    threshold = 0.1
+    threshold = 0.2
 
     create_df = lambda dictionary: pd.DataFrame(
         list(dictionary.items()), columns=["Instruction", "Count"]
