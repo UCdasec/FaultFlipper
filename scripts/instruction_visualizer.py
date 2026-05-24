@@ -1,11 +1,12 @@
 #!/bin/python3
 
-import sys
+import argparse
 import json
-from collections import defaultdict
+import os
+import sys
 
-import pandas as pd
 import matplotlib.pyplot as plt
+import pandas as pd
 
 plt.style.use("dark_background")
 
@@ -211,7 +212,7 @@ def plot_UIR(vul_df, unique_df):
 
 
 def visualize(filename: str):
-    with open(filename, "r") as f:
+    with open(filename) as f:
         loaded_data = json.load(f)
 
     vul_dict = loaded_data.get("vulnerable", {})
@@ -234,11 +235,97 @@ def visualize(filename: str):
     plot_UIR(unique_vul_df, unique_total_df)
 
 
+def plot_marked_instructions(csv_files, output_filename="marked_instructions_comparison.png"):
+    """
+    Parses multiple CSV files and creates a stacked event plot of marked instructions.
+    
+    Args:
+        csv_files (list of str): List of file paths to the CSV files.
+        output_filename (str): Name of the file to save the resulting plot.
+    """
+    all_marked_indices = []
+    labels = []
+
+    for file in csv_files:
+        try:
+            # Read the CSV. Assuming no header. If there is a header, add header=0
+            # We use usecols=[4] to load only the 5th column to save memory and time
+            df = pd.read_csv(file, header=None, usecols=[4])
+
+            # The 5th column is at index 4. Find row indices where the value is 0
+            marked_indices = df.index[df.iloc[:, 0] == 0].tolist()
+            all_marked_indices.append(marked_indices)
+
+            # Use the filename as the label for the y-axis
+            labels.append(os.path.basename(file))
+
+        except Exception as e:
+            print(f"Error processing {file}: {e}")
+
+    if not all_marked_indices:
+        print("No data to plot.")
+        return
+
+    # Create the plot
+    # A larger figure size helps when dealing with up to 120k instructions
+    fig, ax = plt.subplots(figsize=(15, max(4, len(csv_files) * 0.8)))
+
+    # Create the event plot
+    # lineoffsets dictate the y-axis position of each program's row
+    # linelengths dictate the height of the tick marks
+    # linewidths are kept small (e.g., 0.5) to prevent overlapping in dense regions
+    colors = plt.cm.tab10.colors # Use distinct colors for different programs
+    ax.eventplot(
+        all_marked_indices, 
+        orientation="horizontal", 
+        linelengths=0.7, 
+        linewidths=0.5,
+        colors=[colors[i % len(colors)] for i in range(len(csv_files))]
+    )
+    # Formatting the graph
+    ax.set_title("Comparison of Marked Assembly Instructions")
+    ax.set_xlabel("Instruction Index")
+    ax.set_ylabel("Program")
+    # Set y-ticks to match the files
+    ax.set_yticks(range(len(labels)))
+    ax.set_yticklabels(labels)
+    # Optional: Set x-axis limit based on the maximum instruction index across all files
+    max_index = max([max(indices) if indices else 0 for indices in all_marked_indices])
+    ax.set_xlim(-1000, max_index + 1000)
+    plt.tight_layout()
+    # Save the figure instead of showing it directly
+    plt.savefig(output_filename, dpi=300)
+    print(f"Plot saved successfully to {output_filename}")
+
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        filename: str = sys.argv[1]
-        visualize(filename)
-    else:
-        print(
-            "Error: No file provided. Usage: python instruction_visualizer.py <filename>"
-        )
+    parser = argparse.ArgumentParser(
+        description="Process either CSV results OR Upset results."
+    )
+
+    # Create a mutually exclusive group and make it required
+    group = parser.add_mutually_exclusive_group(required=True)
+
+    # Add the flags to the group instead of the main parser
+    group.add_argument(
+        "-u",
+        "--upsets",
+        help="List of one or more Upset files",
+    )
+
+    group.add_argument(
+        "-c",
+        "--csv",
+        nargs="+",  # Requires 1 or more CSV files
+        help="List of one or more CSV files",
+    )
+
+    try:
+        args = parser.parse_args()
+    except SystemExit:
+        sys.exit(0)
+
+    if args.csv:
+        visualize(args.csv)
+    elif args.upsets:
+        plot_marked_instructions(args.upsets)
+
