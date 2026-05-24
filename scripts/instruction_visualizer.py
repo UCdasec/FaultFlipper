@@ -325,7 +325,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.csv:
-        visualize(args.csv)
+        plot_marked_instructions(args.csv)
     elif args.upsets:
-        plot_marked_instructions(args.upsets)
+        visualize(args.upsets)
 
