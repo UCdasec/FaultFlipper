@@ -1455,7 +1455,7 @@ def nop_no_comp_inout(
                                 bar()
 
 
-            if common.random_sample and instr_probs is not None:
+            if common.random_sample:
                 #TODO: PERCENTAGE HARDCODED
                 percentage = 0.05
                 sample_count = int(len(disasm) * percentage)
