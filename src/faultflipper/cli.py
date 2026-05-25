@@ -708,7 +708,7 @@ def bit_no_comp_inout(
                     }
                     json.dump(data_to_save, f, indent=4)
 
-                probs = analyze_probs(count)
+                probs = analyze_probs(count, common.threshold)
                 execute(instructions=remainder, title="tasks", instr_probs=probs)
             else:
                 execute(instructions=disasm, title="tasks", instr_probs=instr_probs)
@@ -1497,7 +1497,7 @@ def nop_no_comp_inout(
                     }
                     json.dump(data_to_save, f, indent=4)
 
-                probs = analyze_probs(count)
+                probs = analyze_probs(count, common.threshold)
                 execute(instructions=remainder, title="tasks", instr_probs=probs)
             else:
                 execute(instructions=disasm, title="tasks", instr_probs=instr_probs)

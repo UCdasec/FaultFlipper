@@ -92,6 +92,7 @@ class CommandParameters:
     program_source_code: Path | None = None
     probability_model: Path | None = None
     random_sample: bool = False
+    threshold: float = 0.2 
     dynamic_filter: bool = False
     comp: bool = True
     opts: str | None = None  # compilation options
@@ -122,7 +123,8 @@ class CommandParameters:
             "probability_model": (
                 str(self.probability_model.absolute()) if self.probability_model else ""
             ),
-            "random_sample": self.random_sample
+            "random_sample": self.random_sample,
+            "threshold": self.threshold,
         }
 
 
@@ -947,14 +949,14 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
             finally:
                 bar()
 
-    with alive_bar(len(bins), title="Checking Vulnerabilities") as bar:
+    with alive_bar(len(upset_bins), title="Checking Vulnerabilities") as bar:
         for bin in upset_bins:
-            cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
-            cur_addr = cur_addr.split("_")[0]
-            cur_addr = int(cur_addr, 16)
-
             # Only execute if address is unique (BIT)
             try:
+                cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+                cur_addr = cur_addr.split("_")[0]
+                cur_addr = int(cur_addr, 16)
+
                 instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
                 if repeat_addr != cur_addr:
                     repeat_addr = cur_addr
@@ -970,10 +972,7 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
     return count
 
 
-def analyze_probs(count: InstructionCount) -> dict[str, float]:
-    #TODO: HARDCODED THRESHOLD
-    threshold = 0.2
-
+def analyze_probs(count: InstructionCount, threshold: float) -> dict[str, float]:
     create_df = lambda dictionary: pd.DataFrame(
         list(dictionary.items()), columns=["Instruction", "Count"]
     )
