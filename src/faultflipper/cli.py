@@ -656,7 +656,7 @@ def bit_no_comp_inout(
                         )
                         futures.append(future)
 
-                    with alive_bar(len(futures), title=f"Processing {title}") as bar:
+                    with alive_bar(len(futures), title=f"Running {title}") as bar:
                         for future in as_completed(futures):
                             try: 
                                 res = future.result()
@@ -709,7 +709,7 @@ def bit_no_comp_inout(
                     json.dump(data_to_save, f, indent=4)
 
                 probs = analyze_probs(count, common.threshold)
-                execute(instructions=remainder, title="tasks", instr_probs=probs)
+                execute(instructions=remainder, title="remaining tasks", instr_probs=probs)
             else:
                 execute(instructions=disasm, title="tasks", instr_probs=instr_probs)
 
@@ -1444,7 +1444,7 @@ def nop_no_comp_inout(
                         )
                         futures.append(future)
 
-                    with alive_bar(len(futures), title=f"Processing {title}") as bar:
+                    with alive_bar(len(futures), title=f"Running {title}") as bar:
                         for future in as_completed(futures):
                             try: 
                                 res = future.result()
@@ -1498,7 +1498,7 @@ def nop_no_comp_inout(
                     json.dump(data_to_save, f, indent=4)
 
                 probs = analyze_probs(count, common.threshold)
-                execute(instructions=remainder, title="tasks", instr_probs=probs)
+                execute(instructions=remainder, title="remaining tasks", instr_probs=probs)
             else:
                 execute(instructions=disasm, title="tasks", instr_probs=instr_probs)
             runtime = datetime.now() - start
