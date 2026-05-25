@@ -255,7 +255,7 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
             all_marked_indices.append(marked_indices)
 
             # Use the filename as the label for the y-axis
-            labels.append(os.path.basename(file).with_suffix(""))
+            labels.append(os.path.splitext(os.path.basename(file))[0])
 
         except Exception as e:
             print(f"Error processing {file}: {e}")
