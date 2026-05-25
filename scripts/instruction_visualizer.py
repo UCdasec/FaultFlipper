@@ -8,7 +8,7 @@ import sys
 import matplotlib.pyplot as plt
 import pandas as pd
 
-plt.style.use("dark_background")
+#plt.style.use("dark_background")
 
 
 def plot_instruction_percentage(df):
@@ -248,16 +248,14 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
 
     for file in csv_files:
         try:
-            # Read the CSV. Assuming no header. If there is a header, add header=0
-            # We use usecols=[4] to load only the 5th column to save memory and time
-            df = pd.read_csv(file, header=None, usecols=[4])
+            df = pd.read_csv(file, header=0, usecols=[4])
 
             # The 5th column is at index 4. Find row indices where the value is 0
             marked_indices = df.index[df.iloc[:, 0] == 0].tolist()
             all_marked_indices.append(marked_indices)
 
             # Use the filename as the label for the y-axis
-            labels.append(os.path.basename(file))
+            labels.append(os.path.basename(file).with_suffix(""))
 
         except Exception as e:
             print(f"Error processing {file}: {e}")
@@ -266,36 +264,29 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
         print("No data to plot.")
         return
 
-    # Create the plot
-    # A larger figure size helps when dealing with up to 120k instructions
     fig, ax = plt.subplots(figsize=(15, max(4, len(csv_files) * 0.8)))
 
-    # Create the event plot
-    # lineoffsets dictate the y-axis position of each program's row
-    # linelengths dictate the height of the tick marks
-    # linewidths are kept small (e.g., 0.5) to prevent overlapping in dense regions
     colors = plt.cm.tab10.colors # Use distinct colors for different programs
     ax.eventplot(
         all_marked_indices, 
         orientation="horizontal", 
-        linelengths=0.7, 
+        linelengths=1.0, 
         linewidths=0.5,
         colors=[colors[i % len(colors)] for i in range(len(csv_files))]
     )
     # Formatting the graph
-    ax.set_title("Comparison of Marked Assembly Instructions")
+    ax.margins(0)
+    ax.set_title("Instruction NOP Upset Comparison")
     ax.set_xlabel("Instruction Index")
-    ax.set_ylabel("Program")
+    ax.set_ylabel("Image")
     # Set y-ticks to match the files
     ax.set_yticks(range(len(labels)))
     ax.set_yticklabels(labels)
-    # Optional: Set x-axis limit based on the maximum instruction index across all files
-    max_index = max([max(indices) if indices else 0 for indices in all_marked_indices])
-    ax.set_xlim(-1000, max_index + 1000)
     plt.tight_layout()
     # Save the figure instead of showing it directly
-    plt.savefig(output_filename, dpi=300)
+    plt.savefig(output_filename, bbox_inches="tight", pad_inches=0, dpi=300)
     print(f"Plot saved successfully to {output_filename}")
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
