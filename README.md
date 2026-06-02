@@ -122,32 +122,15 @@ unmutated binary on the dataset (you can compute this with
 pixi run cli run profiles/face_mlp.toml
 ```
 
+# Contacts
+Ryan Evans evans2ra@mail.uc.edu 
 
-## Author
+Brendan Kickpatrick kirkpabd@mail.uc.edu
 
-👤 **UcDasec Lab**
-* Github: [@ESPR3SS0](https://github.com/UCdasec)
+Boyang Wang boyang.wang@uc.edu
 
-👤 **ESPR3SS0**
-* Github: [@ESPR3SS0](https://github.com/ESPR3SS0)
+Research Group Webpage: https://homepages.uc.edu/~wang2ba/
 
 ## Show your support
 
 Give a ⭐️ if you think this project is interesting!
-
-## Roadmap  - First priority 
-
-- [ ] Updated readme examples to minimally cover the experiments in the paper
-    - [ ] Generate classifier profile
-
-
-## Roadmap - Second priority
-
-- [ ] Adding clean install script (focus on handling non-pypi dependencies)
-- [ ] Modularizing the Experiment Runner from the Classifier of the results
-- [ ] Splitting code into seperate modules (angr, qemu, tracing, etc)
-- [ ] Move `angr-nop-nocomp-inout` to be incorporated as a backend to another command instead of being a standalone command
-
-
-***
-_This README was generated with ❤️ by [readme-md-generator](https://github.com/kefranabg/readme-md-generator)_
