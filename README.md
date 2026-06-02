@@ -1,5 +1,7 @@
 # FaultFlipper 
 **The dataset and code are for research purpose only** 
+Unexpected or malicious changes in voltage, temperature, and electromagnetic radiation on a target can produce faults in a program running on the target. These faults can crash the program and even end up with unwanted behavior and outputs. In this study, we develop a dynamic fault analysis tool, named FaultFlipper, which emulates faults at the Instruction Set Architecture (ISA) level and measures the resilience of a program given faults, including instruction skipping and bit flips. FaultFlipper generates mutants of a binary given a fault model and compares emulation results to identify upset mutants that lead to unwanted behavior and outputs. FaultFlipper supports multiple architectures, including Arm, RISC-V, and x86. More importantly, it offers root cause analysis for developers to identify vulnerable C code triggering upsets early in the development stage. We demonstrate the efficiency and effectiveness of FaultFlipper with three case studies, including a password check program, a program that calculates the Fibonacci sequence, and a face recognition program with machine learning. With ChipWhisperer, we also validate that real-world upset faults can happen on Arm microcontrollers running our case study programs.
+
 
 ## Reference
 When reporting results that use the dataset or code in this repository, please cite the paper below:
