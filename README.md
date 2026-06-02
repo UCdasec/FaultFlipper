@@ -1,10 +1,11 @@
-# Welcome to FaultFlipper 👋
-![Version](https://img.shields.io/badge/version-0.1.0-blue.svg?cacheSeconds=2592000)
+# FaultFlipper 
+**The dataset and code are for research purpose only** 
 
-> Hardware Fault Simulator at the Software Level
+## Reference
+When reporting results that use the dataset or code in this repository, please cite the paper below:
 
-## NOTICE: 
-I am splitting this tool into two seperate clis.... bare with me. 
+Ryan Evans, Brendan Kickpatrick, Minh Khiem Ha, Prateek Kharangate, Boyang Wang, "FaultFlipper: A Dynamic Fault Analysis Tool," the 7th workshop on Artificial Intelligence in Hardware Security (AIHWS 2026) in conjunction with ACNS 2026, June 22-25, Stony Brook, New York, USA. 
+
 
 ## Installation
 
