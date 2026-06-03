@@ -158,13 +158,15 @@ def _derive_source_name(common) -> str:
     return ""
 
 
-def _existing_results_summary(df: pd.DataFrame, common, delete_non_upsets: bool = False) -> None:
+def _existing_results_summary(
+    df: pd.DataFrame,
+    common,
+    delete_non_upsets: bool = False,
+    upset_on_match: bool = True,
+) -> None:
     """
     Print a short summary for cached experiment results.
     """
-    source_name = _derive_source_name(common).lower()
-    upset_on_match = False if "fib" in source_name else True
-
     normal_df, error_df, upset_df = parse_results(df, upset_on_match)
     console.print(
         f"[blue]Cached summary -> normal: {len(normal_df)}, upset: {len(upset_df)}, error: {len(error_df)}[/blue]"
@@ -175,8 +177,48 @@ def _existing_results_summary(df: pd.DataFrame, common, delete_non_upsets: bool 
         print(f"Deleted {deleted} non-upset mutated binaries")
 
 
+def _setup_qemu_experiment(
+    common: CommandParameters,
+    target: Target,
+    optimization: OptimizationLevel,
+    *,
+    comp: bool,
+) -> tuple[Path, Path, Path | None, Path, list[str]]:
+    """Prepare common QEMU experiment paths, optionally compiling source input."""
+    common.out_dir.mkdir(exist_ok=True, parents=True)
+    base_out = common.out_dir
+    res_file = base_out.joinpath("results.csv")
+
+    if comp:
+        source_code = common.program_file
+        common.program_source_code = source_code
+        program_context = source_code.parent.joinpath(source_code.name.replace(".c", ".toml"))
+
+        shutil.copy(source_code, base_out.joinpath(source_code.name))
+        if program_context.exists():
+            shutil.copy(program_context, base_out.joinpath(program_context.name))
+
+        bin_out = base_out.joinpath(source_code.name.replace(".c", ".o"))
+        compile_cmd = generate_compile_cmd(source_code, bin_out, target, common.opts)
+        common.program_file = compile_program(source_code, bin_out, target, optimization, common.opts)
+    else:
+        source_code = common.program_source_code
+        if source_code is not None:
+            source_code = Path(source_code)
+        context_base = source_code if source_code is not None else common.program_file
+        program_context = context_base.parent.joinpath(context_base.name.replace(".c", ".toml"))
+        compile_cmd = []
+
+    common.out_dir = base_out.joinpath("mutated_bins")
+    common.out_dir.mkdir(exist_ok=True)
+    return base_out, res_file, source_code, program_context, compile_cmd
+
+
 def reuse_existing_results_if_available(
-    common, log_matching: bool = True, delete_non_upsets: bool = False
+    common,
+    log_matching: bool = True,
+    delete_non_upsets: bool = False,
+    upset_on_match: bool = True,
 ) -> bool:
     """
     If results.csv already exists in the provided out_dir, load and display it.
@@ -191,7 +233,7 @@ def reuse_existing_results_if_available(
     )
     df = pd.read_csv(res_file)
     show_results(common, df, other_returncodes)
-    _existing_results_summary(df, common, delete_non_upsets)
+    _existing_results_summary(df, common, delete_non_upsets, upset_on_match)
     return True
 
 
@@ -2118,37 +2160,21 @@ def x_bit_qemu_seq(
     num_bits: int,
     log_matching: bool,
     optimization: OptimizationLevel,
+    comp: bool = True,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
+    upset_on_match: bool = True,
 ):
     """Run the x bit mutation scheme with a qemu backend.
 
     Run the X-BIT fault model, with qemu in a sequential fashion.
     """
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    base_out = common.out_dir
-
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    common.program_source_code = source_code
-    program_context = common.program_file.parent.joinpath(
-        common.program_file.name.replace(".c", ".toml")
+    base_out, res_file, source_code, program_context, compile_cmd = _setup_qemu_experiment(
+        common,
+        target,
+        optimization,
+        comp=comp,
     )
-
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-    if program_context.exists():
-        shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
-
-    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
-
-    res_file = common.out_dir.joinpath("results.csv")
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-    common.out_dir.mkdir(exist_ok=True)
-
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target, optimization)
 
     disasm = disassemble_text_section(common.program_file)
 
@@ -2229,10 +2255,8 @@ def x_bit_qemu_seq(
     with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
         json.dump(params, f, indent=4)
 
-    res_file = common.out_dir.joinpath("results.csv")
-    report_path = common.our_dir.parent.joinpath("report.md")
+    report_path = common.out_dir.parent.joinpath("report.md")
 
-    upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
     if delete_non_upsets:
@@ -2268,7 +2292,7 @@ def x_bit_qemu_parallel(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
-    upset_on_match: bool | None = None,
+    upset_on_match: bool = True,
 ):
     """Run the x bit mutation scheme with a parallel qemu backend.
 
@@ -2276,33 +2300,12 @@ def x_bit_qemu_parallel(
     """
     max_workers = max(1, num_cpus // 2)
 
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    base_out = common.out_dir
-
-    if common.comp:
-        # Copy the source cdoe to the experiement
-        source_code = common.program_file
-        common.program_source_code = source_code
-        program_context = common.program_file.parent.joinpath(
-            common.program_file.name.replace(".c", ".toml")
-        )
-
-        shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-        if program_context.exists():
-            shutil.copy(program_context, common.out_dir.joinpath(program_context.name))
-
-        bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-        compile_cmd = generate_compile_cmd(common.program_file, bin_out, target, common.opts)
-
-        res_file = common.out_dir.joinpath("results.csv")
-        common.out_dir = common.out_dir.joinpath("mutated_bins")
-        common.out_dir.mkdir(exist_ok=True)
-
-        # Compile the binary for the target
-        common.program_file = compile_program(
-            source_code, bin_out, target, optimization, common.opts
-        )
+    base_out, res_file, source_code, program_context, compile_cmd = _setup_qemu_experiment(
+        common,
+        target,
+        optimization,
+        comp=common.comp,
+    )
 
     disasm = disassemble_text_section(common.program_file)
 
@@ -2402,7 +2405,6 @@ def x_bit_qemu_parallel(
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
-    upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
     if delete_non_upsets:
@@ -2584,7 +2586,7 @@ def x_bit(
     # common: RegCommandParameters,  # TODO: Make everything use this version and rename
     common: CommandParameters,  # TODO: Make everything use this version and rename
     target: Target,
-    func_names: str,
+    func_names: str = "",
     num_bits: int = 1,
     num_cpus: int = 1,
     verbose: bool = False,
@@ -2593,6 +2595,7 @@ def x_bit(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
+    upset_on_match: bool = True,
 ):
     """
     Run the bit experiemnt with either the qemu backend
@@ -2618,7 +2621,12 @@ def x_bit(
         if common.expected_stdout is None or common.expected_returncode is None:
             print(f"The backend {backend} requires expected_stdout and expected_returncode")
 
-        if reuse_existing_results_if_available(common, log_matching, delete_non_upsets):
+        if reuse_existing_results_if_available(
+            common,
+            log_matching,
+            delete_non_upsets,
+            upset_on_match,
+        ):
             return
 
         if num_cpus == 1:
@@ -2629,8 +2637,10 @@ def x_bit(
                 num_bits,
                 log_matching,
                 optimization,
+                comp=common.comp,
                 delete_non_upsets=delete_non_upsets,
                 addresses_json=addresses_json,
+                upset_on_match=upset_on_match,
             )
         else:
             # Parallel
@@ -2643,6 +2653,7 @@ def x_bit(
                 optimization,
                 delete_non_upsets=delete_non_upsets,
                 addresses_json=addresses_json,
+                upset_on_match=upset_on_match,
             )
     return
 
@@ -2660,6 +2671,7 @@ def x_nop(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
+    upset_on_match: bool = True,
 ):
     """
     Command to run NOP experiments. Set delete_non_upsets to remove mutated
@@ -2686,7 +2698,12 @@ def x_nop(
         if common.expected_stdout is None or common.expected_returncode is None:
             print(f"The backend {backend} requires expected_stdout and expected_returncode")
 
-        if reuse_existing_results_if_available(common, log_matching, delete_non_upsets):
+        if reuse_existing_results_if_available(
+            common,
+            log_matching,
+            delete_non_upsets,
+            upset_on_match,
+        ):
             return
 
         if num_cpus == 1:
@@ -2695,11 +2712,14 @@ def x_nop(
             x_nop_qemu_seq(
                 common,
                 target,
-                num_nops,
-                log_matching,
-                optimization,
+                num_nops=num_nops,
+                verbose=verbose,
+                log_matching=log_matching,
+                optimization=optimization,
+                comp=common.comp,
                 delete_non_upsets=delete_non_upsets,
                 addresses_json=addresses_json,
+                upset_on_match=upset_on_match,
             )
         else:
             # Parallel
@@ -2710,9 +2730,11 @@ def x_nop(
                 num_cpus,
                 num_nops,
                 log_matching,
+                comp=common.comp,
                 optimization=optimization,
                 delete_non_upsets=delete_non_upsets,
                 addresses_json=addresses_json,
+                upset_on_match=upset_on_match,
             )
 
     return
@@ -2920,14 +2942,16 @@ def verbose_output(results, func_names, golden_register_info):
 
 
 def x_nop_qemu_seq(
-    common: RegCommandParameters,
+    common: CommandParameters,
     target: Target,
     num_nops: int = 1,
     verbose: bool = True,
     log_matching: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
+    comp: bool = True,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
+    upset_on_match: bool = True,
 ):
     """
     Take c source code as input, compile it, mutate it, and test
@@ -2935,29 +2959,12 @@ def x_nop_qemu_seq(
     assert common.expected_stdout is not None
     common.expected_stdout = str(common.expected_stdout)
 
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    program_context = common.program_file.parent.joinpath(
-        common.program_file.name.replace(".c", ".toml")
+    base_out, res_file, source_code, program_context, compile_cmd = _setup_qemu_experiment(
+        common,
+        target,
+        optimization,
+        comp=comp,
     )
-    base_out = common.out_dir
-
-    # Copy the source cdoe to the experiement
-    source_code = common.program_file
-    common.program_source_code = source_code
-    shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-    bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-
-    res_file = common.out_dir.joinpath("results.csv")
-
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-    common.out_dir.mkdir(exist_ok=True)
-
-    # Compile the binary for the target
-    common.program_file = compile_program(source_code, bin_out, target, optimization)
-
-    compile_cmd = generate_compile_cmd(common.program_file, bin_out, target)
 
     original_bin = common.program_file
 
@@ -3039,7 +3046,6 @@ def x_nop_qemu_seq(
 
     report_path = common.out_dir.parent.joinpath("report.md")
 
-    upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
     if delete_non_upsets:
@@ -3076,6 +3082,7 @@ def x_bit_qemu_parallel_data(
     comp: bool = True,
     optimization: OptimizationLevel = OptimizationLevel.O0,
     target_section: str = ".data",
+    upset_on_match: bool = True,
 ):
     """Run an experiment that gernerates mutant binaries overriding the target section
 
@@ -3187,7 +3194,6 @@ def x_bit_qemu_parallel_data(
 
     report_path = common.out_dir.parent.joinpath("report.md")
 
-    upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
     save_report(
@@ -3217,7 +3223,7 @@ def x_bit_qemu_parallel_data(
 
 
 def x_nop_qemu_parallel(
-    common: RegCommandParameters,
+    common: CommandParameters,
     target: Target,
     num_cpus: int,
     num_nops: int = 1,
@@ -3226,7 +3232,7 @@ def x_nop_qemu_parallel(
     optimization: OptimizationLevel = OptimizationLevel.O0,
     delete_non_upsets: bool = False,
     addresses_json: Path | None = None,
-    upset_on_match: bool | None = None,
+    upset_on_match: bool = True,
 ):
     """Run an experiment that gernerates mutant binaries with num_nops, and tests them with QEMU.
 
@@ -3236,35 +3242,12 @@ def x_nop_qemu_parallel(
     """
     max_workers = max(1, num_cpus // 2)
 
-    # Make the dir
-    common.out_dir.mkdir(exist_ok=True, parents=True)
-    program_context = common.program_file.parent.joinpath(
-        common.program_file.name.replace(".c", ".toml")
+    base_out, res_file, source_code, program_context, compile_cmd = _setup_qemu_experiment(
+        common,
+        target,
+        optimization,
+        comp=comp,
     )
-    base_out = common.out_dir
-
-    if comp:
-        # Copy the source cdoe to the experiement
-        source_code = common.program_file
-        common.program_source_code = source_code
-        shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
-
-        bin_out = common.out_dir.joinpath(common.program_file.name.replace(".c", ".o"))
-
-        # Compile the binary for the target
-        common.program_file = compile_program(
-            source_code, bin_out, target, optimization, common.opts
-        )
-        compile_cmd = generate_compile_cmd(common.program_file, bin_out, target, common.opts)
-    else:
-        source_code = ""
-        bin_out = common.program_file
-        compile_cmd = ""
-
-    res_file = common.out_dir.joinpath("results.csv")
-
-    common.out_dir = common.out_dir.joinpath("mutated_bins")
-    common.out_dir.mkdir(exist_ok=True)
 
     original_bin = common.program_file
 
@@ -3349,8 +3332,6 @@ def x_nop_qemu_parallel(
 
     report_path = common.out_dir.parent.joinpath("report.md")
 
-    if upset_on_match is None:
-        upset_on_match = False if "fib" in results[0].source_file.name else True
     normal_df, error_df, fault_df = parse_results(df, upset_on_match)
 
     if delete_non_upsets:
@@ -3420,21 +3401,25 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             if "save_results" in formated:
                 formated["save_results"] = Path(formated["save_results"])
 
+            if "program_source_code" in formated:
+                formated["program_source_code"] = Path(formated["program_source_code"])
+
             if "target" in formated:
                 formated["target"] = Target[formated["target"].upper()]
 
             if command_name in ["x_nop"]:
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
-                num_nops = formated.get("num_nops")
-                func_names = formated.get("func_names")
-                upset_on_match = formated.get("upset_on_match")
+                num_nops = formated.pop("num_nops", None)
+                func_names = formated.pop("func_names", "")
+                upset_on_match = formated.pop("upset_on_match", True)
+                no_compile = formated.pop("no_compile", False)
+                formated["comp"] = not no_compile
                 addresses_json = formated.pop("addresses_json", None)
                 if addresses_json is not None:
                     addresses_json = Path(addresses_json)
 
                 if num_nops:
-                    formated.pop("num_nops")
                     params = CommandParameters(**formated)
                     cmd_func(
                         params,
@@ -3458,15 +3443,16 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             elif command_name in ["x_bit"]:
                 target = formated.pop("target")
                 num_cpus = formated.pop("num_cpus")
-                num_bits = formated.get("num_bits")
-                func_names = formated.get("func_names")
-                upset_on_match = formated.get("upset_on_match")
+                num_bits = formated.pop("num_bits", None)
+                func_names = formated.pop("func_names", "")
+                upset_on_match = formated.pop("upset_on_match", True)
+                no_compile = formated.pop("no_compile", False)
+                formated["comp"] = not no_compile
                 addresses_json = formated.pop("addresses_json", None)
                 if addresses_json is not None:
                     addresses_json = Path(addresses_json)
 
                 if num_bits:
-                    formated.pop("num_bits")
                     params = CommandParameters(**formated)
                     cmd_func(
                         params,
@@ -4041,7 +4027,13 @@ def compare_regs(
 
 
 @app.command()
-def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path, tick_int: int):
+def spectral_plot(
+    nop_exp_results: Path,
+    bit_exp_results: Path,
+    out: Path,
+    tick_int: int,
+    upset_on_match: bool = True,
+):
     """Make the spectrral plot.
 
     Spectral plot has the address as the x addr and plots
@@ -4060,8 +4052,8 @@ def spectral_plot(nop_exp_results: Path, bit_exp_results: Path, out: Path, tick_
     print(f"Len bit addrs: {len(bit_all_addrs)}")
     assert bit_all_addrs == all_addrs
 
-    _, nop_error, nop_fault = parse_results(nop_df)
-    _, bit_error, bit_fault = parse_results(bit_df)
+    _, nop_error, nop_fault = parse_results(nop_df, upset_on_match)
+    _, bit_error, bit_fault = parse_results(bit_df, upset_on_match)
 
     nop_list = set(nop_fault["nopped_addr"].tolist())
     bit_list = set(bit_fault["flipped_addr"].tolist())

@@ -400,7 +400,7 @@ def save_report(
     num_instructions,
     num_bits,
     compile_cmd,
-    source_code: Path,
+    source_code: Path | None,
     program_context: Path,
     is_bit=False,
     log_matching: bool = True,
@@ -535,7 +535,14 @@ def save_report(
     root_cause += "ASM Addr | Correspond C line\n"
     root_cause += "--------|--------------------\n"
 
-    address_to_lines = map_asm_to_c(common.program_file, common.program_source_code)
+    address_to_lines = {}
+    if common.program_source_code is not None:
+        try:
+            address_to_lines = map_asm_to_c(common.program_file, common.program_source_code)
+        except RuntimeError as exc:
+            root_cause += f"Source mapping unavailable: {exc}\n"
+    else:
+        root_cause += "Source mapping unavailable: no source file was provided.\n"
 
     # Aggregate the json info whie mapping root cause.
     c_source_lines: list[int] = []
@@ -608,10 +615,13 @@ def save_report(
     lines = "## Source Code Lines\n"
     lines += "```c\n"
 
-    # Program file source code:
-    with open(source_code) as f:
-        for v in f.readlines():
-            lines = lines + v
+    source_path = Path(source_code) if source_code else None
+    if source_path is not None and source_path.is_file():
+        with open(source_path) as f:
+            for v in f.readlines():
+                lines = lines + v
+    else:
+        lines += "Source unavailable for this experiment.\n"
 
     lines += "```\n"
 
@@ -824,7 +834,6 @@ def save_reg_report(
         report_path.absolute(),
         report_path.parent.joinpath(report_path.name.replace(".md", ".pdf")).absolute(),
     )
-
 
 
 
