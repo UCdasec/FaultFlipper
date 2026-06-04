@@ -545,6 +545,7 @@ def bit_no_comp_inout(
     target = detect_target_from_binary(binary)
 
     runtime = -1
+    should_collect = False
 
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
@@ -554,6 +555,7 @@ def bit_no_comp_inout(
             summary_rows = store.summarize_bit_results(common.program_file)
             summary_df = pd.DataFrame(summary_rows)
     else:
+        should_collect = True
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True)
 
@@ -828,7 +830,7 @@ def bit_no_comp_inout(
         else:
             print("No exit codes recorded for this experiment.")
 
-    if not res_file.exists():
+    if should_collect:
         count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
 
         with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
@@ -1361,11 +1363,13 @@ def nop_no_comp_inout(
     target = detect_target_from_binary(binary)
 
     runtime = -1
+    should_collect = False
 
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
     else:
+        should_collect = True
         print(f"Old results: {res_file} does not exists")
         experiment_root.mkdir(exist_ok=True, parents=True)
 
@@ -1648,7 +1652,7 @@ def nop_no_comp_inout(
         else:
             print("No exit codes recorded for this experiment.")
 
-    if not res_file.exists():
+    if should_collect:
         count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
 
         with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
