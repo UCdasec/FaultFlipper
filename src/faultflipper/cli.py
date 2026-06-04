@@ -3583,6 +3583,7 @@ def run(inps: list[Path] = [Path("experiment.toml")]):
             # to a 'standard' type
             formated = {k.replace("-", "_"): v for k, v in exp.items()}
             formated["program_file"] = Path(formated["program_file"])
+            formated["program_source_code"] = Path(formated["program_source_code"])
             formated["out_dir"] = Path(formated["out_dir"])
 
             if "probability_model" in formated:
