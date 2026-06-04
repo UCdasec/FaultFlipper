@@ -981,7 +981,7 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
 
                 # Count lines of C source code
                 for source_file in mapper:
-                    if cur_addr in source_file:
+                    if cur_addr in mapper[source_file]:
                         c_line = mapper[source_file][cur_addr]
                         count.vulnerable_lines[source_file].append(c_line)
 

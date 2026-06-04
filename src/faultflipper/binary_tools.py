@@ -748,7 +748,7 @@ def multi_map_asm_to_c(binary_path):
         cs_arch, cs_mode = arch_mode_map[target]
         md = Cs(cs_arch, cs_mode)
 
-        addr_to_line = {}  # maps source file -> instruction address -> line number
+        addr_to_line = defaultdict(dict)  # maps source file -> instruction address -> line number
         for cu in dwarfinfo.iter_CUs():
             line_program = dwarfinfo.line_program_for_CU(cu)
 
