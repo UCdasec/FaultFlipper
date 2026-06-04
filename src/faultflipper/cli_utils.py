@@ -16,7 +16,7 @@ from binary_tools import (
     disassemble_text_section,
     extract_instr_type,
     generate_run_cmd,
-    map_asm_to_c,
+    multi_map_asm_to_c,
 )
 from cyclopts import Parameter
 from enums import LinuxExitCodes
@@ -915,8 +915,11 @@ class InstructionCount:
     unique_vulnerable_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
     instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
     unique_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
-    source_lines: list[int] = field(default_factory=list)
-    vulnerable_lines: list[int] = field(default_factory=list)
+
+    # filename -> total number of lines
+    source_lines: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
+    # filename -> list of vulnerable line numbers
+    vulnerable_lines: defaultdict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
 
 
 def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summary_df: pd.DataFrame, is_bit: bool) -> InstructionCount:
@@ -928,8 +931,10 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
     source_disasm = disassemble_text_section(common.program_file.absolute())
     disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
 
-    mapper = map_asm_to_c(common.program_file, common.program_source_code)
-    count.source_lines = list(mapper.values())
+    mapper = multi_map_asm_to_c(common.program_file)
+
+    for source_file in mapper:
+        count.source_lines[source_file] = len(mapper[source_file].values())
 
     repeat_addr = -1
     with alive_bar(len(bins), title="Processing total bins") as bar:
@@ -975,9 +980,10 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
                 count.vulnerable_instr_counts[instr_type] += 1
 
                 # Count lines of C source code
-                if cur_addr in mapper:
-                    c_line = mapper[cur_addr]
-                    count.vulnerable_lines.append(c_line)
+                for source_file in mapper:
+                    if cur_addr in source_file:
+                        c_line = mapper[source_file][cur_addr]
+                        count.vulnerable_lines[source_file].append(c_line)
 
             except Exception as e:
                 print(f"[Exception]: {e}")

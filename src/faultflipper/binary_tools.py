@@ -709,6 +709,65 @@ def map_asm_to_c(binary_path, source_path):
     return addr_to_line
 
 
+def multi_map_asm_to_c(binary_path):
+    """Implements map_asm_to_c but allows for multiple files
+    """
+    addresses = {}
+
+    target = detect_target(binary_path)
+
+    # Open the ELF binary
+    with open(binary_path, "rb") as bf:
+        elffile = ELFFile(bf)
+
+        if not elffile.has_dwarf_info():
+            raise RuntimeError(
+                "No DWARF debug info found in the binary. Recompile with -g."
+            )
+
+        dwarfinfo = elffile.get_dwarf_info()
+        text_section = elffile.get_section_by_name(".text")
+        if text_section is None:
+            raise RuntimeError("No .text section found in the ELF.")
+
+        text_data = text_section.data()
+        text_vaddr = text_section["sh_addr"]  # The load address of .text
+
+        # Architecture and mode mappings for Capstone
+        arch_mode_map = {
+            Target.X86_64: (CS_ARCH_X86, CS_MODE_64),
+            Target.X86_32: (CS_ARCH_X86, CS_MODE_32),
+
+            Target.ARM_32: (CS_ARCH_ARM, CS_MODE_ARM),
+            Target.ARM_64: (CS_ARCH_ARM64, CS_MODE_ARM),
+
+            Target.RISCV: (CS_ARCH_RISCV, capstone.CS_MODE_RISCV64 | capstone.CS_MODE_RISCVC),
+            Target.RISCV_32: (CS_ARCH_RISCV, capstone.CS_MODE_RISCV32 | capstone.CS_MODE_RISCVC | capstone.CS_MODE_LITTLE_ENDIAN),
+        }
+
+        cs_arch, cs_mode = arch_mode_map[target]
+        md = Cs(cs_arch, cs_mode)
+
+        addr_to_line = {}  # maps source file -> instruction address -> line number
+        for cu in dwarfinfo.iter_CUs():
+            line_program = dwarfinfo.line_program_for_CU(cu)
+
+            if not line_program:
+                continue
+
+            for entry in line_program.get_entries():
+                state = entry.state
+                if state is None or state.file == 0 or state.line == 0:
+                    continue
+
+                file_entry = line_program["file_entry"][state.file - 1]
+                file_name = file_entry.name.decode("utf-8", errors="ignore")
+
+                addr_to_line[file_name][state.address] = state.line
+
+    return addr_to_line
+
+
 # TODO: THis is incomplete
 def get_return_reg(target: Target) -> str | None:
     """Get the return register for the target."""
