@@ -915,6 +915,8 @@ class InstructionCount:
     unique_vulnerable_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
     instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
     unique_instr_counts: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
+    source_lines: list[int] = field(default_factory=list)
+    vulnerable_lines: list[int] = field(default_factory=list)
 
 
 def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summary_df: pd.DataFrame, is_bit: bool) -> InstructionCount:
@@ -922,8 +924,12 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
     count = InstructionCount()
     upset_bins = [Path(x) for x in list(upset_df["binary_path"])]
     bins = [Path(x) for x in list(summary_df["binary_path"])]
+
     source_disasm = disassemble_text_section(common.program_file.absolute())
     disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
+
+    mapper = map_asm_to_c(common.program_file, common.program_source_code)
+    count.source_lines = mapper.values()
 
     repeat_addr = -1
     with alive_bar(len(bins), title="Processing total bins") as bar:
@@ -964,6 +970,9 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
 
                 # Count instructions
                 count.vulnerable_instr_counts[instr_type] += 1
+
+                # Count lines of C source code
+                count.vulnerable_lines.append(mapper[cur_addr])
             except Exception as e:
                 print(f"[Exception]: {e}")
             finally:

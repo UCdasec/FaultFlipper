@@ -544,6 +544,8 @@ def bit_no_comp_inout(
     binary = lief.parse(common.program_file)
     target = detect_target_from_binary(binary)
 
+    runtime = -1
+
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
@@ -701,6 +703,8 @@ def bit_no_comp_inout(
                     data_to_save = {
                         "target": str(target),
                         "fault_model": "BIT",
+                        "source_lines": str(len(count.source_lines)),
+                        "source_vulnerable_lines": str(len(count.vulnerable_lines)),
                         "vulnerable": dict(count.vulnerable_instr_counts),
                         "total": dict(count.instr_counts),
                         "unique_total": dict(count.unique_instr_counts),
@@ -824,18 +828,22 @@ def bit_no_comp_inout(
         else:
             print("No exit codes recorded for this experiment.")
 
-    count = collect_upset_data(common, upset_df, summary_df, is_bit=True)
+    if not res_file.exists():
+        count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
 
-    with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
-        data_to_save = {
-            "target": str(target),
-            "fault_model": "BIT",
-            "vulnerable": dict(count.vulnerable_instr_counts),
-            "total": dict(count.instr_counts),
-            "unique_total": dict(count.unique_instr_counts),
-            "unique_vul": dict(count.unique_vulnerable_instr_counts),
-        }
-        json.dump(data_to_save, f, indent=4)
+        with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
+            data_to_save = {
+                "target": str(target),
+                "fault_model": "BIT",
+                "runtime": str(runtime),
+                "source_lines": str(len(count.source_lines)),
+                "source_vulnerable_lines": str(len(count.vulnerable_lines)),
+                "vulnerable": dict(count.vulnerable_instr_counts),
+                "total": dict(count.instr_counts),
+                "unique_total": dict(count.unique_instr_counts),
+                "unique_vul": dict(count.unique_vulnerable_instr_counts),
+            }
+            json.dump(data_to_save, f, indent=4)
 
     return summary_df
 
@@ -1352,6 +1360,8 @@ def nop_no_comp_inout(
     binary = lief.parse(common.program_file)
     target = detect_target_from_binary(binary)
 
+    runtime = -1
+
     if res_file.exists():
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
@@ -1490,6 +1500,8 @@ def nop_no_comp_inout(
                     data_to_save = {
                         "target": str(target),
                         "fault_model": "NOP",
+                        "source_lines": str(len(count.source_lines)),
+                        "source_vulnerable_lines": str(len(count.vulnerable_lines)),
                         "vulnerable": dict(count.vulnerable_instr_counts),
                         "total": dict(count.instr_counts),
                         "unique_total": dict(count.unique_instr_counts),
@@ -1636,18 +1648,22 @@ def nop_no_comp_inout(
         else:
             print("No exit codes recorded for this experiment.")
 
-    count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
+    if not res_file.exists():
+        count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
 
-    with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
-        data_to_save = {
-            "target": str(target),
-            "fault_model": "NOP",
-            "vulnerable": dict(count.vulnerable_instr_counts),
-            "total": dict(count.instr_counts),
-            "unique_total": dict(count.unique_instr_counts),
-            "unique_vul": dict(count.unique_vulnerable_instr_counts),
-        }
-        json.dump(data_to_save, f, indent=4)
+        with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
+            data_to_save = {
+                "target": str(target),
+                "fault_model": "NOP",
+                "runtime": str(runtime),
+                "source_lines": str(len(count.source_lines)),
+                "source_vulnerable_lines": str(len(count.vulnerable_lines)),
+                "vulnerable": dict(count.vulnerable_instr_counts),
+                "total": dict(count.instr_counts),
+                "unique_total": dict(count.unique_instr_counts),
+                "unique_vul": dict(count.unique_vulnerable_instr_counts),
+            }
+            json.dump(data_to_save, f, indent=4)
 
 
     return summary_df
