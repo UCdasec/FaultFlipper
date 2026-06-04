@@ -929,7 +929,7 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
     disasm_lookup = {instr.address: instr.mnemonic for instr in source_disasm}
 
     mapper = map_asm_to_c(common.program_file, common.program_source_code)
-    count.source_lines = mapper.values()
+    count.source_lines = list(mapper.values())
 
     repeat_addr = -1
     with alive_bar(len(bins), title="Processing total bins") as bar:
@@ -959,9 +959,12 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
         for bin in upset_bins:
             # Only execute if address is unique (BIT)
             try:
-                cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
-                cur_addr = cur_addr.split("_")[0]
-                cur_addr = int(cur_addr, 16)
+                if is_bit:
+                    cur_addr = bin.name.replace(f"{common.program_file.name}_", "")
+                    cur_addr = cur_addr.split("_")[0]
+                    cur_addr = int(cur_addr, 16)
+                else:
+                    cur_addr = int(bin.name.replace(f"{common.program_file.name}_", ""), 16)
 
                 instr_type: str = extract_instr_type(disasm_lookup, cur_addr)
                 if repeat_addr != cur_addr:
