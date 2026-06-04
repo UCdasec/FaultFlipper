@@ -88,7 +88,7 @@ def get_disasm(
     start_addr: int
         The decimal 10 start address
     end_addr: int
-        The decimsal 10 end address
+        The decimal 10 end address
     """
     total = disasm(binary, start_addr, end_addr, text, verbose, pad)
     return total
@@ -542,11 +542,11 @@ def bit_no_comp_inout(
     use_store: bool = True,
     delete_bins: Annotated[bool, Parameter(name="del")] = True,
 ) -> pd.DataFrame:
-    """Run a bit experiment on a already compiled binary with (in,out) tups.
+    """Run a bit experiment on an already compiled binary with (in,out) tups.
 
     Basically this runs x-bit with many different inputs.
 
-    I.E) For ML, we pass in (input, output) pairs. That is mayeb 40 pairs of
+    I.E) For ML, we pass in (input, output) pairs. That is maybe 40 pairs of
     inputs and labels. Then, EACH mutated binary will be checked against ALL
     40 pairs.
     """
@@ -577,7 +577,7 @@ def bit_no_comp_inout(
             summary_rows = store.summarize_bit_results(common.program_file)
             summary_df = pd.DataFrame(summary_rows)
     else:
-        print(f"Old results: {res_file} does not exists")
+        print(f"Old results: {res_file} does not exist")
         experiment_root.mkdir(exist_ok=True)
 
         binary = lief.parse(common.program_file)
@@ -875,7 +875,7 @@ def angr_nop_no_comp_inout(
         df = pd.read_csv(res_file)
         print("Loading existing results")
     else:
-        print(f"Old results: {res_file} does not exists")
+        print(f"Old results: {res_file} does not exist")
         common.out_dir.mkdir(exist_ok=True)
 
         # Intermeidate results
@@ -998,11 +998,11 @@ def angr_nop_no_comp_inout(
             tot_bad_res.extend(bad_res)
             tot_error_res.extend(error_case)
             print(
-                f"BIN: at {tmp}  had {len(good_res)} norm {len(bad_res)} event_upset, and {len(error_case)} error"
+                f"BIN: at {tmp} had {len(good_res)} norm {len(bad_res)} event_upset, and {len(error_case)} error"
             )
 
         print(
-            f"BIN:  had {len(good_res)} norm {len(bad_res)} event_upset, and {len(error_case)} error"
+            f"BIN: had {len(good_res)} norm {len(bad_res)} event_upset, and {len(error_case)} error"
         )
 
         total_normal += len(good_res)
@@ -1037,7 +1037,7 @@ def nn_inout_runner(
 ):
     """Function to help with running parallel neural network in outs.
 
-    That is. This function, given one instruction, will rewrite it with a
+    This function, given one instruction, will rewrite with a
     nop, then test the mutant binary on all the in files.
     """
     insts = [inst]
@@ -1339,7 +1339,7 @@ def nop_no_comp_inout(
         summary_df = pd.read_csv(res_file)
         print("Loading existing summarized results")
     else:
-        print(f"Old results: {res_file} does not exists")
+        print(f"Old results: {res_file} does not exist")
         experiment_root.mkdir(exist_ok=True, parents=True)
 
         binary = lief.parse(common.program_file)
@@ -1512,8 +1512,8 @@ def nop_no_comp_inout(
     print(f"We have {agg_df.shape} shaped agg df")
     print(f"We have {agg_df_no_fail.shape} shaped agg df no fail")
 
-    print(f"Counts of corrects:\n {agg_df['total_correct'].value_counts()}")
-    print(f"Counts of failed:\n {agg_df['total_failed'].value_counts()}")
+    print(f"Number of corrects:\n {agg_df['total_correct'].value_counts()}")
+    print(f"Number of fails:\n {agg_df['total_failed'].value_counts()}")
     print(f"NO FAIL Counts of corrects:\n {agg_df_no_fail['total_correct'].value_counts()}")
 
     mask = (agg_df["total_failed"] != 0) & (agg_df["total_correct"] != 0)
@@ -1529,10 +1529,10 @@ def nop_no_comp_inout(
         f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] == expected_correct).sum()} had the same number of correct predictions"
     )
     print(
-        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] < expected_correct).sum()} had less than the correct predictions"
+        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_correct'] < expected_correct).sum()} had less than the number of correct predictions"
     )
     print(
-        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_failed'] >= 1).sum()} had atleast one sample that caused a failed experiment"
+        f"Therefore, of {agg_df.shape[0]} mutated bins, {(agg_df['total_failed'] >= 1).sum()} had at least one sample that caused a failed experiment"
     )
 
     upset_hist_store = store
@@ -1580,9 +1580,9 @@ def nop_no_comp_inout(
 @app.command
 def find_faulted(results: Path, padding: int):
     """
-    From the results file find the binaries that had the exptected STDOUT
-    then print the dissassembly comparison between all those programs and the
-    base program
+    From the results file, find the binaries that had the expected STDOUT,
+    then print the disassembly comparison between all of those programs and the
+    base program.
     """
     if not results.exists():
         print(f"File {results} does not exist")
@@ -1613,9 +1613,9 @@ def find_faulted(results: Path, padding: int):
 
 @app.command
 def read_results(inp: Path):
-    """Read the results.csv of and experiemnt"""
+    """Read the results.csv file from an experiment"""
     if not inp.is_file():
-        raise Exception("The input file does not exists")
+        raise Exception("The input file does not exist")
 
     df = pd.read_csv(inp, index_col=False)
 
@@ -1631,7 +1631,7 @@ def read_results(inp: Path):
             no_match += 1
 
     print(f"Matches: {match}")
-    print(f"No Matche: {no_match}")
+    print(f"No Match: {no_match}")
 
     print(df.columns)
 
@@ -1657,7 +1657,7 @@ def filter_results(
     """
     Filter an existing experiment's results.csv down to the provided addresses.
 
-    The addresses_json file should be the output of parser.py mutated-addresses.
+    The addresses_json file should be the output of the parser.py mutated-addresses.
     """
     try:
         results_file = _resolve_results_file(experiment)
@@ -1738,7 +1738,7 @@ def instruction_hist(df):
 
         inst = [f"{x.mnemonic} {x.op_str}" for x in disassembly if x.address == addr]
         if inst == []:
-            raise Exception(f"Missing the matching instruction for addres {addr}")
+            raise Exception(f"Missing the matching instruction for address {addr}")
 
         contains_insts.extend(inst)
 
@@ -1762,7 +1762,7 @@ def x_bit_reg_seq(
     common.out_dir.mkdir(exist_ok=True, parents=True)
     base_out = common.out_dir
 
-    # Copy the source cdoe to the experiement
+    # Copy the source code to the experiment
     source_code = common.program_file
     common.program_source_code = source_code
     program_context = common.program_file.parent.joinpath(
@@ -1842,7 +1842,7 @@ def x_bit_reg_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -1881,7 +1881,7 @@ def x_bit_reg_seq(
 
 def smol_analyze_reg_results(reg_infos, func_names, golden_register_info, bin: Path):
     """
-    Anaylze the register results
+    Analyze the register results
     """
     event_upset_res = []
     error_case = []
@@ -1937,7 +1937,7 @@ def norm_v_upset_v_error(all_golden_rets, all_mut_rets):
     ):
         error_case = True
     else:
-        # Event upset is when the two programs disagree and the mutatnt one runs without error
+        # Event upset is when the two programs disagree and the mutant one runs without error
         event_upset_res = True
 
     return normal_case, event_upset_res, error_case
@@ -1984,7 +1984,7 @@ def analyze_reg_results(results, func_names, golden_register_info):
         ):
             error_case.append(result)
         else:
-            # Event upset is when the two programs disagree and the mutatnt one runs without error
+            # Event upset is when the two programs disagree and the mutant one runs without error
             event_upset_res.append(result)
 
     assert len(normal_case) + len(event_upset_res) + len(error_case) == len(results)
@@ -2010,7 +2010,7 @@ def x_bit_reg_parallel(
     common.out_dir.mkdir(exist_ok=True, parents=True)
     base_out = common.out_dir
 
-    # Copy the source cdoe to the experiement
+    # Copy the source code to the experiment
     source_code = common.program_file
     common.program_source_code = source_code
     program_context = common.program_file.parent.joinpath(
@@ -2117,7 +2117,7 @@ def x_bit_reg_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -2252,7 +2252,7 @@ def x_bit_qemu_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -2401,7 +2401,7 @@ def x_bit_qemu_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     report_path = common.out_dir.parent.joinpath("report.md")
@@ -2462,7 +2462,7 @@ def x_nop_reg_seq(
     )
     base_out = common.out_dir
 
-    # Copy the source cdoe to the experiement
+    # Copy the source code to the experiment
     source_code = common.program_file
     common.program_source_code = source_code
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
@@ -2545,7 +2545,7 @@ def x_nop_reg_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -2598,9 +2598,9 @@ def x_bit(
     upset_on_match: bool = True,
 ):
     """
-    Run the bit experiemnt with either the qemu backend
+    Run the bit experiment with either the qemu backend
     or the angr backend. Set delete_non_upsets to remove mutated binaries
-    that behaved normally or errored when the run completes.
+    that behaved normally or errored after the run completes.
     """
     if backend == Backends.ANGR and num_cpus > 1:
         print("ANGR backend does not support parallel execution yet")
@@ -2767,7 +2767,7 @@ def x_nop_reg_parallel(
     )
     base_out = common.out_dir
 
-    # Copy the source cdoe to the experiement
+    # Copy the source code to the experiment
     source_code = common.program_file
     common.program_source_code = source_code
     shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
@@ -2860,7 +2860,7 @@ def x_nop_reg_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -2919,7 +2919,7 @@ def verbose_output(results, func_names, golden_register_info):
 
         for name in func_names:
             if name in result.reg_info.keys():
-                # Get a liust of all the r0 values across all calls to func name
+                # Get a list of all the r0 values across all calls to func name
                 gold_register = collect_all_reg_calls(golden_register_info, register, name)
                 mut_r0_ret = collect_all_reg_calls(result.reg_info, register, name)
                 is_correct = gold_register[-1] == mut_r0_ret[-1]
@@ -3039,7 +3039,7 @@ def x_nop_qemu_seq(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -3084,7 +3084,7 @@ def x_bit_qemu_parallel_data(
     target_section: str = ".data",
     upset_on_match: bool = True,
 ):
-    """Run an experiment that gernerates mutant binaries overriding the target section
+    """Run an experiment that generates mutant binaries overriding the target section
 
     Parameters
     ----------
@@ -3099,7 +3099,7 @@ def x_bit_qemu_parallel_data(
     base_out = common.out_dir
 
     if comp:
-        # Copy the source cdoe to the experiement
+        # Copy the source code to the experiment
         source_code = common.program_file
         common.program_source_code = source_code
         shutil.copy(source_code, common.out_dir.joinpath(source_code.name))
@@ -3187,7 +3187,7 @@ def x_bit_qemu_parallel_data(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -3234,7 +3234,7 @@ def x_nop_qemu_parallel(
     addresses_json: Path | None = None,
     upset_on_match: bool = True,
 ):
-    """Run an experiment that gernerates mutant binaries with num_nops, and tests them with QEMU.
+    """Run an experiment that generates mutant binaries with num_nops, and tests them with QEMU.
 
     Parameters
     ----------
@@ -3325,7 +3325,7 @@ def x_nop_qemu_parallel(
     params = common.to_dict()
     params["target"] = target.value
 
-    with open(base_out.joinpath("experiment_parametes.json"), "w") as f:
+    with open(base_out.joinpath("experiment_parameters.json"), "w") as f:
         json.dump(params, f, indent=4)
 
     num_bits = len(lief.parse(common.program_file).get_section(".text").content) * 8
@@ -3558,11 +3558,11 @@ def gather_reports(inp: Path, out: Path, force: bool = False, substrs: list[str]
     """
     if out.exists():
         if not force:
-            print("The destination already exists, if this is okay pass the force command")
+            print("The destination already exists. If this is okay, pass the force command.")
             return
 
         if out.is_file():
-            print("The destination already exists is is a file. Please provide a new output")
+            print("The destination already exists, and is a file. Please provide a new output.")
             return
 
         out.mkdir(parents=True, exist_ok=True)
@@ -3593,10 +3593,10 @@ def get_overhead(
     timeout: int = 10,
 ) -> None:
     """
-    Compare the overhead of files
+    Compare the overhead of files.
 
-    Common use case will be to compare a 'unsafe' program
-    to programs that apply some mitigations
+    Common use case will be to compare an 'unsafe' program
+    to programs that apply some mitigations.
 
     The inputs should be r
     """
@@ -3674,9 +3674,9 @@ def plot_faults_and_failures(start_addr, end_addr, faulted_addresses, failed_add
         The lower bound of the x-axis (start address).
     end_addr : int or float
         The upper bound of the x-axis (end address).
-    faulted_addresses : list of int/float
+    faulted_addresses : list of int or float
         Addresses where faults occurred (plotted in yellow).
-    failed_addresses : list of int/float
+    failed_addresses : list of int or float
         Addresses where failures occurred (plotted in red).
     """
     _, ax = plt.subplots(figsize=(10, 2))
@@ -3762,7 +3762,7 @@ def nn_generate_exp_files(
     expected_correct: int,
 ):
     """
-    A temporary function to generate experiemnt files for classifier testing
+    A temporary function to generate experiment files for classifier testing
     """
     target = detect_target(binary)
 
@@ -4013,8 +4013,8 @@ def compare_regs(
             if val != mut_info[reg]:
                 print(f"DIFF in ({name}|{reg}): Vanilla: {val} Mut: {mut_info[reg]}")
 
-    print(f"Retunr addrs of password_check: {norm_rax}")
-    print(f"Mut Retunr addrs of password_check: {mut_rax}")
+    print(f"Return addrs of password_check: {norm_rax}")
+    print(f"Mut Return addrs of password_check: {mut_rax}")
 
     func_name = "main"
     norm_rax = capt[func_name]["r0"]
@@ -4034,10 +4034,10 @@ def spectral_plot(
     tick_int: int,
     upset_on_match: bool = True,
 ):
-    """Make the spectrral plot.
+    """Make the spectral plot.
 
     Spectral plot has the address as the x addr and plots
-    which bytes cause a fault and which caused a program error.
+    which bytes caused upsets and which caused program errors.
 
     This is done for a single c source code file.
     """
@@ -4217,8 +4217,8 @@ def create_plot(
     for i, cur_list in enumerate(dynamic_vulns):
         # Iter over both lists
         for j, addr in enumerate(all_addrs):
-            # We iterate over all instrcutoins because some of the insutrctions
-            # wil have both some or none.
+            # We iterate over all instructions because some of the instructions
+            # will have both some or none.
 
             # for j in range(num_instructions):
             is_vuln = addr in cur_list
@@ -4268,7 +4268,7 @@ def create_plot(
         spine.set_linewidth(2.0)
 
     ax_legend_handles = [
-        mpatches.Patch(color=colors["Upset & Error"], label="Upert & Error"),
+        mpatches.Patch(color=colors["Upset & Error"], label="Upset & Error"),
         mpatches.Patch(color=colors["Upset"], label="Upset"),
         mpatches.Patch(color=colors["Error"], label="Error"),
     ]
