@@ -975,7 +975,10 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
                 count.vulnerable_instr_counts[instr_type] += 1
 
                 # Count lines of C source code
-                count.vulnerable_lines.append(mapper[cur_addr])
+                if cur_addr in mapper:
+                    c_line = mapper[cur_addr]
+                    count.vulnerable_lines.append(c_line)
+
             except Exception as e:
                 print(f"[Exception]: {e}")
             finally:
