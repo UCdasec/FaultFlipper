@@ -1,0 +1,15 @@
+[experiment.nop1_arm32_opt0_fib_compiled_upset_on_match]
+command = "x_nop"
+program-file = "test_files/fib_arm32.o"
+program-source-code = "test_files/fib.c"
+program-input = ""
+expected-returncode = 0
+expected-stdout = "6765"
+list-expected = false
+timeout = 4
+out-dir = "experiments/nop1_arm32_opt0_fib_compiled_upset_on_match"
+yes = true
+target = "arm_32"
+num_cpus = 24
+no-compile = true
+upset-on-match = true
