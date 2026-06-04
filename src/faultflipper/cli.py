@@ -831,7 +831,7 @@ def bit_no_comp_inout(
             print("No exit codes recorded for this experiment.")
 
     if should_collect:
-        count = collect_upset_data(common, upset_df, summary_df, is_bit=False)
+        count = collect_upset_data(common, upset_df, summary_df, is_bit=True)
 
         with open(experiment_root.joinpath("instruction_count.json"), "w") as f:
             data_to_save = {
