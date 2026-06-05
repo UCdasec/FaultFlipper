@@ -238,6 +238,8 @@ def visualize(filename: str):
 def plot_marked_instructions(csv_files, output_filename="marked_instructions_comparison.png"):
     """
     Parses multiple CSV files and creates a stacked event plot of marked instructions.
+    Supports both the original single-row-per-instruction format and the new 
+    32-indexes-per-address format.
     
     Args:
         csv_files (list of str): List of file paths to the CSV files.
@@ -248,13 +250,35 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
 
     for file in csv_files:
         try:
-            df = pd.read_csv(file, header=0, usecols=[4])
+            # Peek at the header to determine the format of the CSV
+            header_df = pd.read_csv(file, nrows=0)
+            
+            if "flipped_addr" in header_df.columns:
+                # --- NEW FORMAT ---
+                # Read only necessary columns to save memory (files can have ~3.8M rows)
+                df = pd.read_csv(file, usecols=["flipped_addr", "total_failed"])
+                
+                # Create a mapping of each unique address to a sequential Instruction Index (0, 1, 2...)
+                unique_addrs = df["flipped_addr"].drop_duplicates().tolist()
+                addr_to_idx = {addr: idx for idx, addr in enumerate(unique_addrs)}
+                
+                # Find addresses where ANY of the 32 indexes were triggered
+                # (Assuming "triggered" means total_failed > 0)
+                marked_addrs = df[df["total_failed"] > 0]["flipped_addr"].unique()
+                
+                # Convert the marked addresses back to their sequential Instruction Index
+                marked_indices = [addr_to_idx[addr] for addr in marked_addrs]
+                all_marked_indices.append(marked_indices)
+                
+            else:
+                # The 5th column is at index 4. Read only that column.
+                df = pd.read_csv(file, header=0, usecols=[4])
 
-            # The 5th column is at index 4. Find row indices where the value is 0
-            marked_indices = df.index[df.iloc[:, 0] == 0].tolist()
-            all_marked_indices.append(marked_indices)
+                # Find row indices where the value is 0 (marked)
+                marked_indices = df.index[df.iloc[:, 0] == 0].tolist()
+                all_marked_indices.append(marked_indices)
 
-            # Use the filename as the label for the y-axis
+            # Use the filename (without extension) as the label for the y-axis
             labels.append(os.path.splitext(os.path.basename(file))[0])
 
         except Exception as e:
@@ -264,6 +288,7 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
         print("No data to plot.")
         return
 
+    # Create the plot
     fig, ax = plt.subplots(figsize=(15, max(4, len(csv_files) * 0.8)))
 
     colors = plt.cm.tab10.colors # Use distinct colors for different programs
@@ -274,17 +299,22 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
         linewidths=0.5,
         colors=[colors[i % len(colors)] for i in range(len(csv_files))]
     )
+    
     # Formatting the graph
     ax.margins(0)
     ax.set_title("Instruction NOP Upset Comparison")
     ax.set_xlabel("Instruction Index")
     ax.set_ylabel("Image")
+    
     # Set y-ticks to match the files
     ax.set_yticks(range(len(labels)))
     ax.set_yticklabels(labels)
+    
     plt.tight_layout()
+    
     # Save the figure instead of showing it directly
     plt.savefig(output_filename, bbox_inches="tight", pad_inches=0, dpi=300)
+    plt.close(fig) # Close the figure to free up memory
     print(f"Plot saved successfully to {output_filename}")
 
 
