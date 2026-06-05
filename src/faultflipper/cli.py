@@ -206,7 +206,7 @@ def _setup_qemu_experiment(
         if source_code is not None:
             source_code = Path(source_code)
         context_base = source_code if source_code is not None else common.program_file
-        program_context = context_base.parent.joinpath(context_base.name.replace(".c", ".toml"))
+        program_context = context_base.parent.joinpath(context_base.name.replace(".c", ".toml")) if context_base == source_code else context_base.parent.joinpath(context_base.name + ".toml")
         compile_cmd = []
 
     common.out_dir = base_out.joinpath("mutated_bins")

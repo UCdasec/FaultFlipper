@@ -408,9 +408,9 @@ def save_report(
     """
     Generate a report including:
     1. Experiment Settings
-    2. Histrogram of exit codes
-    3. list of files that ran critical code
-    4. Disassmeblys of the files that ran critical codes
+    2. Histogram of exit codes
+    3. List of files that ran critical code
+    4. Disassembly of the files that ran critical codes
     5. Validation of correct mutations
     6. Whole dataframe
     7. A json of just the successful faults.
@@ -606,7 +606,7 @@ def save_report(
             verbose=False,
         )
 
-        disassems += f"#### Original Program vs Program {i} {bin.name} diassemebly\n\n"
+        disassems += f"#### Original Program vs Program {i} {bin.name} disassembly\n\n"
         disassems += "```\n"
         disassems += ret
         disassems += "```\n"
@@ -798,7 +798,7 @@ def save_reg_report(
             verbose=False,
         )
 
-        disassems += f"#### Vanilla vs Mutant #{i}: {bin.name} diassemebly\n\n"
+        disassems += f"#### Vanilla vs Mutant #{i}: {bin.name} disassembly\n\n"
         disassems += "```\n"
         disassems += ret
         disassems += "```\n"
