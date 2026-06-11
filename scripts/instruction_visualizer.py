@@ -240,46 +240,37 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
     Parses multiple CSV files and creates a stacked event plot of marked instructions.
     Supports both the original single-row-per-instruction format and the new 
     32-indexes-per-address format.
-    
-    Args:
-        csv_files (list of str): List of file paths to the CSV files.
-        output_filename (str): Name of the file to save the resulting plot.
     """
     all_marked_indices = []
     labels = []
+    max_instruction_index = 0
 
     for file in csv_files:
         try:
-            # Peek at the header to determine the format of the CSV
             header_df = pd.read_csv(file, nrows=0)
             
             if "flipped_addr" in header_df.columns:
                 # --- NEW FORMAT ---
-                # Read only necessary columns to save memory (files can have ~3.8M rows)
                 df = pd.read_csv(file, usecols=["flipped_addr", "total_failed"])
                 
-                # Create a mapping of each unique address to a sequential Instruction Index (0, 1, 2...)
                 unique_addrs = df["flipped_addr"].drop_duplicates().tolist()
                 addr_to_idx = {addr: idx for idx, addr in enumerate(unique_addrs)}
                 
-                # Find addresses where ANY of the 32 indexes were triggered
-                # (Assuming "triggered" means total_failed > 0)
                 marked_addrs = df[df["total_failed"] > 0]["flipped_addr"].unique()
-                
-                # Convert the marked addresses back to their sequential Instruction Index
                 marked_indices = [addr_to_idx[addr] for addr in marked_addrs]
                 all_marked_indices.append(marked_indices)
                 
             else:
-                # The 5th column is at index 4. Read only that column.
+                # --- OLD FORMAT ---
                 df = pd.read_csv(file, header=0, usecols=[4])
-
-                # Find row indices where the value is 0 (marked)
                 marked_indices = df.index[df.iloc[:, 0] == 0].tolist()
                 all_marked_indices.append(marked_indices)
 
-            # Use the filename (without extension) as the label for the y-axis
             labels.append(os.path.splitext(os.path.basename(file))[0])
+
+            # Track the maximum index to properly bound the x-axis later
+            if marked_indices:
+                max_instruction_index = max(max_instruction_index, max(marked_indices))
 
         except Exception as e:
             print(f"Error processing {file}: {e}")
@@ -291,30 +282,45 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
     # Create the plot
     fig, ax = plt.subplots(figsize=(15, max(4, len(csv_files) * 0.8)))
 
-    colors = plt.cm.tab10.colors # Use distinct colors for different programs
+    # Explicitly define the y-positions for each row to prevent floating-point interpolation
+    y_positions = list(range(len(csv_files)))
+    colors = plt.cm.tab10.colors 
+
     ax.eventplot(
         all_marked_indices, 
+        lineoffsets=y_positions, # Lock rows to integer y-coordinates
         orientation="horizontal", 
         linelengths=1.0, 
         linewidths=0.5,
         colors=[colors[i % len(colors)] for i in range(len(csv_files))]
     )
     
-    # Formatting the graph
-    ax.margins(0)
+    # --- Formatting Fixes ---
+    
+    # Force the X-axis to display integers with commas (e.g., 100,000 instead of 100000.0)
+    ax.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
+    
+    # Set tight limits so the graph ends exactly where the data ends, 
+    # but give a 1% x-margin so the first/last lines aren't clipped by the plot border.
+    ax.margins(x=0.01, y=0)
+    ax.set_xlim(left=0, right=max_instruction_index)
+    
+    # Lock the Y-axis limits perfectly around the rows
+    ax.set_ylim(-0.5, len(labels) - 0.5)
+
     ax.set_title("Instruction NOP Upset Comparison")
     ax.set_xlabel("Instruction Index")
     ax.set_ylabel("Image")
     
-    # Set y-ticks to match the files
-    ax.set_yticks(range(len(labels)))
+    # Set y-ticks to explicitly match our calculated integer positions
+    ax.set_yticks(y_positions)
     ax.set_yticklabels(labels)
     
     plt.tight_layout()
     
-    # Save the figure instead of showing it directly
-    plt.savefig(output_filename, bbox_inches="tight", pad_inches=0, dpi=300)
-    plt.close(fig) # Close the figure to free up memory
+    # Removed pad_inches=0 so the labels aren't chopped off your screen
+    plt.savefig(output_filename, bbox_inches="tight", dpi=300)
+    plt.close(fig) 
     print(f"Plot saved successfully to {output_filename}")
 
 

@@ -919,7 +919,7 @@ class InstructionCount:
     # filename -> total number of lines
     source_lines: defaultdict[str, int] = field(default_factory=lambda: defaultdict(int))
     # filename -> list of vulnerable line numbers
-    vulnerable_lines: defaultdict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
+    vulnerable_lines: defaultdict[str, set[int]] = field(default_factory=lambda: defaultdict(set))
 
 
 def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summary_df: pd.DataFrame, is_bit: bool) -> InstructionCount:
@@ -983,7 +983,7 @@ def collect_upset_data(common: CommandParameters, upset_df: pd.DataFrame, summar
                 for source_file in mapper:
                     if cur_addr in mapper[source_file]:
                         c_line = mapper[source_file][cur_addr]
-                        count.vulnerable_lines[source_file].append(c_line)
+                        count.vulnerable_lines[source_file].add(c_line)
 
             except Exception as e:
                 print(f"[Exception]: {e}")
