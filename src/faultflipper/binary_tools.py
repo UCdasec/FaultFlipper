@@ -282,7 +282,7 @@ def build_executed_capstone_addrs_from_qemu(
     # Initialize hit map in Capstone space
     hit_map: dict[int, int] = dict.fromkeys(cap_addrs, 0)
 
-    print("Computing best offset with distnct")
+    print("Computing best offset with distinct")
 
     best_offset, distinct_support, total_support = compute_best_offset_with_distinct(
         qemu_trace,
@@ -867,14 +867,14 @@ def compute_best_offset_by_mnemonic(
     Returns (best_delta, support_count).
     """
     # Group QEMU PCs by mnemonic
-    print("Qemu mnuemeic")
+    print("Qemu mnemonic")
     qemu_by_mnem: dict[str, list[int]] = defaultdict(list)
     for pc, mnem in qemu_trace:
         qemu_by_mnem[mnem].append(pc)
         print(mnem)
 
     # Group Capstone addresses by mnemonic
-    print("Capstone mnuemeic")
+    print("Capstone mnemonic")
     cap_by_mnem: dict[str, list[int]] = defaultdict(list)
     for insn in disasm:
         cap_by_mnem[insn.mnemonic].append(insn.address)
@@ -1080,7 +1080,7 @@ def build_aligned_trace(binary_path: Path, trace_path: Path, disasm, target:Targ
     """
     if file_compiled_as_pie(binary_path):
 
-        print("FILE IS CMPILED AS PIE... MUST DETECT OFFSET")
+        print("FILE IS COMPILED AS PIE... MUST DETECT OFFSET")
 
         if trace_backend == "angr":
 
@@ -1106,7 +1106,7 @@ def build_aligned_trace(binary_path: Path, trace_path: Path, disasm, target:Targ
             
         else:
             out = load_qemu_trace_text(trace_path)
-            print("Buildin best offset with pcs and bytes")
+            print("Building best offset with pcs and bytes")
 
             qemu_pcs, map, offset, _ = build_executed_capstone_addrs_from_qemu(disasm, out)
 
@@ -1640,10 +1640,10 @@ def get_lief_arch(filename):
 
 
 def gen_nop_patch(inst: CsInsn, target: Target) -> list[int]:
-    """Generate a list of bytes that corresponds to the targets NOP instruction.
+    """Generate a list of bytes that corresponds to the target's NOP instruction.
 
-    If the target instructio requies 4 NOPS to completely overwrite, then
-    the byte sequence for 4 nops will be returned
+    If the target instruction requires 4 NOPs to completely overwrite, then
+    the byte sequence for 4 NOPs will be returned.
     """
     match target:
         case Target.X86_64:
@@ -1856,7 +1856,7 @@ def generate_data_bit_flip(
     binary_path: Path, data_idx: int, data_bit_idx: int, out_file: Path, target_section: str = ".data"
 ) -> Path:
     """
-    Flip a specific bit inside a writable section (default: ``.data``) and emit a new binary.
+    Flip a specific bit inside a writeable section (default: ``.data``) and emit a new binary.
 
     Parameters
     ----------
@@ -1946,7 +1946,7 @@ def generate_nops_mutated_bin(
     text_section_offset: int | None = None,
     text_section_vaddr: int | None = None,
 ) -> Path:
-    """Geneate a single mutated binary.
+    """Generate a single mutated binary.
 
     Replace all the instructions with the nop patch for this target
     architecture.
@@ -2090,7 +2090,7 @@ def run_binary_w_calltime_input(
     path: Path, program_input: str, target: Target, timeout: int = 60
 ) -> tuple[int | None, str, str] | None:
     """
-    This function will provide the input at execturion time.
+    This function will provide the input at execution time.
 
     For example:
     ```
@@ -2174,7 +2174,7 @@ def run_binary_w_input(
 
 def is_valid_instruction(opcode_bytes, target):
     """
-    Check if the provided byte sequence is a valid insturction
+    Check if the provided byte sequence is a valid instruction
     """
     match target:
         case Target.X86_64:
@@ -2413,7 +2413,7 @@ def compile_program(
     try:
         subprocess.run(cmd, check=False)
         if not out.exists():
-            msg = f"Failted to compile. Coommand was: {cmd}"
+            msg = f"Failed to compile. Command was: {cmd}"
             raise Exception(msg)
         return out
     except Exception as e:
@@ -2439,7 +2439,7 @@ def disasm(
     start_addr: int
         The decimal 10 start address
     end_addr: int
-        The decimsal 10 end address
+        The decimal 10 end address
     """
     pretty_insns = []
     for bin in binary:
@@ -2449,7 +2449,7 @@ def disasm(
             x for x in disassembly if x.address >= start_addr and x.address <= end_addr
         ]
         if len(filter_disasm) == 0:
-            raise Exception("Diasm length is zero")
+            raise Exception("Disasm length is zero")
 
         # Max len of just the bytes
         max_len = max(
