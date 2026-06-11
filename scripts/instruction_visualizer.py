@@ -242,8 +242,12 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
     32-indexes-per-address format.
     """
     all_marked_indices = []
+<<<<<<< HEAD
     labels = []
     max_instruction_index = 0
+=======
+    labels = ['image0_lbl7', 'image2_lbl11', 'image7_lbl11', 'image19_lbl6', 'image64_lbl6']
+>>>>>>> 27d9bcd (change instr visualizer to BIT)
 
     for file in csv_files:
         try:
@@ -266,7 +270,12 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
                 marked_indices = df.index[df.iloc[:, 0] == 0].tolist()
                 all_marked_indices.append(marked_indices)
 
+<<<<<<< HEAD
             labels.append(os.path.splitext(os.path.basename(file))[0])
+=======
+            # Use the filename (without extension) as the label for the y-axis
+            #labels.append(os.path.splitext(os.path.basename(file))[0])
+>>>>>>> 27d9bcd (change instr visualizer to BIT)
 
             # Track the maximum index to properly bound the x-axis later
             if marked_indices:
@@ -295,20 +304,9 @@ def plot_marked_instructions(csv_files, output_filename="marked_instructions_com
         colors=[colors[i % len(colors)] for i in range(len(csv_files))]
     )
     
-    # --- Formatting Fixes ---
-    
-    # Force the X-axis to display integers with commas (e.g., 100,000 instead of 100000.0)
-    ax.xaxis.set_major_formatter(ticker.StrMethodFormatter("{x:,.0f}"))
-    
-    # Set tight limits so the graph ends exactly where the data ends, 
-    # but give a 1% x-margin so the first/last lines aren't clipped by the plot border.
-    ax.margins(x=0.01, y=0)
-    ax.set_xlim(left=0, right=max_instruction_index)
-    
-    # Lock the Y-axis limits perfectly around the rows
-    ax.set_ylim(-0.5, len(labels) - 0.5)
-
-    ax.set_title("Instruction NOP Upset Comparison")
+    # Formatting the graph
+    ax.margins(0)
+    ax.set_title("Instruction BIT Upset Comparison")
     ax.set_xlabel("Instruction Index")
     ax.set_ylabel("Image")
     
