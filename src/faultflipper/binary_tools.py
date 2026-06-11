@@ -1856,7 +1856,7 @@ def generate_data_bit_flip(
     binary_path: Path, data_idx: int, data_bit_idx: int, out_file: Path, target_section: str = ".data"
 ) -> Path:
     """
-    Flip a specific bit inside a writeable section (default: ``.data``) and emit a new binary.
+    Flip a specific bit inside a writable section (default: ``.data``) and emit a new binary.
 
     Parameters
     ----------
