@@ -7,7 +7,8 @@ def compare_csv_upsets(baseline_csv_path, comparison_csv_path, addr_col):
     baseline_upsets = {}
     baseline_counts = defaultdict(int) # Fallback counter just in case
     
-    # Step 1: Read the baseline CSV and find all addresses with an upset (0)
+    # Step 1: Read the baseline CSV and find all addresses with a valid upset
+    # (An upset is now defined as total_correct == "0" AND total_failed != "1")
     with open(baseline_csv_path, encoding="utf-8") as f1:
         reader = csv.DictReader(f1)
         for row in reader:
@@ -23,8 +24,12 @@ def compare_csv_upsets(baseline_csv_path, comparison_csv_path, addr_col):
                 key = (addr, baseline_counts[addr])
                 baseline_counts[addr] += 1
             
-            if row.get("total_correct") == "0":
-                baseline_upsets[key] = row.get("total_failed")
+            correct = row.get("total_correct")
+            failed = row.get("total_failed")
+            
+            # Filter out crashes/failures (failed == "1")
+            if correct == "0" and failed != "1":
+                baseline_upsets[key] = failed
                 
     matching_upsets = 0
     differing_upsets = 0
@@ -62,7 +67,8 @@ def compare_csv_upsets(baseline_csv_path, comparison_csv_path, addr_col):
             csv2_correct = csv2_data[key]["total_correct"]
             csv2_failed = csv2_data[key]["total_failed"]
             
-            if csv2_correct == "0":
+            # It only remains a matching upset if it ALSO isn't failing in CSV 2
+            if csv2_correct == "0" and csv2_failed != "1":
                 matching_upsets += 1
                 if csv1_failed != csv2_failed:
                     failed_diff_in_matching += 1
@@ -75,9 +81,9 @@ def compare_csv_upsets(baseline_csv_path, comparison_csv_path, addr_col):
             
     # Step 4: Output the results
     print(f"--- Upset Comparison Results ({addr_col}) ---")
-    print(f"Total Upsets in Baseline (CSV 1): {len(baseline_upsets)}")
-    print(f"Matching Upsets (0 in CSV 1 -> 0 in CSV 2): {matching_upsets}")
-    print(f"Differing Upsets (0 in CSV 1 -> 1 in CSV 2): {differing_upsets}")
+    print(f"Total True Upsets in Baseline (CSV 1): {len(baseline_upsets)}")
+    print(f"Matching Upsets (Upset in CSV 1 -> Upset in CSV 2): {matching_upsets}")
+    print(f"Differing Upsets (Upset in CSV 1 -> No Upset / Crash in CSV 2): {differing_upsets}")
     
     if differing_upsets > 0:
         print("\n--- Total Failed Column Analysis ---")
