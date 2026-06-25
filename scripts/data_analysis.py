@@ -73,8 +73,8 @@ def calculate_dataset_independence(data1, data2):
     row1 = []
     row2 = []
     for inst in all_instructions:
-        d1count = data1["total"].get(inst, 0)
-        d2count = data2["total"].get(inst, 0)
+        d1count = data1["vulnerable"].get(inst, 0)
+        d2count = data2["vulnerable"].get(inst, 0)
         # drop column if less than 5 for Chi-Squared tests
         if d1count < 5 or d2count < 5:
             continue
