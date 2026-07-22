@@ -1,7 +1,7 @@
-[experiment.nop1_sha256-new-hex]
+[experiment.nop1_sha256-newhex]
 command = "x_nop"
-program-file = "test_files/SHA256/Experiment_Files/sha256-new-hex.c"
-out_dir = "test_files/SHA256/Output/new-hex/sha256-nop-1"
+program-file = "test_files/sha256/experiment_files/sha256_new_hex.c"
+out_dir = "test_files/sha256/output/new_hex/sha256-nop-1"
 program-input = ""
 expected-returncode = 0
 expected-stdout = "5978926aa75f9cfe6adf97830c8443dede30b0ceb64025b6cbc76b5e92828697"
