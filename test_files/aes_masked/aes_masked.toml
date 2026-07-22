@@ -1,7 +1,7 @@
-[experiment.nop1_masked-aes-original-encrypt]
+[experiment.nop1_aes-masked-base-encrypt]
 command = "x_nop"
-program-file = "test_files/Masked_AES/Experiment_Files/masked-original.c"
-out_dir = "test_files/Masked_AES/Output/original/aes128-cbc-encrypt-nop-1"
+program-file = "test_files/aes_masked/experiment_files/aes_masked.c"
+out_dir = "test_files/aes_masked/output/base/aes-cbc-128-encrypt-nop-1"
 program-input = ""
 expected-returncode = 0
 expected-stdout = "7649abac8119b246cee98e9b12e9197d5086cb9b507219ee95db113a917678b273bed6b8e3c1743b7116e69e222295163ff1caa1681fac09120eca307586e1a7"
@@ -13,10 +13,10 @@ upset_on_match = false
 num_nops = 1
 opts = "-DAES128 -DCBC=1 -DENCRYPT"
 
-[experiment.nop1_masked-aes-original-decrypt]
+[experiment.nop1_aes-masked-base-decrypt]
 command = "x_nop"
-program-file = "test_files/Masked_AES/Experiment_Files/masked-original.c"
-out_dir = "test_files/Masked_AES/Output/original/aes128-cbc-decrypt-nop-1"
+program-file = "test_files/aes_masked/experiment_files/aes_masked.c"
+out_dir = "test_files/aes_masked/output/base/aes-cbc-128-decrypt-nop-1"
 program-input = ""
 expected-returncode = 0
 expected-stdout = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710"
