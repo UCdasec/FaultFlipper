@@ -9,6 +9,7 @@ experiments/
 .*experiment.*/
 DEP
 ML_RESULTS
+test_files/*/output/*
 
 # profiles 
 classifier_profiles
