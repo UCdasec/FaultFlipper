@@ -606,7 +606,7 @@ def save_report(
             verbose=False,
         )
 
-        disassems += f"#### Original Program vs Program {i} {bin.name} diassemebly\n\n"
+        disassems += f"#### Original Program vs Program {i} {bin.name} disassembly\n\n"
         disassems += "```\n"
         disassems += ret
         disassems += "```\n"
@@ -798,7 +798,7 @@ def save_reg_report(
             verbose=False,
         )
 
-        disassems += f"#### Vanilla vs Mutant #{i}: {bin.name} diassemebly\n\n"
+        disassems += f"#### Vanilla vs Mutant #{i}: {bin.name} disassembly\n\n"
         disassems += "```\n"
         disassems += ret
         disassems += "```\n"
