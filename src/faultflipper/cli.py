@@ -2808,8 +2808,8 @@ def x_nop_reg_parallel(
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         # Run the threads
-        # 1 nop : len(diasm)     = len(disasm) - 1nop + 1
-        # 2 nop : len(diasm) - 1
+        # 1 nop : len(disasm) = len(disasm) - 1nop + 1
+        # 2 nop : len(disasm) - 1
         # ...
         for i in range(len(disasm) - (num_nops) + 1):
             # Keet x instructions to overwrite with nop
