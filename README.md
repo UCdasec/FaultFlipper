@@ -17,6 +17,7 @@ Additionally, the apt repository is used for compilers (i.e RISCV64 compiler)
 
 Install pixi with:
 ```sh
+sudo apt install curl
 curl -fsSL https://pixi.sh/install.sh | bash
 ```
 Or if your `.. | bash` adverse visit their site at: https://pixi.sh/latest/
