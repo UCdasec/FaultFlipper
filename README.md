@@ -32,20 +32,22 @@ a handful of compilers and emulators.
 
 ```bash
 # Compiler installs: 
-sudo apt install gcc-riscv64-linux-gnu
-sudo apt-get install libc6-riscv64-cross
-sudo apt-get install gcc-arm-linux-gnueabi
-sudo apt install gcc-aarch64-linux-gnu
+sudo apt install \
+    gcc-riscv64-linux-gnu \
+    libc6-riscv64-cross \
+    gcc-arm-linux-gnueabi \
+    gcc-aarch64-linux-gnu
 
 # If you want to use riscv32... warning this will take awhile
 sudo ./scripts/build_riscv32_toolchain.sh
 
-# QEMU install ...
+# QEMU install
 sudo apt install qemu-user-static
 
 # For generating PDF reports:
-sudo apt install pandoc
-sudo apt install texlive-xetex
+sudo apt install \
+    pandoc \
+    texlive-xetex
 ```
 
 ## Usage
