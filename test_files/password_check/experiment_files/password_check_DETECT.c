@@ -2,6 +2,7 @@
 #include <stdlib.h>  // Required for the exit() function
 #include <stdbool.h> 
 #include <string.h>
+#include <stdint.h>
 // Below provides "EXIT_SUCCESS"
 #include <stdbool.h>
 

@@ -267,7 +267,7 @@ def print_histogram(results):
 
 
 def calc_freqs(df, expected_stdout, other_returncodes) -> list[tuple[str, int]]:
-    """Get the frequencies of returncdoes.
+    """Get the frequencies of returncodes.
 
     Determine cases where the program exits with a normal exit code,
     and provides a bad output.
