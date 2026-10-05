@@ -130,6 +130,8 @@ Ryan Evans evans2ra@mail.uc.edu
 
 Brendan Kickpatrick kirkpabd@mail.uc.edu
 
+Zach Leech leechzy@mail.uc.edu
+
 Boyang Wang boyang.wang@uc.edu
 
 Research Group Webpage: https://homepages.uc.edu/~wang2ba/
