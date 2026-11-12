@@ -2329,6 +2329,9 @@ def generate_run_cmd(
         return f"/usr/bin/{name}"
 
     match target:
+    	    # qemu_paths using non-static variants of QEMU binaries due to Ubuntu package qemu-user-static
+    	    # being last supported in the noble branch (24.04 LTS). As such, default to non-static binaries.
+    
         case Target.X86_64:
             # Native execution on host (no QEMU). If you later want QEMU here,
             # just change this branch.
@@ -2336,7 +2339,7 @@ def generate_run_cmd(
 
         case Target.X86_32:
             return [
-                qemu_path("qemu-i386-static"),  # or "qemu-i386" if that's what you build
+                qemu_path("qemu-i386"),  # or "qemu-i386-static"
                 "-L",
                 "/usr/i386-linux-gnu",
                 str(inp),
@@ -2345,7 +2348,7 @@ def generate_run_cmd(
 
         case Target.RISCV:
             return [
-                qemu_path("qemu-riscv64-static"),  # or "qemu-riscv64"
+                qemu_path("qemu-riscv64"),  # or "qemu-riscv64-static"
                 "-L",
                 "/usr/riscv64-linux-gnu",
                 str(inp),
@@ -2353,7 +2356,7 @@ def generate_run_cmd(
 
         case Target.RISCV_32:
             return [
-                qemu_path("qemu-riscv32-static"),  # or "qemu-riscv32"
+                qemu_path("qemu-riscv32"),  # or "qemu-riscv32-static"
                 "-L",
                 "/usr/riscv32-linux-gnu",
                 str(inp),
@@ -2363,7 +2366,7 @@ def generate_run_cmd(
             # For ARM you were using plain "qemu-arm-static" (no /usr/bin)
             # We can still run it through qemu_path for consistency:
             return [
-                qemu_path("qemu-arm-static"),  # or "qemu-arm"
+                qemu_path("qemu-arm"),  # or "qemu-arm-static"
                 "-L",
                 "/usr/arm-linux-gnueabi",
                 str(inp),
@@ -2371,7 +2374,7 @@ def generate_run_cmd(
 
         case Target.ARM_64:
             return [
-                qemu_path("qemu-aarch64-static"),  # or "qemu-aarch64"
+                qemu_path("qemu-aarch64"),  # or "qemu-aarch64-static"
                 "-L",
                 "/usr/aarch64-linux-gnu",
                 str(inp),

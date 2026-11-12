@@ -43,7 +43,7 @@ sudo apt install \
 sudo ./scripts/build_riscv32_toolchain.sh
 
 # QEMU install
-sudo apt install qemu-user-static
+sudo apt install qemu-user
 
 # For generating PDF reports:
 sudo apt install \
