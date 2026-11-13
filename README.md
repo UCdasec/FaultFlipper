@@ -42,7 +42,8 @@ sudo apt install \
 # If you want to use riscv32... warning this will take awhile
 sudo ./scripts/build_riscv32_toolchain.sh
 
-# QEMU install
+# QEMU install; qemu-user-static no longer supported in Ubuntu
+# versions beyond 24.04 so opt for qemu-user by default
 sudo apt install qemu-user
 
 # For generating PDF reports:
